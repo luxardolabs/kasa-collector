@@ -78,7 +78,13 @@ LABEL version="${BUILD_VERSION}" \
       build_timestamp="${BUILD_TIMESTAMP}" \
       commit="${BUILD_COMMIT}" \
       description="Kasa Collector — TP-Link Kasa energy metrics to InfluxDB" \
-      maintainer="Luxardo Labs"
+      maintainer="Luxardo Labs" \
+      org.opencontainers.image.source="https://github.com/luxardolabs/kasa-collector" \
+      org.opencontainers.image.url="https://github.com/luxardolabs/kasa-collector" \
+      org.opencontainers.image.description="Kasa Collector — TP-Link Kasa energy metrics to InfluxDB" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.revision="${BUILD_COMMIT}"
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD ["python3", "-m", "app.health.check"]
