@@ -1,0 +1,16 @@
+name: kasa-collector
+
+# Prod stack (fleet standard: compose never builds — it pulls the :latest image
+# the Makefile released). Config/secrets live in .env.prod (gitignored).
+# The Dockerfile ships a HEALTHCHECK, so no compose-level healthcheck is needed.
+
+services:
+  kasa-collector:
+    container_name: kasa-collector
+    image: ${KASA_IMAGE:-ghcr.io/luxardolabs/kasa-collector:latest}
+    env_file:
+      - .env.prod
+    network_mode: host
+    restart: always
+    volumes:
+      - /mnt/docker/kasa-collector/output:/app/output

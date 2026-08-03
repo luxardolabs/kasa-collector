@@ -1,0 +1,11 @@
+# luxlint — fleet code-style + type standard (sibling of luxarch's .luxarch.toml).
+# Carries only where to look + what's deferred; the ruff/mypy config lives in the image.
+# Run via `make lint`; see /mnt/luxardolabs/luxlint/docs/REFERENCE.md for the schema.
+
+[source]
+paths = ["app"]
+
+# This is a Python 3.14 app — check ruff/mypy at 3.14 so 3.12+/3.14 syntax
+# (PEP 695 type aliases, etc.) is understood, not rejected against the fleet floor.
+[python]
+target = "py314"

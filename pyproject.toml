@@ -1,0 +1,37 @@
+[tool.poetry]
+name = "kasa-collector"
+version = "2025.7.0"
+description = "Data collection service for TP-Link Kasa smart plugs and power strips — discovers devices, collects energy metrics, and writes to InfluxDB."
+authors = ["Luxardo Labs"]
+license = "AGPL-3.0-only"
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = "^3.14"
+aiofiles = "^25.1.0"
+influxdb-client = "^1.50.0"
+python-kasa = "^0.10.2"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.15.21"
+mypy = "^2.2.0"
+pytest = "^9.1.1"
+pytest-asyncio = "^1.4.0"
+types-aiofiles = "^25.1.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+# The ruff (lint + format) and mypy configuration is owned by luxlint — the fleet
+# code-style guard — and is NOT kept here. See .luxlint.toml and `make lint`. A
+# repo-local ruff/mypy config is exactly the drift luxlint's no_local_ruff_config /
+# no_local_mypy_config checks flag; emit the canonical config for your editor with
+# `docker run --rm $LUXLINT_IMAGE --emit-config ruff > .ruff.local.toml` (gitignored).
+
+# The pytest configuration is likewise owned by luxlint (test.no_local_pytest_config)
+# and is NOT kept here — a repo-local pytest config is exactly the drift that check
+# flags. The canonical config runs as an in-repo tail (like mypy): `make test` does
+# `luxlint --emit-config pytest` then `pytest -c <it>`. See .luxlint.toml / test-suite
+# playbook (`luxlint --playbook test-suite`).

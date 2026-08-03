@@ -1,0 +1,32 @@
+# Lean pytest image — built from the LOCK, never FROM :dev.
+#
+# Per the fleet Build & Deploy Standard (luxarch --doc FLEET-BUILD-DEPLOY-STANDARD):
+# a lint/test env built FROM :dev inherits whatever was baked into that deploy artifact,
+# so the moment :dev lags, tests lag with it and go quietly false. This image keeps the
+# three ingredients of a test run fresh independently:
+#   deps   -> `poetry install` from poetry.lock, IN this image. `make test` keys the
+#             build on poetry.lock, so it rebuilds ONLY when deps change.
+#   source -> over-mounted at run time (-v $(PWD):/w), never baked (no stale code).
+#   config -> the canonical pytest.ini, emitted by luxlint at run time.
+#
+# It needs no registry image (built straight from python:<ver>-slim), so `make test`
+# no longer depends on ":dev pushed first".
+FROM python:3.14-slim
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    POETRY_VIRTUALENVS_CREATE=false
+
+# Poetry pinned (never the piped remote installer) — matches the Makefile POETRY_VERSION.
+ARG POETRY_VERSION=2.4.1
+RUN pip install --no-cache-dir "poetry==${POETRY_VERSION}"
+
+WORKDIR /w
+# Only the dep manifests are copied — this layer caches on the lock, not app source.
+COPY pyproject.toml poetry.lock ./
+# Install main + dev deps (pytest, pytest-asyncio, kasa, influxdb-client) into the system
+# env. --no-root: the app package itself is the mounted source, not a baked install.
+RUN poetry install --no-root --with dev --no-interaction --no-ansi
+
+# Source and the canonical pytest.ini are mounted at run time; nothing app-level is baked.
+ENTRYPOINT []

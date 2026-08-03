@@ -1,0 +1,11 @@
+# Architecture-conformance config for luxarch (the fleet arch guard).
+# Run via `make arch`; see /mnt/luxardolabs/luxarch/docs/REFERENCE.md for the schema.
+
+[[target]]
+kind = "collector"
+app = "app"
+# The long-lived device (source) client lifecycle. kasa uses python-kasa, whose
+# devices are acquired (initialize_manual_devices + discover) and torn down
+# (disconnect via close()) by DeviceManager — this is the source-client owner,
+# not poller.py (whose connect() opens storage, not devices).
+source_client = ["collector/device_manager.py"]

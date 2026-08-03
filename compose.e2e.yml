@@ -1,0 +1,94 @@
+name: kasa-collector-e2e
+
+# Hardware-free end-to-end test harness. Everything is on the default bridge network
+# and NO host ports are published, so it never collides and runs in CI. Fake Kasa
+# device emulators speak the IOT protocol; the collector discovers them via explicit
+# DEVICE_HOSTS (bridge can't broadcast) and writes emeter data to a throwaway InfluxDB.
+# Driven by `make test-e2e`, which builds the collector image from CURRENT source and
+# sets KASA_IMAGE. All values here are fixed test values, not secrets.
+
+services:
+  kasa_influxdb:
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: kasa
+      DOCKER_INFLUXDB_INIT_PASSWORD: kasa-e2e-password
+      DOCKER_INFLUXDB_INIT_ORG: kasa
+      DOCKER_INFLUXDB_INIT_BUCKET: kasa
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: kasa-e2e-token
+    volumes:
+      - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # --- emeter plug ---
+  kasa_fake_hs110:
+    build: ./harness
+    environment:
+      KASA_FAKE_KIND: plug
+      KASA_FAKE_MODEL: HS110(US)
+      KASA_FAKE_ALIAS: Fake HS110 Plug
+      KASA_FAKE_MAC: "50:C7:BF:00:00:10"
+      KASA_FAKE_BASE_W: "42"
+
+  # --- emeter plug (different model) ---
+  kasa_fake_kp115:
+    build: ./harness
+    environment:
+      KASA_FAKE_KIND: plug
+      KASA_FAKE_MODEL: KP115(US)
+      KASA_FAKE_ALIAS: Fake KP115 Plug
+      KASA_FAKE_MAC: "50:C7:BF:00:00:11"
+      KASA_FAKE_BASE_W: "88"
+
+  # --- plug WITHOUT energy monitoring (exercises the no-emeter branch) ---
+  kasa_fake_hs103:
+    build: ./harness
+    environment:
+      KASA_FAKE_KIND: plug_noemeter
+      KASA_FAKE_MODEL: HS103(US)
+      KASA_FAKE_ALIAS: Fake HS103 Plug
+      KASA_FAKE_MAC: "50:C7:BF:00:00:12"
+
+  # --- multi-outlet power strip with per-outlet emeter (child devices) ---
+  kasa_fake_hs300:
+    build: ./harness
+    environment:
+      KASA_FAKE_KIND: strip
+      KASA_FAKE_MODEL: HS300(US)
+      KASA_FAKE_ALIAS: Fake HS300 Strip
+      KASA_FAKE_MAC: "50:C7:BF:00:00:13"
+      KASA_FAKE_BASE_W: "30"
+      KASA_FAKE_OUTLETS: "6"
+
+  kasa-collector:
+    image: ${KASA_IMAGE:-ghcr.io/luxardolabs/kasa-collector:latest}
+    environment:
+      KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY: "False"
+      KASA_COLLECTOR_DEVICE_HOSTS: kasa_fake_hs110,kasa_fake_kp115,kasa_fake_hs103,kasa_fake_hs300
+      KASA_COLLECTOR_INFLUXDB_URL: http://kasa_influxdb:8086
+      KASA_COLLECTOR_INFLUXDB_ORG: kasa
+      KASA_COLLECTOR_INFLUXDB_BUCKET: kasa
+      KASA_COLLECTOR_INFLUXDB_TOKEN: kasa-e2e-token
+      KASA_COLLECTOR_DATA_FETCH_INTERVAL: "5"
+      KASA_COLLECTOR_SYSINFO_FETCH_INTERVAL: "10"
+      KASA_COLLECTOR_WRITE_TO_FILE: "False"
+      KASA_COLLECTOR_KEEP_MISSING_DEVICES: "False"
+      KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR: INFO
+      KASA_COLLECTOR_LOG_LEVEL_KASA_API: INFO
+      KASA_COLLECTOR_LOG_LEVEL_INFLUXDB_STORAGE: INFO
+    depends_on:
+      kasa_influxdb:
+        condition: service_healthy
+      kasa_fake_hs110:
+        condition: service_started
+      kasa_fake_kp115:
+        condition: service_started
+      kasa_fake_hs103:
+        condition: service_started
+      kasa_fake_hs300:
+        condition: service_started

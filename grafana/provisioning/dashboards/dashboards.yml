@@ -1,0 +1,15 @@
+# Auto-load the bundled Kasa Collector dashboards from grafana/shared-local
+# (mounted at /var/lib/grafana/dashboards in the demo stack).
+apiVersion: 1
+
+providers:
+  - name: kasa-collector
+    orgId: 1
+    folder: Kasa Collector
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

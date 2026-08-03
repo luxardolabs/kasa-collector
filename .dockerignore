@@ -1,0 +1,51 @@
+# Runtime image build context. The Dockerfile COPYs `app/` (base) and `tests/`
+# (dev stage) explicitly, so exclude everything that must never enter an image
+# or would bust the build cache. Dockerfile.test only COPYs pyproject.toml + poetry.lock.
+
+# Git
+.git
+.gitignore
+
+# Python / caches
+__pycache__
+*.py[cod]
+*.so
+.Python
+.venv
+venv/
+env/
+ENV/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Secrets / env — must NEVER enter the image (only .env.example is harmless)
+.env
+.env.*
+!.env.example
+
+# Runtime output (bind-mounted at runtime, never baked)
+output/
+
+# Docs / dashboards (not needed in the runtime image)
+docs/
+grafana/
+*.md
+
+# Compose / Dockerfiles / build tooling
+compose*.yaml
+compose*.yml
+Dockerfile*
+Makefile
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Claude
+.claude/

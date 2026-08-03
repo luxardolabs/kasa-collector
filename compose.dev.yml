@@ -1,0 +1,70 @@
+name: kasa-collector-dev
+
+# DEV stack — your daily local driver. The collector runs on host networking and
+# discovers your REAL Kasa devices, writing to a bundled InfluxDB + pre-provisioned
+# Grafana (datasource + dashboards). Bring up with `make dev-up`, open Grafana at
+# http://localhost:3000 (admin/admin). Config in .env.demo (bundled-stack values).
+# Run `make dev-build-push` first to build the :dev image (or set KASA_IMAGE=<tag>).
+
+services:
+  kasa_influxdb:
+    image: influxdb:2.7
+    container_name: kasa_influxdb
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - kasa_influxdb_data:/var/lib/influxdb2
+      - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    ports:
+      - "${INFLUX_PORT:-8086}:8086"
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  kasa_grafana:
+    image: grafana/grafana:11.3.0
+    container_name: kasa_grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      INFLUX_BUCKET: ${INFLUX_BUCKET}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
+      - kasa_grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      kasa_influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  kasa-collector:
+    image: ${KASA_IMAGE:-ghcr.io/luxardolabs/kasa-collector:latest}
+    container_name: kasa-collector
+    env_file:
+      # .env.demo = bundled InfluxDB/Grafana config. .env.dev.local (gitignored,
+      # optional) adds your real device credentials + DEVICE_HOSTS — see
+      # .env.dev.local.example. Later file wins on shared keys.
+      - .env.demo
+      - path: .env.dev.local
+        required: false
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      kasa_influxdb:
+        condition: service_healthy
+
+volumes:
+  kasa_influxdb_data:
+  kasa_grafana_data:

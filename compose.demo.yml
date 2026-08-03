@@ -1,0 +1,93 @@
+name: kasa-collector-demo
+
+# DEMO stack — "click go", no hardware. Same bundled InfluxDB + pre-provisioned
+# Grafana as the dev stack, but driven by FAKE Kasa devices (the e2e emulators) so
+# the dashboards populate with zero physical devices. Bring up with `make demo-up`,
+# open Grafana at http://localhost:3000 (admin/admin). Everything here is on the
+# default bridge network; the collector finds the fakes by service name. Config in
+# .env.demo. Override the collector image with KASA_IMAGE=<tag> to demo a local build.
+
+services:
+  kasa_influxdb:
+    image: influxdb:2.7
+    container_name: kasa_influxdb
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - kasa_influxdb_data:/var/lib/influxdb2
+      - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    ports:
+      - "${INFLUX_PORT:-8086}:8086"
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  kasa_grafana:
+    image: grafana/grafana:11.3.0
+    container_name: kasa_grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      INFLUX_BUCKET: ${INFLUX_BUCKET}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
+      - kasa_grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      kasa_influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- Fake Kasa devices (emulators) — no hardware needed ---
+  kasa_fake_hs110:
+    build: ./harness
+    environment: {KASA_FAKE_KIND: plug, KASA_FAKE_MODEL: HS110(US), KASA_FAKE_ALIAS: Demo HS110 Plug, KASA_FAKE_MAC: "50:C7:BF:00:00:10", KASA_FAKE_BASE_W: "42"}
+    restart: unless-stopped
+
+  kasa_fake_kp115:
+    build: ./harness
+    environment: {KASA_FAKE_KIND: plug, KASA_FAKE_MODEL: KP115(US), KASA_FAKE_ALIAS: Demo KP115 Plug, KASA_FAKE_MAC: "50:C7:BF:00:00:11", KASA_FAKE_BASE_W: "88"}
+    restart: unless-stopped
+
+  kasa_fake_hs300:
+    build: ./harness
+    environment: {KASA_FAKE_KIND: strip, KASA_FAKE_MODEL: HS300(US), KASA_FAKE_ALIAS: Demo HS300 Strip, KASA_FAKE_MAC: "50:C7:BF:00:00:13", KASA_FAKE_BASE_W: "30", KASA_FAKE_OUTLETS: "6"}
+    restart: unless-stopped
+
+  kasa-collector:
+    image: ${KASA_IMAGE:-ghcr.io/luxardolabs/kasa-collector:latest}
+    container_name: kasa-collector
+    env_file:
+      - .env.demo
+    environment:
+      # Bridge network: reach InfluxDB + the fakes by service name, no broadcast.
+      KASA_COLLECTOR_INFLUXDB_URL: http://kasa_influxdb:8086
+      KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY: "False"
+      KASA_COLLECTOR_DEVICE_HOSTS: kasa_fake_hs110,kasa_fake_kp115,kasa_fake_hs300
+      KASA_COLLECTOR_DATA_FETCH_INTERVAL: "5"
+    restart: unless-stopped
+    depends_on:
+      kasa_influxdb:
+        condition: service_healthy
+      kasa_fake_hs110:
+        condition: service_started
+      kasa_fake_kp115:
+        condition: service_started
+      kasa_fake_hs300:
+        condition: service_started
+
+volumes:
+  kasa_influxdb_data:
+  kasa_grafana_data:

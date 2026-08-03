@@ -1,0 +1,24 @@
+name: kasa-collector
+
+# Dev stack (fleet standard: compose never builds — it pulls the :dev image the
+# Makefile pushed). Config/secrets live in .env.dev (gitignored) — see .env.example.
+# Host networking is required for Kasa device discovery.
+#   docker compose ps            # health in STATUS column
+#   docker inspect kasa-collector | jq '.[0].State.Health'
+
+services:
+  kasa-collector:
+    container_name: kasa-collector
+    image: ${KASA_IMAGE:-ghcr.io/luxardolabs/kasa-collector:latest}
+    env_file:
+      - .env.dev
+    network_mode: host
+    restart: always
+    healthcheck:
+      test: ["CMD", "python3", "-m", "app.health.check"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    volumes:
+      - /mnt/docker/kasa-collector/output:/app/output

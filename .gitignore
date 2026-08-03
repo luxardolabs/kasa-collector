@@ -1,0 +1,57 @@
+# --- Secrets / environment (only .env.example is committed) ---
+.env
+.env.dev
+.env.prod
+.env.local
+.env.*.local
+
+# --- Runtime output (device JSON dumps; bind-mounted, never committed) ---
+output/
+src/output/
+/app/output/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Tooling caches ---
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Editors / OS ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# --- Local Make overrides (private-registry host; Makefile.local.example is committed) ---
+Makefile.local
+
+# --- luxlint local artifacts (canonical config emitted for the editor; transient tail cfg) ---
+.ruff.local.toml
+.luxlint.mypy.ini
+.luxlint.pytest.ini
+.luxlint.gitleaks.toml
+.test-image.stamp
+
+# --- Claude local settings (settings.json IS committed; local is not) ---
+.claude/settings.local.json
+**/.claude/settings.local.json

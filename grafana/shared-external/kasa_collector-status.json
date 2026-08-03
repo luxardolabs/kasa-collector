@@ -1,0 +1,1132 @@
+{
+  "__inputs": [
+    {
+      "name": "InfluxDB - Kasa Collector",
+      "label": "InfluxDB - Kasa Collector",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "influxdb",
+      "pluginName": "InfluxDB"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "11.1.3"
+    },
+    {
+      "type": "datasource",
+      "id": "influxdb",
+      "name": "InfluxDB",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Kasa Collector provides a way of collecting real-time energy data from  Kasa Smart Plugs. These Grafana dashboards offer visualizations for their Current, Voltage, Power, and Total Watt Hours.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "kasa-collector"
+      ],
+      "targetBlank": false,
+      "title": "Kasa Collector - Dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${data_source}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "dark-purple",
+            "mode": "fixed"
+          },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "mwatt"
+        },
+        "overrides": []
+      },
+      "id": 19,
+      "interval": "$interval",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.3",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT sum(\"v\") FROM (SELECT last(\"power_mw\") AS v FROM \"emeter\" WHERE \"equipment_type\" = 'device' AND (\"device_alias\" =~ /^$device_alias$/) AND $timeFilter GROUP BY \"device_alias\")",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${data_source}"
+          }
+        }
+      ],
+      "title": "Power (Combined)",
+      "transformations": [
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "Total",
+            "mode": "reduceRow",
+            "reduce": {
+              "reducer": "sum"
+            },
+            "replaceFields": true
+          }
+        }
+      ],
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${data_source}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "semi-dark-blue",
+            "mode": "fixed"
+          },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "watth"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 20,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.3",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT sum(\"v\") FROM (SELECT (last(\"total_wh\") - first(\"total_wh\")) AS v FROM \"emeter\" WHERE \"equipment_type\" = 'device' AND (\"device_alias\" =~ /^$device_alias$/) AND $timeFilter GROUP BY \"device_alias\")",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${data_source}"
+          }
+        }
+      ],
+      "title": "Watt-Hours (Combined)",
+      "transformations": [
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "Combined",
+            "mode": "reduceRow",
+            "reduce": {
+              "reducer": "sum"
+            },
+            "replaceFields": true
+          }
+        }
+      ],
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${data_source}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "semi-dark-yellow",
+            "mode": "fixed"
+          },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "mamp"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 21,
+      "interval": "$interval",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.3",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT sum(\"v\") FROM (SELECT last(\"current_ma\") AS v FROM \"emeter\" WHERE \"equipment_type\" = 'device' AND (\"device_alias\" =~ /^$device_alias$/) AND $timeFilter GROUP BY \"device_alias\")",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${data_source}"
+          }
+        }
+      ],
+      "title": "Current (Combined)",
+      "transformations": [
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "Total",
+            "mode": "reduceRow",
+            "reduce": {
+              "reducer": "sum"
+            },
+            "replaceFields": true
+          }
+        }
+      ],
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${data_source}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "dark-red",
+            "mode": "fixed"
+          },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "mvolt"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 22,
+      "interval": "$interval",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.3",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT mean(\"v\") FROM (SELECT last(\"voltage_mv\") AS v FROM \"emeter\" WHERE \"equipment_type\" = 'device' AND \"voltage_mv\" > 100000 AND (\"device_alias\" =~ /^$device_alias$/) AND $timeFilter GROUP BY \"device_alias\")",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${data_source}"
+          }
+        }
+      ],
+      "title": "Voltage (Mean)",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${data_source}"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 24,
+      "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${data_source}"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "Devices",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${data_source}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#4CAE4F",
+                "value": null
+              },
+              {
+                "color": "#53AD49",
+                "value": 42769.2308
+              },
+              {
+                "color": "#59AC43",
+                "value": 79538.4615
+              },
+              {
+                "color": "#5FAA3E",
+                "value": 116307.6923
+              },
+              {
+                "color": "#65A938",
+                "value": 153076.9231
+              },
+              {
+                "color": "#6AA732",
+                "value": 189846.1538
+              },
+              {
+                "color": "#6FA62C",
+                "value": 226615.3846
+              },
+              {
+                "color": "#75A425",
+                "value": 263384.6154
+              },
+              {
+                "color": "#7AA31E",
+                "value": 300153.8462
+              },
+              {
+                "color": "#7FA117",
+                "value": 336923.0769
+              },
+              {
+                "color": "#839F0D",
+                "value": 373692.3077
+              },
+              {
+                "color": "#889E02",
+                "value": 410461.5385
+              },
+              {
+                "color": "#8D9C00",
+                "value": 447230.7692
+              },
+              {
+                "color": "#929A00",
+                "value": 484000
+              },
+              {
+                "color": "#969800",
+                "value": 520769.2308
+              },
+              {
+                "color": "#9B9600",
+                "value": 557538.4615
+              },
+              {
+                "color": "#A09300",
+                "value": 594307.6923
+              },
+              {
+                "color": "#A49100",
+                "value": 631076.9231
+              },
+              {
+                "color": "#A98F00",
+                "value": 667846.1538
+              },
+              {
+                "color": "#AD8C00",
+                "value": 704615.3846
+              },
+              {
+                "color": "#B18A00",
+                "value": 741384.6154
+              },
+              {
+                "color": "#B68700",
+                "value": 778153.8462
+              },
+              {
+                "color": "#BA8400",
+                "value": 814923.0769
+              },
+              {
+                "color": "#BE8100",
+                "value": 851692.3077
+              },
+              {
+                "color": "#C27E00",
+                "value": 888461.5385
+              },
+              {
+                "color": "#C67B00",
+                "value": 925230.7692
+              },
+              {
+                "color": "#CA7800",
+                "value": 962000
+              },
+              {
+                "color": "#CE7500",
+                "value": 998769.2308
+              },
+              {
+                "color": "#D27100",
+                "value": 1035538.4615
+              },
+              {
+                "color": "#D66E00",
+                "value": 1072307.6923
+              },
+              {
+                "color": "#D96A00",
+                "value": 1109076.9231
+              },
+              {
+                "color": "#DD6600",
+                "value": 1145846.1538
+              },
+              {
+                "color": "#E06207",
+                "value": 1182615.3846
+              },
+              {
+                "color": "#E45E10",
+                "value": 1219384.6154
+              },
+              {
+                "color": "#E75917",
+                "value": 1256153.8462
+              },
+              {
+                "color": "#EA551E",
+                "value": 1292923.0769
+              },
+              {
+                "color": "#ED5024",
+                "value": 1329692.3077
+              },
+              {
+                "color": "#EF4B29",
+                "value": 1366461.5385
+              },
+              {
+                "color": "#F2462F",
+                "value": 1403230.7692
+              },
+              {
+                "color": "#F44034",
+                "value": 1440000
+              }
+            ]
+          },
+          "unit": "mwatt"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 4
+      },
+      "id": 3,
+      "interval": "$interval",
+      "maxPerRow": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.3",
+      "repeat": "device_alias",
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "alias": "Watts",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${data_source}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "hide": false,
+          "measurement": "emeter",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "power_mw"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              }
+            ]
+          ],
+          "tags": [
+            {
+              "key": "device_alias",
+              "operator": "=~",
+              "value": "/^$device_alias$/"
+            }
+          ]
+        }
+      ],
+      "title": "$device_alias",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${data_source}"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 30,
+      "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${data_source}"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "Plugs",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${data_source}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#4CAE4F",
+                "value": null
+              },
+              {
+                "color": "#53AD49",
+                "value": 42769.2308
+              },
+              {
+                "color": "#59AC43",
+                "value": 79538.4615
+              },
+              {
+                "color": "#5FAA3E",
+                "value": 116307.6923
+              },
+              {
+                "color": "#65A938",
+                "value": 153076.9231
+              },
+              {
+                "color": "#6AA732",
+                "value": 189846.1538
+              },
+              {
+                "color": "#6FA62C",
+                "value": 226615.3846
+              },
+              {
+                "color": "#75A425",
+                "value": 263384.6154
+              },
+              {
+                "color": "#7AA31E",
+                "value": 300153.8462
+              },
+              {
+                "color": "#7FA117",
+                "value": 336923.0769
+              },
+              {
+                "color": "#839F0D",
+                "value": 373692.3077
+              },
+              {
+                "color": "#889E02",
+                "value": 410461.5385
+              },
+              {
+                "color": "#8D9C00",
+                "value": 447230.7692
+              },
+              {
+                "color": "#929A00",
+                "value": 484000
+              },
+              {
+                "color": "#969800",
+                "value": 520769.2308
+              },
+              {
+                "color": "#9B9600",
+                "value": 557538.4615
+              },
+              {
+                "color": "#A09300",
+                "value": 594307.6923
+              },
+              {
+                "color": "#A49100",
+                "value": 631076.9231
+              },
+              {
+                "color": "#A98F00",
+                "value": 667846.1538
+              },
+              {
+                "color": "#AD8C00",
+                "value": 704615.3846
+              },
+              {
+                "color": "#B18A00",
+                "value": 741384.6154
+              },
+              {
+                "color": "#B68700",
+                "value": 778153.8462
+              },
+              {
+                "color": "#BA8400",
+                "value": 814923.0769
+              },
+              {
+                "color": "#BE8100",
+                "value": 851692.3077
+              },
+              {
+                "color": "#C27E00",
+                "value": 888461.5385
+              },
+              {
+                "color": "#C67B00",
+                "value": 925230.7692
+              },
+              {
+                "color": "#CA7800",
+                "value": 962000
+              },
+              {
+                "color": "#CE7500",
+                "value": 998769.2308
+              },
+              {
+                "color": "#D27100",
+                "value": 1035538.4615
+              },
+              {
+                "color": "#D66E00",
+                "value": 1072307.6923
+              },
+              {
+                "color": "#D96A00",
+                "value": 1109076.9231
+              },
+              {
+                "color": "#DD6600",
+                "value": 1145846.1538
+              },
+              {
+                "color": "#E06207",
+                "value": 1182615.3846
+              },
+              {
+                "color": "#E45E10",
+                "value": 1219384.6154
+              },
+              {
+                "color": "#E75917",
+                "value": 1256153.8462
+              },
+              {
+                "color": "#EA551E",
+                "value": 1292923.0769
+              },
+              {
+                "color": "#ED5024",
+                "value": 1329692.3077
+              },
+              {
+                "color": "#EF4B29",
+                "value": 1366461.5385
+              },
+              {
+                "color": "#F2462F",
+                "value": 1403230.7692
+              },
+              {
+                "color": "#F44034",
+                "value": 1440000
+              }
+            ]
+          },
+          "unit": "mwatt"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 17
+      },
+      "id": 73,
+      "interval": "$interval",
+      "maxPerRow": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.3",
+      "repeat": "plug_alias",
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "alias": "Watts",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${data_source}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "hide": false,
+          "measurement": "emeter",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "power_mw"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              }
+            ]
+          ],
+          "tags": [
+            {
+              "key": "plug_alias",
+              "operator": "=~",
+              "value": "/^$plug_alias$/"
+            }
+          ]
+        }
+      ],
+      "title": "$plug_alias",
+      "type": "stat"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": [
+    "influxdb",
+    "kasa-collector"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data Source",
+        "multi": false,
+        "name": "data_source",
+        "options": [],
+        "query": "influxdb",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${data_source}"
+        },
+        "definition": "SHOW TAG VALUES FROM \"emeter\" WITH KEY = \"device_alias\"",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Device",
+        "multi": true,
+        "name": "device_alias",
+        "options": [],
+        "query": "SHOW TAG VALUES FROM \"emeter\" WITH KEY = \"device_alias\"",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 5,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${data_source}"
+        },
+        "definition": "SHOW TAG VALUES FROM \"emeter\" WITH KEY = \"plug_alias\" WHERE \"device_alias\" =~ /^$device_alias$/",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Plug",
+        "multi": true,
+        "name": "plug_alias",
+        "options": [],
+        "query": "SHOW TAG VALUES FROM \"emeter\" WITH KEY = \"plug_alias\" WHERE \"device_alias\" =~ /^$device_alias$/",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 5,
+        "type": "query"
+      },
+      {
+        "auto": true,
+        "auto_count": 30,
+        "auto_min": "10s",
+        "current": {
+          "selected": false,
+          "text": "5m",
+          "value": "5m"
+        },
+        "hide": 0,
+        "label": "Interval",
+        "name": "interval",
+        "options": [
+          {
+            "selected": false,
+            "text": "auto",
+            "value": "$__auto_interval_interval"
+          },
+          {
+            "selected": false,
+            "text": "5s",
+            "value": "5s"
+          },
+          {
+            "selected": false,
+            "text": "15s",
+            "value": "15s"
+          },
+          {
+            "selected": false,
+            "text": "30s",
+            "value": "30s"
+          },
+          {
+            "selected": false,
+            "text": "1m",
+            "value": "1m"
+          },
+          {
+            "selected": true,
+            "text": "5m",
+            "value": "5m"
+          },
+          {
+            "selected": false,
+            "text": "10m",
+            "value": "10m"
+          },
+          {
+            "selected": false,
+            "text": "15m",
+            "value": "15m"
+          },
+          {
+            "selected": false,
+            "text": "1h",
+            "value": "1h"
+          },
+          {
+            "selected": false,
+            "text": "3h",
+            "value": "3h"
+          },
+          {
+            "selected": false,
+            "text": "6h",
+            "value": "6h"
+          },
+          {
+            "selected": false,
+            "text": "12h",
+            "value": "12h"
+          },
+          {
+            "selected": false,
+            "text": "1d",
+            "value": "1d"
+          },
+          {
+            "selected": false,
+            "text": "3d",
+            "value": "3d"
+          },
+          {
+            "selected": false,
+            "text": "1w",
+            "value": "1w"
+          }
+        ],
+        "query": "5s,15s,30s,1m,5m,10m,15m,1h,3h,6h,12h,1d,3d,1w",
+        "queryValue": "",
+        "refresh": 2,
+        "skipUrlSync": false,
+        "type": "interval"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Kasa Collector  - Status",
+  "uid": "luxardolabs_kasa_05",
+  "version": 18,
+  "weekStart": ""
+}

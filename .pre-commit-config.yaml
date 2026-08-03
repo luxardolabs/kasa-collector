@@ -1,0 +1,35 @@
+# Optional pre-commit hooks. They shell out to the existing make targets, which
+# run everything inside Docker — so no host Python/tooling is required beyond
+# pre-commit itself.
+#
+#   pip install pre-commit    # or: pipx install pre-commit
+#   pre-commit install                 # secret scan on every commit
+#   pre-commit install --hook-type pre-push   # lint + tests before push
+#
+# Run everything on demand: pre-commit run --all-files --hook-stage pre-push
+repos:
+  - repo: local
+    hooks:
+      # Fast, security-critical — runs on every commit.
+      - id: gitleaks-staged
+        name: gitleaks (staged secret scan)
+        entry: make gitleaks-staged
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Heavier (build a lint image + run ruff/mypy) — runs on push, not every commit.
+      - id: lint
+        name: ruff + mypy (make lint)
+        entry: make lint
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      # Full pytest suite — runs on push.
+      - id: test
+        name: pytest (make test)
+        entry: make test
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

@@ -1,0 +1,13 @@
+# Local, untracked Make overrides. Copy to `Makefile.local` (gitignored) and set your
+# private-registry host — keeping the internal hostname out of this public tree:
+#
+#   cp Makefile.local.example Makefile.local     # then edit the host below
+#
+# The private registry hosts the :dev tooling image and the released :VERSION/:latest
+# images (used by dev-build-push / release / prod), plus the luxarch (make arch) and
+# luxlint (make lint / format) guard images. Without Makefile.local the local + e2e
+# stacks still build from source, and make arch / make lint skip gracefully.
+REGISTRY          ?= docker.your-registry.example:5000
+LUXARCH_REGISTRY  ?= docker.your-registry.example:5000
+LUXLINT_REGISTRY  ?= docker.your-registry.example:5000
+LUXAUDIT_REGISTRY ?= docker.your-registry.example:5000
