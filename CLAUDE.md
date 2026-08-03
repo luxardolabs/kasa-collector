@@ -111,7 +111,7 @@ All configuration is done through environment variables. Key settings include:
   - bundled InfluxDB + Grafana. The daily local driver. `make dev-up`/`dev-down`.
 - **demo** — `compose.demo.yml`: FAKE devices (the harness emulators) + bundled InfluxDB
   - Grafana. Watch it work with no hardware. `make demo-up`/`demo-down`.
-- **test** — `compose.e2e.yml`: all fake device kinds + ephemeral InfluxDB, bridge network, no published ports. `make test-e2e` (pass/fail). See `docs/TESTING.md`.
+- **test** — `compose.e2e.yml`: all fake device kinds + ephemeral InfluxDB, bridge network, no published ports. `make test-e2e` (pass/fail). See `docs/testing.md`.
 
 Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. `.env.demo` holds the bundled-stack values (used by dev + demo). `make build-local` builds the runtime image from source; `up`/`dev-up`/`demo-up` build locally (no registry needed). The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 
