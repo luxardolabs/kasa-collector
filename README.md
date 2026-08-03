@@ -1,10 +1,10 @@
 # Kasa Collector
 
-![Kasa Collector](https://www.luxardolabs.com/kasa-collector/kasa_collector_header.png)
+![Kasa Collector](docs/images/kasa_collector_header.png)
 
 **Kasa Collector** is a Python-based application deployed with Docker that discovers and monitors TP-Link Kasa smart plugs and power strips on your network. It continuously collects energy consumption data and stores it in InfluxDB for visualization with Grafana dashboards.
 
-A live set of dashboards using this Collector [are available here](https://www.luxardolabs.com/kasa-collector/) for you to explore.
+A live set of dashboards using this Collector [are available here](https://www.luxardolabs.com/) for you to explore.
 
 ## Quick Start
 
