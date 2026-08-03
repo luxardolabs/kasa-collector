@@ -1,0 +1,3 @@
+#!/bin/sh
+# luxlint: REQUIRED fleet secret guard — runs on EVERY commit (do not delete).
+exec make -s gitleaks-staged

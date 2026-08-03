@@ -1,0 +1,3 @@
+#!/bin/sh
+# luxlint: REQUIRED fleet secret guard — last net before anything goes public.
+exec make -s gitleaks

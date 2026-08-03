@@ -18,15 +18,16 @@ If you started Kasa Collector with the demo stack (`make demo-up`, fake devices)
 If you run your own Grafana, import the JSON files from [`grafana/shared-local/`](https://github.com/luxardolabs/kasa-collector/tree/main/grafana/shared-local):
 
 1. In Grafana, go to **Dashboards → New → Import**.
-2. Upload one of the `kasa_collector-*.json` files (or paste its contents).
-3. Select your InfluxDB datasource when prompted.
-4. Repeat for each dashboard.
+1. Upload one of the `kasa_collector-*.json` files (or paste its contents).
+1. Select your InfluxDB datasource when prompted.
+1. Repeat for each dashboard.
 
 ## Available Dashboards
 
 ### Energy (By Device) — `luxardolabs_kasa_01`
 
 Energy panels organized per device:
+
 - Power
 - Watt-Hours
 - Current
@@ -37,6 +38,7 @@ Measurements include total combined information, voltage average, device- and pl
 ### Energy (By Measurement) — `luxardolabs_kasa_02`
 
 Detailed insights grouped by measurement:
+
 - Power
 - Watt-hours
 - Current
@@ -48,6 +50,7 @@ Detailed insights grouped by measurement:
 ### Energy (By Time) — `luxardolabs_kasa_03`
 
 Summarizes energy consumption and costs over time:
+
 - Watt-hours per device/day
 - Plug-level energy usage
 - Estimated daily device and plug costs
@@ -56,6 +59,7 @@ Summarizes energy consumption and costs over time:
 ### Device Details — `luxardolabs_kasa_04`
 
 An overview of connected smart devices and plugs, focusing on:
+
 - Device state
 - Software/firmware versions
 - Network connectivity
@@ -67,4 +71,5 @@ An overview of connected smart devices and plugs, focusing on:
 ### Status — `luxardolabs_kasa_05`
 
 Real-time power consumption monitoring:
+
 - Combined metrics for power, watt-hours, current, and voltage

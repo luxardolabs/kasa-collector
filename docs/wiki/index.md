@@ -30,9 +30,10 @@ Then open **http://localhost:3000** (admin / admin). To run the same bundled sta
 ## Updating the Wiki
 
 To update these docs:
+
 1. Edit the markdown files directly
-2. Commit changes to the repository
-3. Optionally sync back to GitHub wiki if needed
+1. Commit changes to the repository
+1. Optionally sync back to GitHub wiki if needed
 
 ## Contributing
 

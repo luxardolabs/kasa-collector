@@ -6,17 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Kasa Collector is a Python-based data collection service for TP-Link Kasa smart plugs and power strips. It discovers devices on the network, collects energy consumption metrics, stores data in InfluxDB, and provides Grafana dashboards for visualization.
 
-**Version**: 2025.7.0 (Latest)
-**Python**: 3.14+ with modern Python features
-**Architecture**: Asynchronous event-driven with comprehensive resource management
+**Version**: 2025.7.0 (Latest) **Python**: 3.14+ with modern Python features **Architecture**: Asynchronous event-driven with comprehensive resource management
 
 ## Common Development Commands
 
 ### Building and Running
 
-The build/deploy flow follows the Luxardo Labs fleet standard. `VERSION` (repo root)
-is the source of truth; the `Makefile` drives everything and compose never builds.
-Run `make help` for the grouped command list.
+The build/deploy flow follows the Luxardo Labs fleet standard. `VERSION` (repo root) is the source of truth; the `Makefile` drives everything and compose never builds. Run `make help` for the grouped command list.
 
 ```bash
 # Build + push the :dev image (tooling stage: dev deps + tests baked) to the registry
@@ -77,14 +73,14 @@ make dev-shell                      # shell into the running container
 The application uses an asynchronous event-driven architecture with these key components:
 
 1. **Main Orchestrator** (`app/main.py`) - Manages all components and the main event loop
-2. **Device Manager** (`app/collector/device_manager.py`) - Handles device discovery and tracking
-3. **Kasa API** (`app/collector/kasa_api.py`) - Wrapper for communicating with Kasa devices
-4. **Poller** (`app/collector/poller.py`) - Periodic data collection with two intervals:
+1. **Device Manager** (`app/collector/device_manager.py`) - Handles device discovery and tracking
+1. **Kasa API** (`app/collector/kasa_api.py`) - Wrapper for communicating with Kasa devices
+1. **Poller** (`app/collector/poller.py`) - Periodic data collection with two intervals:
    - Energy meter data (15 seconds)
    - System information (60 seconds)
-5. **InfluxDB Storage** (`app/storage/influxdb.py`) - Persists time-series data
-6. **Configuration** (`app/core/config.py`) - Environment-based configuration management
-7. **Health Check** (`app/health/check.py`) - Docker healthcheck entrypoint (`python -m app.health.check`)
+1. **InfluxDB Storage** (`app/storage/influxdb.py`) - Persists time-series data
+1. **Configuration** (`app/core/config.py`) - Environment-based configuration management
+1. **Health Check** (`app/health/check.py`) - Docker healthcheck entrypoint (`python -m app.health.check`)
 
 ## Key Configuration
 
@@ -102,37 +98,29 @@ All configuration is done through environment variables. Key settings include:
 - The application requires host networking for device discovery
 - Data is stored both in InfluxDB and optionally as `.jsonl` files in `/app/output` (bind-mounted)
 - Docker health check included for container orchestration (no web server required)
-- Tests: pytest suite under `tests/`; `make test` runs it in a lean image built from
-  `poetry.lock` (`Dockerfile.test`) with the source over-mounted — never `FROM :dev`
+- Tests: pytest suite under `tests/`; `make test` runs it in a lean image built from `poetry.lock` (`Dockerfile.test`) with the source over-mounted — never `FROM :dev`
 - Multi-platform builds support amd64 and arm64 architectures (`make release`)
 - Grafana dashboards are pre-configured in the `/grafana` directory
 - Comprehensive resource cleanup and timeout management for long-running deployments
-- The runtime image installs `tzdata` + `tzdata-legacy` — python-kasa resolves each
-  device's timezone via `zoneinfo`, and TP-Link's timezone index uses legacy POSIX
-  names (e.g. `PST8PDT`, `CST6CDT`) that would otherwise crash `update()`
+- The runtime image installs `tzdata` + `tzdata-legacy` — python-kasa resolves each device's timezone via `zoneinfo`, and TP-Link's timezone index uses legacy POSIX names (e.g. `PST8PDT`, `CST6CDT`) that would otherwise crash `update()`
 
 ### Four stacks (all `.yml`, short-form volumes), by device source + observability
-- **collector-only** — `compose.yml` (+ `compose.prod.yml`): just the collector →
-  YOUR external InfluxDB/Grafana. The production plug-in. `make up`/`down`, `make prod-*`.
-- **dev** — `compose.dev.yml`: your REAL devices (host networking, broadcast discovery)
-  + bundled InfluxDB + Grafana. The daily local driver. `make dev-up`/`dev-down`.
-- **demo** — `compose.demo.yml`: FAKE devices (the harness emulators) + bundled InfluxDB
-  + Grafana. Watch it work with no hardware. `make demo-up`/`demo-down`.
-- **test** — `compose.e2e.yml`: all fake device kinds + ephemeral InfluxDB, bridge
-  network, no published ports. `make test-e2e` (pass/fail). See `docs/TESTING.md`.
 
-Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the
-dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth.
-`.env.demo` holds the bundled-stack values (used by dev + demo). `make build-local` builds
-the runtime image from source; `up`/`dev-up`/`demo-up` build locally (no registry needed).
-The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style
-strips (per-outlet emeter) via `KASA_FAKE_KIND`.
+- **collector-only** — `compose.yml` (+ `compose.prod.yml`): just the collector → YOUR external InfluxDB/Grafana. The production plug-in. `make up`/`down`, `make prod-*`.
+- **dev** — `compose.dev.yml`: your REAL devices (host networking, broadcast discovery)
+  - bundled InfluxDB + Grafana. The daily local driver. `make dev-up`/`dev-down`.
+- **demo** — `compose.demo.yml`: FAKE devices (the harness emulators) + bundled InfluxDB
+  - Grafana. Watch it work with no hardware. `make demo-up`/`demo-down`.
+- **test** — `compose.e2e.yml`: all fake device kinds + ephemeral InfluxDB, bridge network, no published ports. `make test-e2e` (pass/fail). See `docs/TESTING.md`.
+
+Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. `.env.demo` holds the bundled-stack values (used by dev + demo). `make build-local` builds the runtime image from source; `up`/`dev-up`/`demo-up` build locally (no registry needed). The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 
 ## Naming Convention
 
 **IMPORTANT**: This project uses a split naming convention that follows industry standards:
 
 ### External/Infrastructure Names (use hyphens: `kasa-collector`)
+
 - Docker image names: `ghcr.io/luxardolabs/kasa-collector` (public GHCR) and a private registry (host configured in the untracked `Makefile.local`)
 - Container names: `kasa-collector`
 - Git repository: `kasa-collector`
@@ -141,8 +129,8 @@ strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 - InfluxDB bucket names
 
 ### Internal/Python Names (use underscores: `kasa_collector`)
-- Python package: `app/` at the repo root (fleet layout standard — deployed apps use
-  `app/`, not `src/`). Subpackages: `app/core`, `app/collector`, `app/storage`, `app/health`.
+
+- Python package: `app/` at the repo root (fleet layout standard — deployed apps use `app/`, not `src/`). Subpackages: `app/core`, `app/collector`, `app/storage`, `app/health`.
 - Import statements are `app.`-prefixed: `from app.collector.kasa_api import KasaAPI`
 - Entrypoint: `python -m app.main`; healthcheck: `python -m app.health.check`
 - Container working directory: `/app`
@@ -150,6 +138,7 @@ strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 - Environment variable prefixes: `KASA_COLLECTOR_*`
 
 ### Why This Split?
+
 - **Hyphens** are standard for Docker, Kubernetes, URLs, and external systems
 - **Underscores** are required for Python imports and module names
 - This follows Python PEP8 and industry best practices
@@ -157,6 +146,7 @@ strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 ## Recent Changes (2025.7.0)
 
 ### Fixed Issues
+
 - ✅ InfluxDB connection leaks - proper cleanup on shutdown
 - ✅ Transport connection leaks - comprehensive cleanup with timeout
 - ✅ Blocking DNS operations - replaced with async operations
@@ -166,6 +156,7 @@ strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 - ✅ Type safety issues - all code passes mypy and pyright strict checking
 
 ### New Features
+
 - 🚀 Docker health check without web server
 - 🚀 DNS caching with configurable TTL
 - 🚀 6 configurable operational timeouts
@@ -177,9 +168,9 @@ strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 ## Code Quality Standards
 
 The canonical ruff (lint + format) and mypy config is owned by **luxlint** (`.luxlint.toml`
-+ `make lint`), not kept in this repo — a local `[tool.ruff]`/`[tool.mypy]` is exactly the
-drift luxlint's `no_local_ruff_config` / `no_local_mypy_config` checks flag. Emit the canonical
-config for your editor with `--emit-config ruff > .ruff.local.toml` (gitignored):
+
+- `make lint`), not kept in this repo — a local `[tool.ruff]`/`[tool.mypy]` is exactly the drift luxlint's `no_local_ruff_config` / `no_local_mypy_config` checks flag. Emit the canonical config for your editor with `--emit-config ruff > .ruff.local.toml` (gitignored):
+
 ```bash
 make lint    # luxlint (canonical ruff, mount-only) + mypy tail (one recipe)
 make arch    # architecture conformance via luxarch (pinned container, reads .luxarch.toml)
@@ -187,12 +178,7 @@ make test    # pytest
 make check   # lint + arch + audit + test + gitleaks
 ```
 
-Secret scanning is fleet-owned too: there is no local `.gitleaks.toml` (luxlint's
-`secret.no_local_gitleaks_config` flags one). `make gitleaks` emits the canonical config
-(gitleaks defaults + the org denylist) from the luxlint image at scan time and runs it over
-full history; `make gitleaks-staged` scans staged changes (the `make hooks` pre-commit hook).
-A GitHub Action (`.github/workflows/gitleaks.yml`) runs the default ruleset server-side on
-the public mirror as a backstop.
+Secret scanning is fleet-owned too: there is no local `.gitleaks.toml` (luxlint's `secret.no_local_gitleaks_config` flags one). `make gitleaks` emits the canonical config (gitleaks defaults + the org denylist) from the luxlint image at scan time and runs it over full history; `make gitleaks-staged` scans staged changes. The committed `hooks/` (pre-commit → `gitleaks-staged`, pre-push → `gitleaks`) fire the scan on every commit/push once wired with `make hooks` (`core.hooksPath hooks`) — enforced by luxlint's `secret.githooks_wired`. There is deliberately **no** public CI: `make check` is the sole gate (luxarch's `repo.no_public_ci` — a public GitHub Actions workflow would expose its YAML + logs).
 
 ## Key Files to Know
 

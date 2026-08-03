@@ -2,21 +2,19 @@
 
 This guide covers deployment scenarios for the Kasa Collector application.
 
-Kasa Collector is maintained by **Luxardo Labs**. Images are published to GitHub Container
-Registry as `ghcr.io/luxardolabs/kasa-collector`. Images are multi-arch
-(amd64 + arm64).
+Kasa Collector is maintained by **Luxardo Labs**. Images are published to GitHub Container Registry as `ghcr.io/luxardolabs/kasa-collector`. Images are multi-arch (amd64 + arm64).
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-2. [Build & Release Model](#build--release-model)
-3. [Docker Deployment](#docker-deployment)
-4. [Docker Compose Deployment](#docker-compose-deployment)
-5. [Remote Production Deploy (Makefile)](#remote-production-deploy-makefile)
-6. [Kubernetes Deployment](#kubernetes-deployment)
-7. [Docker Swarm Deployment](#docker-swarm-deployment)
-8. [Monitoring and Maintenance](#monitoring-and-maintenance)
-9. [Troubleshooting](#troubleshooting)
+1. [Build & Release Model](#build--release-model)
+1. [Docker Deployment](#docker-deployment)
+1. [Docker Compose Deployment](#docker-compose-deployment)
+1. [Remote Production Deploy (Makefile)](#remote-production-deploy-makefile)
+1. [Kubernetes Deployment](#kubernetes-deployment)
+1. [Docker Swarm Deployment](#docker-swarm-deployment)
+1. [Monitoring and Maintenance](#monitoring-and-maintenance)
+1. [Troubleshooting](#troubleshooting)
 
 ## Prerequisites
 
@@ -24,31 +22,26 @@ Registry as `ghcr.io/luxardolabs/kasa-collector`. Images are multi-arch
 
 - **Host Networking**: Required for device discovery (UDP broadcast)
 - **Firewall**: Allow UDP port 9999 for Kasa device discovery
-- **Same Network**: The collector must be on the same L2 network as the Kasa devices
-  (for auto-discovery). Cross-subnet devices can be reached explicitly via
-  `KASA_COLLECTOR_DEVICE_HOSTS`.
+- **Same Network**: The collector must be on the same L2 network as the Kasa devices (for auto-discovery). Cross-subnet devices can be reached explicitly via `KASA_COLLECTOR_DEVICE_HOSTS`.
 
 ### InfluxDB Setup
 
 1. Install **InfluxDB 2.x**
-2. Create an organization and bucket
-3. Generate an API token with write permissions
-4. Note the URL, org, bucket, and token
+1. Create an organization and bucket
+1. Generate an API token with write permissions
+1. Note the URL, org, bucket, and token
 
 ### TP-Link Account (Optional)
 
 For newer Kasa devices requiring cloud auth (KLAP, e.g. EP25 hardware 2.6+):
 
 1. Create a TP-Link Kasa account
-2. Ensure devices are linked to your account
-3. Have username and password ready
+1. Ensure devices are linked to your account
+1. Have username and password ready
 
 ### Configuration & Secrets
 
-Configuration is supplied via environment variables (see [`.env.example`](../.env.example)
-for the full annotated template). Real values live in **gitignored** `.env.dev` /
-`.env.prod` files — only `.env.example` and the demo values in `.env.demo` are committed.
-Copy the template and fill it in:
+Configuration is supplied via environment variables (see [`.env.example`](../.env.example) for the full annotated template). Real values live in **gitignored** `.env.dev` / `.env.prod` files — only `.env.example` and the demo values in `.env.demo` are committed. Copy the template and fill it in:
 
 ```bash
 cp .env.example .env.prod   # edit with your real values
@@ -56,13 +49,9 @@ cp .env.example .env.prod   # edit with your real values
 
 ## Build & Release Model
 
-The build is **Makefile-driven** and the `VERSION` file at the repo root is the source of
-truth for the version. Dependencies are managed with **Poetry** (`pyproject.toml` +
-`poetry.lock`), resolved and installed inside Docker — no host Python or Poetry needed.
+The build is **Makefile-driven** and the `VERSION` file at the repo root is the source of truth for the version. Dependencies are managed with **Poetry** (`pyproject.toml` + `poetry.lock`), resolved and installed inside Docker — no host Python or Poetry needed.
 
-The local run stacks (`up` / `dev-up` / `demo-up`) build the collector image **locally**
-from current source — no registry or push needed. The `release*` targets build and push
-multi-arch images that the prod stack and remote deploys pull.
+The local run stacks (`up` / `dev-up` / `demo-up`) build the collector image **locally** from current source — no registry or push needed. The `release*` targets build and push multi-arch images that the prod stack and remote deploys pull.
 
 ```bash
 make help              # list all targets
@@ -72,22 +61,19 @@ make release           # multi-arch :VERSION + :latest → private registry
 make release-public    # multi-arch :VERSION + :latest → GHCR (public OSS image)
 ```
 
-Kasa Collector runs as one of four stacks, all of which build the image locally and can
-be torn up/down:
+Kasa Collector runs as one of four stacks, all of which build the image locally and can be torn up/down:
 
-| File | Stack | Purpose | Command | Env file |
-|------|-------|---------|---------|----------|
-| `compose.yml` | collector-only | Just the collector against YOUR external InfluxDB/Grafana | `make up` | `.env.dev` |
-| `compose.prod.yml` | collector-only (prod) | Same, prod tuning; also remote deploy | `make prod-*` | `.env.prod` |
-| `compose.dev.yml` | dev | Your REAL devices (host networking) + bundled InfluxDB + Grafana | `make dev-up` | `.env.demo` |
-| `compose.demo.yml` | demo | FAKE emulated devices + bundled InfluxDB + Grafana (no hardware) | `make demo-up` | `.env.demo` |
-| `compose.e2e.yml` | test | Hardware-free end-to-end test (fake devices + ephemeral InfluxDB) | `make test-e2e` | — |
+| File               | Stack                 | Purpose                                                           | Command         | Env file    |
+| ------------------ | --------------------- | ----------------------------------------------------------------- | --------------- | ----------- |
+| `compose.yml`      | collector-only        | Just the collector against YOUR external InfluxDB/Grafana         | `make up`       | `.env.dev`  |
+| `compose.prod.yml` | collector-only (prod) | Same, prod tuning; also remote deploy                             | `make prod-*`   | `.env.prod` |
+| `compose.dev.yml`  | dev                   | Your REAL devices (host networking) + bundled InfluxDB + Grafana  | `make dev-up`   | `.env.demo` |
+| `compose.demo.yml` | demo                  | FAKE emulated devices + bundled InfluxDB + Grafana (no hardware)  | `make demo-up`  | `.env.demo` |
+| `compose.e2e.yml`  | test                  | Hardware-free end-to-end test (fake devices + ephemeral InfluxDB) | `make test-e2e` | —           |
 
 ## Docker Deployment
 
-The image reads all configuration from environment variables. The simplest approach is to
-point it at an env file, but discrete `-e` flags work too. The container's health check
-(`python3 -m app.health.check`) is baked into the image via `HEALTHCHECK`.
+The image reads all configuration from environment variables. The simplest approach is to point it at an env file, but discrete `-e` flags work too. The container's health check (`python3 -m app.health.check`) is baked into the image via `HEALTHCHECK`.
 
 ### Quick Start (env file)
 
@@ -157,8 +143,7 @@ docker exec kasa-collector python3 -m app.health.check
 
 ## Docker Compose Deployment
 
-The repo ships ready-to-use compose files driven by the Makefile. The recommended path is
-to use them directly.
+The repo ships ready-to-use compose files driven by the Makefile. The recommended path is to use them directly.
 
 ### Using the shipped stacks
 
@@ -179,9 +164,7 @@ make prod-logs
 make prod-down
 ```
 
-`compose.prod.yml` is intentionally minimal — it pulls the image, uses host networking,
-loads `.env.prod`, and bind-mounts the output directory. The Dockerfile ships a
-`HEALTHCHECK`, so no compose-level health check is needed:
+`compose.prod.yml` is intentionally minimal — it pulls the image, uses host networking, loads `.env.prod`, and bind-mounts the output directory. The Dockerfile ships a `HEALTHCHECK`, so no compose-level health check is needed:
 
 ```yaml
 name: kasa-collector
@@ -225,8 +208,7 @@ services:
 
 ### All-in-one demo stack (no hardware)
 
-To evaluate the full pipeline including InfluxDB 2.x and an auto-provisioned Grafana with
-zero hardware, the demo stack drives the collector with **fake** emulated Kasa devices:
+To evaluate the full pipeline including InfluxDB 2.x and an auto-provisioned Grafana with zero hardware, the demo stack drives the collector with **fake** emulated Kasa devices:
 
 ```bash
 make demo-up     # fake devices + InfluxDB + Grafana; Grafana at http://localhost:3000 (admin/admin)
@@ -234,14 +216,11 @@ make demo-logs
 make demo-down   # stop (keep data)   |   make demo-clean  (stop + drop volumes)
 ```
 
-Ports 3000 (Grafana) and 8086 (InfluxDB) can be overridden via `GRAFANA_PORT` /
-`INFLUX_PORT` in `.env.demo`. To run the same bundled InfluxDB + Grafana against your
-**real** Kasa devices instead of fakes, use `make dev-up`.
+Ports 3000 (Grafana) and 8086 (InfluxDB) can be overridden via `GRAFANA_PORT` / `INFLUX_PORT` in `.env.demo`. To run the same bundled InfluxDB + Grafana against your **real** Kasa devices instead of fakes, use `make dev-up`.
 
 ## Remote Production Deploy (Makefile)
 
-The collector runs on a host with LAN access to the Kasa devices. The Makefile can deploy
-to a remote node over SSH. Set `PROD_NODE` explicitly (there is no default).
+The collector runs on a host with LAN access to the Kasa devices. The Makefile can deploy to a remote node over SSH. Set `PROD_NODE` explicitly (there is no default).
 
 ```bash
 # One-time: create the output data dir on the node (owned by appuser, uid 1000)
@@ -260,8 +239,7 @@ make prod-health       PROD_NODE=collector01.example.com   # runs the in-contain
 make prod-rollback     PROD_NODE=collector01.example.com   # list cached image tags for rollback
 ```
 
-`PROD_USER` (default `root`) and `PROD_DIR` (default `/opt/kasa-collector`) can be
-overridden on the command line if needed.
+`PROD_USER` (default `root`) and `PROD_DIR` (default `/opt/kasa-collector`) can be overridden on the command line if needed.
 
 ## Kubernetes Deployment
 
@@ -530,9 +508,7 @@ docker inspect kasa-collector | grep -i networkmode   # should show "host"
 
 ### `ZoneInfoNotFoundError` on device update
 
-The runtime image installs `tzdata` + `tzdata-legacy` so `python-kasa` can resolve legacy
-POSIX timezone names (e.g. `PST8PDT`) used by TP-Link's timezone index. If you build a
-custom image, make sure both packages are present.
+The runtime image installs `tzdata` + `tzdata-legacy` so `python-kasa` can resolve legacy POSIX timezone names (e.g. `PST8PDT`) used by TP-Link's timezone index. If you build a custom image, make sure both packages are present.
 
 ### Health Check Failures
 

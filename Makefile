@@ -35,12 +35,12 @@ PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  ?= 0.19.0
+LUXARCH_VERSION  ?= 0.21.1
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
 # same out-of-tree pattern as luxarch. Unset host → make lint/format skip gracefully.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  ?= 0.9.0
+LUXLINT_VERSION  ?= 0.10.0
 LUXLINT_IMAGE    ?= $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; pulled via LUXAUDIT_REGISTRY (Makefile.local).
@@ -326,14 +326,16 @@ lint: guard-version-check ## luxlint (ruff, mount-only) + mypy tail — ONE reci
 	  echo "lint FAILED (luxlint=$$ruff mypy=$$mypy)"; exit 1; \
 	fi
 
-format: ## Auto-fix + format with the canonical luxlint ruff config (writes back)
+format: ## Auto-fix + format code (canonical ruff) and Markdown (mdformat --wrap no), writes back
 	@set +e; \
 	if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; exit 0; \
 	fi; \
 	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --emit-config ruff > .ruff.local.toml; \
 	docker run --rm --user $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/w -w /w python:3.14-slim \
-	  sh -c 'python -m venv /tmp/v && /tmp/v/bin/pip install -q ruff && { /tmp/v/bin/ruff check --fix --config .ruff.local.toml app; /tmp/v/bin/ruff format --config .ruff.local.toml app; }'
+	  sh -c 'python -m venv /tmp/v && /tmp/v/bin/pip install -q ruff && { /tmp/v/bin/ruff check --fix --config .ruff.local.toml app; /tmp/v/bin/ruff format --config .ruff.local.toml app; }'; \
+	docker run --rm --user $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/repo -w /repo --entrypoint mdformat \
+	  $(LUXLINT_IMAGE) --wrap no $$(git ls-files '*.md')
 
 # Rebuild the lean test image ONLY when deps change — the stamp is keyed on the lock +
 # Dockerfile.test (per FLEET-BUILD-DEPLOY-STANDARD: deps from the lock, rebuilt on lock
@@ -348,6 +350,7 @@ test: .test-image.stamp ## Run the pytest suite via the canonical luxlint pytest
 	if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping unit tests; use 'make test-e2e'"; exit 0; \
 	fi; \
+	docker image inspect $(TEST_IMAGE) >/dev/null 2>&1 || { echo "test image absent (pruned) — rebuilding"; rm -f .test-image.stamp; $(MAKE) --no-print-directory .test-image.stamp || exit 1; }; \
 	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --emit-config pytest > .luxlint.pytest.ini; \
 	docker run --rm -v $(PWD):/w -w /w $(TEST_IMAGE) \
 	  pytest -c .luxlint.pytest.ini -p no:cacheprovider; test=$$?; \
@@ -372,9 +375,9 @@ test-e2e: ## Hardware-free end-to-end test: fake Kasa devices -> collector -> In
 
 check: lint arch audit test gitleaks ## Run lint + arch + audit + test + secret scan
 
-hooks: ## Install the repo git hooks (pre-commit runs gitleaks-staged)
-	git config core.hooksPath .githooks
-	@printf "✓ core.hooksPath -> .githooks (pre-commit secret scan active)\n"
+hooks: ## Install the committed git hooks (pre-commit + pre-push run the gitleaks scan)
+	git config core.hooksPath hooks
+	@printf "✓ core.hooksPath -> hooks (pre-commit + pre-push secret scan active)\n"
 
 # gitleaks uses the canonical fleet config (defaults + org denylist), EMITTED by luxlint
 # at scan time and mounted OUTSIDE the /repo scan root — never committed (a committed

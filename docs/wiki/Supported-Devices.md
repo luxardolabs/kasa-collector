@@ -12,8 +12,4 @@ For more information, refer to the [python-kasa project](https://github.com/pyth
 
 ## Testing Without Hardware
 
-A hardware-free test harness (`make test-e2e`) uses fake Kasa device emulators
-(`harness/fake_kasa.py`) to exercise the collector without any physical devices.
-The harness currently emulates IOT plugs (HS110/KP115/etc.) over the real IOT
-protocol; power strips (HS300) and SMART/KLAP devices are a possible future
-extension. See [docs/TESTING.md](../TESTING.md) for details.
+A hardware-free test harness (`make test-e2e`) uses fake Kasa device emulators (`harness/fake_kasa.py`) to exercise the collector without any physical devices. The harness currently emulates IOT plugs (HS110/KP115/etc.) over the real IOT protocol; power strips (HS300) and SMART/KLAP devices are a possible future extension. See [docs/TESTING.md](../TESTING.md) for details.

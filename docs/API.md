@@ -4,17 +4,17 @@ This document describes the internal APIs and component interfaces of the Kasa C
 
 The application is organized as an `app/` package. Key modules:
 
-| Component | Module |
-|-----------|--------|
-| Main orchestrator | `app/main.py` |
-| Configuration | `app/core/config.py` |
-| Device manager | `app/collector/device_manager.py` |
-| Kasa API wrapper | `app/collector/kasa_api.py` |
-| Poller | `app/collector/poller.py` |
-| DNS cache | `app/collector/dns_cache.py` |
-| Shared utilities | `app/collector/utils.py` |
-| InfluxDB storage | `app/storage/influxdb.py` |
-| Health check | `app/health/check.py` |
+| Component         | Module                            |
+| ----------------- | --------------------------------- |
+| Main orchestrator | `app/main.py`                     |
+| Configuration     | `app/core/config.py`              |
+| Device manager    | `app/collector/device_manager.py` |
+| Kasa API wrapper  | `app/collector/kasa_api.py`       |
+| Poller            | `app/collector/poller.py`         |
+| DNS cache         | `app/collector/dns_cache.py`      |
+| Shared utilities  | `app/collector/utils.py`          |
+| InfluxDB storage  | `app/storage/influxdb.py`         |
+| Health check      | `app/health/check.py`             |
 
 Entrypoint: `python -m app.main`. Import example:
 
@@ -26,13 +26,13 @@ from app.core.config import Config
 ## Table of Contents
 
 1. [Core Components](#core-components)
-2. [Configuration API](#configuration-api)
-3. [Device Manager API](#device-manager-api)
-4. [Kasa API Wrapper](#kasa-api-wrapper)
-5. [Poller API](#poller-api)
-6. [Storage API](#storage-api)
-7. [Utility Functions](#utility-functions)
-8. [Health Check API](#health-check-api)
+1. [Configuration API](#configuration-api)
+1. [Device Manager API](#device-manager-api)
+1. [Kasa API Wrapper](#kasa-api-wrapper)
+1. [Poller API](#poller-api)
+1. [Storage API](#storage-api)
+1. [Utility Functions](#utility-functions)
+1. [Health Check API](#health-check-api)
 
 ## Core Components
 
@@ -56,6 +56,7 @@ class KasaCollector:
 ```
 
 #### Key Attributes
+
 - `device_manager`: DeviceManager instance for device lifecycle
 - `poller`: Poller instance for data collection
 - `tasks`: Set of asyncio tasks for proper cleanup
@@ -117,6 +118,7 @@ class DeviceManager:
 ```
 
 #### Device Dictionaries
+
 - `devices`: All devices (manual + discovered)
 - `emeter_devices`: Only devices with energy monitoring
 - `polling_devices`: Devices actively being polled
@@ -125,8 +127,7 @@ class DeviceManager:
 
 ### KasaAPI
 
-Static wrapper around python-kasa library with enhanced error handling
-(`app/collector/kasa_api.py`).
+Static wrapper around python-kasa library with enhanced error handling (`app/collector/kasa_api.py`).
 
 ```python
 class KasaAPI:
@@ -225,6 +226,7 @@ class InfluxDBStorage:
 #### Data Format
 
 Emeter data structure:
+
 ```python
 {
     "voltage_mv": int,      # Voltage in millivolts
@@ -255,8 +257,7 @@ async def get_hostname_cached(ip: str) -> str:
 
 ### Retry Decorator
 
-Defined in `app/collector/utils.py`, alongside `get_device_name`, `format_duration`,
-`DeviceContext`, and `format_device_info`.
+Defined in `app/collector/utils.py`, alongside `get_device_name`, `format_duration`, `DeviceContext`, and `format_device_info`.
 
 ```python
 @async_retry(
@@ -291,8 +292,7 @@ def format_duration(seconds: float) -> str:
 
 ### Health Check Script
 
-Standalone script for Docker health monitoring (`app/health/check.py`), invoked as
-`python -m app.health.check`.
+Standalone script for Docker health monitoring (`app/health/check.py`), invoked as `python -m app.health.check`.
 
 ```python
 def check_recent_data_files() -> tuple[bool, str]:
@@ -306,10 +306,12 @@ def main() -> None:
 ```
 
 #### Exit Codes
+
 - `0`: Healthy - Application running normally
 - `1`: Unhealthy - Check failed
 
 #### Configuration
+
 - `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE`: Maximum age for data files (default: 120s)
 - `KASA_COLLECTOR_WRITE_TO_FILE`: Must be "True" for file-based health checks
 
@@ -320,13 +322,14 @@ def main() -> None:
 The application handles these specific exception types:
 
 1. **Network Errors**: `ConnectionError`, `TimeoutError`, `OSError`
-2. **Data Errors**: `AttributeError`, `KeyError`, `ValueError`
-3. **Async Errors**: `asyncio.CancelledError`, `asyncio.TimeoutError`
-4. **Custom Errors**: `DeviceOperationError` (exception group)
+1. **Data Errors**: `AttributeError`, `KeyError`, `ValueError`
+1. **Async Errors**: `asyncio.CancelledError`, `asyncio.TimeoutError`
+1. **Custom Errors**: `DeviceOperationError` (exception group)
 
 ### Retry Logic
 
 All device operations use exponential backoff with:
+
 - Base delay: 1 second (configurable)
 - Maximum retries: 5 (configurable)
 - Maximum delay: 60 seconds (configurable)
@@ -377,11 +380,11 @@ finally:
 ## Performance Considerations
 
 1. **DNS Caching**: Reduces repeated lookups with 5-minute TTL
-2. **Batch Writes**: InfluxDB writes are batched for efficiency
-3. **Connection Pooling**: Reuses device connections where possible
-4. **Concurrent Operations**: Uses TaskGroup for parallel device operations
-5. **Timeout Protection**: All operations have configurable timeouts
+1. **Batch Writes**: InfluxDB writes are batched for efficiency
+1. **Connection Pooling**: Reuses device connections where possible
+1. **Concurrent Operations**: Uses TaskGroup for parallel device operations
+1. **Timeout Protection**: All operations have configurable timeouts
 
----
+______________________________________________________________________
 
 *Last updated: 2026-07-11*

@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# Fleet secret-scan pre-commit hook. Runs the canonical gitleaks config (emitted by
-# luxlint) over the STAGED changes, so a secret or org-denylist string can't be
-# committed. Enable once with `make hooks` (sets core.hooksPath -> .githooks).
-#
-# If LUXLINT_REGISTRY is unset (a clone without Makefile.local), `make gitleaks-staged`
-# skips gracefully — the server-side GitHub Action is the backstop.
-set -euo pipefail
-exec make gitleaks-staged

@@ -55,6 +55,7 @@ services:
 ```
 
 Then deploy with:
+
 ```bash
 docker compose up -d
 ```

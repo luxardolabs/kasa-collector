@@ -59,6 +59,6 @@ This project is licensed under the AGPL-3.0-only license - see the [LICENSE](LIC
 
 Questions or issues? Please [open an issue](https://github.com/luxardolabs/kasa-collector/issues) on the [project repository](https://github.com/luxardolabs/kasa-collector).
 
----
+______________________________________________________________________
 
 **Note**: This project is not affiliated with TP-Link or Kasa. It's an independent tool for monitoring energy consumption of Kasa smart devices.

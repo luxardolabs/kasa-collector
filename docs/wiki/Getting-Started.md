@@ -43,10 +43,12 @@ To exercise the whole pipeline as a pass/fail check with no hardware and no publ
 ## Prerequisites
 
 You will need:
+
 - [Docker](https://docs.docker.com/install)
 - [Docker Compose](https://docs.docker.com/compose/install)
 
 For the bring-your-own path you also need:
+
 - [InfluxDB 2.x](https://docs.influxdata.com/influxdb/v2/)
 - [Grafana](https://grafana.com/oss/grafana/)
 
