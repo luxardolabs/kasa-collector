@@ -7,7 +7,7 @@
 # =============================================================================
 
 VERSION := $(shell cat VERSION 2>/dev/null || git -c safe.directory=$(CURDIR) describe --tags --always 2>/dev/null || echo "0.0.0-dev")
-TIMESTAMP := $(shell date +%Y%m%d-%H%M%S)
+TIMESTAMP := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 COMMIT := $(shell git -c safe.directory=$(CURDIR) rev-parse --short HEAD 2>/dev/null || echo 'local')
 
 # The private-registry host is kept OUT of this public tree — set it in an untracked
@@ -166,9 +166,9 @@ release-public: ## Promote the released :$(VERSION) + :latest (multi-arch) to GH
 	@echo "Promoted $(VERSION_IMAGE) -> $(PUBLIC_IMAGE):$(VERSION) + :latest (same digest)"
 
 docker-inspect: ## Inspect release image metadata
-	@docker inspect $(IMAGE) --format='Version: {{index .Config.Labels "version"}}' 2>/dev/null || echo "Image not built"
-	@docker inspect $(IMAGE) --format='Built:   {{index .Config.Labels "build_timestamp"}}' 2>/dev/null || true
-	@docker inspect $(IMAGE) --format='Commit:  {{index .Config.Labels "commit"}}' 2>/dev/null || true
+	@docker inspect $(IMAGE) --format='Version: {{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null || echo "Image not built"
+	@docker inspect $(IMAGE) --format='Built:   {{index .Config.Labels "org.opencontainers.image.created"}}' 2>/dev/null || true
+	@docker inspect $(IMAGE) --format='Commit:  {{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true
 
 docker-clean: ## Remove local image tags (:dev, :$(VERSION), :latest)
 	docker rmi $(DEV_IMAGE) $(VERSION_IMAGE) $(IMAGE) 2>/dev/null || true
