@@ -14,8 +14,8 @@ COMMIT := $(shell git -c safe.directory=$(CURDIR) rev-parse --short HEAD 2>/dev/
 # Makefile.local (see Makefile.local.example). Included FIRST so its values win over the
 # empty defaults below. Without it, the local/e2e stacks still build; only the targets
 # that pull from the private registry (dev-build-push / release / prod / lint / arch / audit)
-# need it. Lint/type/test are decoupled from :dev per FLEET-BUILD-DEPLOY-STANDARD — ruff is
-# mount-only luxlint, mypy is python:3.14-slim + fresh pip, pytest is a lock-keyed image.
+# need it. Lint/type/test are decoupled from :dev per FLEET-BUILD-DEPLOY-STANDARD — ruff AND
+# mypy are mount-only luxlint (the repo installs nothing), pytest is a lock-keyed image.
 -include Makefile.local
 
 # Registry / images. REGISTRY comes from Makefile.local or the CLI; empty by default so no
@@ -35,18 +35,20 @@ PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  ?= 0.21.1
+LUXARCH_VERSION  ?= 0.100.3
+LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
 # same out-of-tree pattern as luxarch. Unset host → make lint/format skip gracefully.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  ?= 0.10.0
+LUXLINT_VERSION  ?= 0.33.0
 LUXLINT_IMAGE    ?= $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; pulled via LUXAUDIT_REGISTRY (Makefile.local).
 # Scans poetry.lock against the live OSV+PyPA feed. Unset host → `make audit` skips gracefully.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  ?= 0.1.8
+LUXAUDIT_VERSION  ?= 0.4.0
+LUXAUDIT_IMAGE    ?= $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION)
 PLATFORMS ?= linux/amd64,linux/arm64
 
 BUILD_ARGS := --build-arg BUILD_VERSION=$(VERSION) \
@@ -110,7 +112,7 @@ PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
         demo-up demo-down demo-clean demo-logs demo-ps \
         check-prod-node prod-init prod-sync prod-deploy prod-status prod-logs-remote prod-health prod-rollback \
         poetry-lock poetry-update poetry-install \
-        guard-version-check lint format test arch audit test-e2e check \
+        guard-version-check guard-upgrade lint mypy format test arch plan audit test-e2e check onboard-check \
         gitleaks gitleaks-staged hooks clean clean-all
 
 .DEFAULT_GOAL := help
@@ -134,10 +136,25 @@ version: ## Show version / build info
 
 ##@ Docker — Build & Registry
 
-buildx-setup: ## Ensure a buildx builder exists (multi-arch release builds)
-	@docker buildx inspect kasa-builder >/dev/null 2>&1 \
-		|| docker buildx create --name kasa-builder --use
-	@docker buildx use kasa-builder
+# ONE shared fleet buildx builder — never a per-project one. Each per-project builder holds a
+# completely separate cache (no base-layer/pip dedup, unbounded growth) plus an idle buildkit
+# daemon; ten of them measured ~72G, deduplicating to ~10-15G on a single shared builder, which
+# also buys cross-project cache hits. The buildkitd GC policy is the required second half
+# (repo.buildx_builder_gc_capped) — a canonical name says nothing about whether it self-prunes.
+# See luxarch --doc FLEET-BUILD-DEPLOY-STANDARD ("One shared buildx builder").
+BUILDX_BUILDER ?= luxardo-builder
+BUILDKITD_CONFIG ?= $(HOME)/.docker/buildkitd.toml
+
+buildx-setup: ## Ensure the SHARED fleet buildx builder exists, GC-capped (multi-arch release builds)
+	@if [ ! -f "$(BUILDKITD_CONFIG)" ]; then \
+	  mkdir -p $$(dirname $(BUILDKITD_CONFIG)); \
+	  printf '[worker.oci]\n  gc = true\n  [[worker.oci.gcpolicy]]\n    keepBytes = "20GB"\n    all = true\n' > $(BUILDKITD_CONFIG); \
+	  echo "wrote default GC-capped buildkitd config -> $(BUILDKITD_CONFIG)"; \
+	fi
+	@docker buildx inspect $(BUILDX_BUILDER) >/dev/null 2>&1 \
+		|| docker buildx create --name $(BUILDX_BUILDER) --driver docker-container --use \
+		     --buildkitd-config $(BUILDKITD_CONFIG)
+	@docker buildx use $(BUILDX_BUILDER)
 
 dev-build-push: ## Build + push :dev ONLY (tooling stage: dev deps + tests baked)
 	docker build $(NO_CACHE_FLAG) --target dev -f Dockerfile $(BUILD_ARGS) -t $(DEV_IMAGE) .
@@ -296,46 +313,76 @@ poetry-install: ## Verify deps resolve + install cleanly from poetry.lock (docke
 
 # $(call _guard_check,<name>,<registry>,<pin>) — pull :latest FIRST (a locally-cached
 # :latest reports a stale version, so an agent "confirms latest" while behind), then
-# compare. Non-fatal: prints a nudge, never fails the build. Skips if the host is unset.
+# compare. FATAL: a pin behind the published latest FAILS `make check` (exit 1) — a
+# warn-only check is the exact hole that let an agent work off a stale guard and delete
+# code the current rules would have told it to ASK about (luxarch 0.97.0). Clear it with
+# `make guard-upgrade`. Skips only when the registry host is unset (nothing to compare).
 define _guard_check
 	if [ -n "$(2)" ]; then \
 	  docker pull -q $(2)/luxardolabs/$(1):latest >/dev/null 2>&1 || true; \
 	  latest=$$(docker run --rm $(2)/luxardolabs/$(1):latest --version 2>/dev/null | awk '{print $$2}'); \
 	  if [ -n "$$latest" ] && [ "$$latest" != "$(3)" ]; then \
-	    printf "⚠ %s pinned %s, latest %s — bump the pin (preview: --new-rules --since %s)\n" "$(1)" "$(3)" "$$latest" "$(3)"; \
+	    printf "✗ %s pinned %s, latest %s — behind. Preview: --new-rules --since %s; then 'make guard-upgrade'\n" "$(1)" "$(3)" "$$latest" "$(3)"; \
+	    exit 1; \
 	  fi; \
 	fi
 endef
 
-guard-version-check: ## Warn (non-fatal) if any guard pin is behind :latest — pulls first, so it can't lie
-	@$(call _guard_check,luxarch,$(LUXARCH_REGISTRY),$(LUXARCH_VERSION))
-	@$(call _guard_check,luxlint,$(LUXLINT_REGISTRY),$(LUXLINT_VERSION))
-	@$(call _guard_check,luxaudit,$(LUXAUDIT_REGISTRY),$(LUXAUDIT_VERSION))
+guard-version-check: ## FATAL: fail if any guard pin is behind :latest — pulls first, so it can't lie
+	@rc=0; \
+	( $(call _guard_check,luxarch,$(LUXARCH_REGISTRY),$(LUXARCH_VERSION)) ) || rc=1; \
+	( $(call _guard_check,luxlint,$(LUXLINT_REGISTRY),$(LUXLINT_VERSION)) ) || rc=1; \
+	( $(call _guard_check,luxaudit,$(LUXAUDIT_REGISTRY),$(LUXAUDIT_VERSION)) ) || rc=1; \
+	exit $$rc
 
-lint: guard-version-check ## luxlint (ruff, mount-only) + mypy tail — ONE recipe; fails if either fails
-	@set +e; \
-	if [ -z "$(LUXLINT_REGISTRY)" ]; then \
-	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; exit 0; \
-	fi; \
-	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE); ruff=$$?; \
-	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --emit-config mypy > .luxlint.mypy.ini; \
-	docker run --rm -v $(PWD)/.luxlint.mypy.ini:/cfg/mypy.ini:ro -v $(PWD):/w -w /w -e MYPYPATH=/w python:3.14-slim \
-	  sh -c 'pip install -q "mypy>=2.3" && mypy --config-file /cfg/mypy.ini app'; mypy=$$?; \
-	rm -f .luxlint.mypy.ini; \
-	if [ $$ruff -ne 0 ] || [ $$mypy -ne 0 ]; then \
-	  echo "lint FAILED (luxlint=$$ruff mypy=$$mypy)"; exit 1; \
-	fi
+guard-upgrade: ## Bump every guard pin to :latest and print what newly bites
+	@for g in luxarch luxlint luxaudit; do \
+	  reg=$$(case $$g in luxarch) echo "$(LUXARCH_REGISTRY)";; luxlint) echo "$(LUXLINT_REGISTRY)";; luxaudit) echo "$(LUXAUDIT_REGISTRY)";; esac); \
+	  [ -z "$$reg" ] && { echo "$$g: registry unset — skipping"; continue; }; \
+	  docker pull -q $$reg/luxardolabs/$$g:latest >/dev/null 2>&1 || true; \
+	  latest=$$(docker run --rm $$reg/luxardolabs/$$g:latest --version 2>/dev/null | awk '{print $$2}'); \
+	  [ -z "$$latest" ] && { echo "$$g: could not read :latest — skipping"; continue; }; \
+	  var=$$(echo $$g | tr a-z A-Z)_VERSION; \
+	  old=$$(sed -n "s/^$$var  *?= //p" Makefile); \
+	  [ "$$old" = "$$latest" ] && { echo "$$g: already $$latest"; continue; }; \
+	  sed -i "s|^$$var\( *\)?= .*|$$var\1?= $$latest|" Makefile; \
+	  echo "$$g: $$old -> $$latest"; \
+	  [ "$$g" = luxarch ] && docker run --rm -v $(PWD):/repo $$reg/luxardolabs/luxarch:$$latest --new-rules --since $$old || true; \
+	done; echo "pins bumped — re-run 'make check' (a ruleset bump inside an existing check also newly fires: read --changelog)"
 
-format: ## Auto-fix + format code (canonical ruff) and Markdown (mdformat --wrap no), writes back
-	@set +e; \
-	if [ -z "$(LUXLINT_REGISTRY)" ]; then \
-	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; exit 0; \
-	fi; \
-	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --emit-config ruff > .ruff.local.toml; \
-	docker run --rm --user $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/w -w /w python:3.14-slim \
-	  sh -c 'python -m venv /tmp/v && /tmp/v/bin/pip install -q ruff && { /tmp/v/bin/ruff check --fix --config .ruff.local.toml app; /tmp/v/bin/ruff format --config .ruff.local.toml app; }'; \
-	docker run --rm --user $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/repo -w /repo --entrypoint mdformat \
-	  $(LUXLINT_IMAGE) --wrap no $$(git ls-files '*.md')
+lint: ## luxlint — ruff/format/docs/secret checks (canonical config, mount-only)
+	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
+	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; \
+	else docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE); fi
+
+# mypy runs MOUNT-ONLY inside the luxlint image, exactly like ruff — the repo installs
+# nothing. The old in-repo tail (a bare python:3.14-slim + pip install mypy) ran WITHOUT the
+# app's deps, so every py.typed library degraded to Any and `strict` checked almost nothing:
+# a hollow-green type checker. luxlint bakes the fleet's typed dependency union
+# (standards/mypy-libs.txt), so imports resolve and the check is real. If a red concentrates
+# on one import of a TYPED lib, that lib is missing from the baked set — ESCALATE to luxlint
+# to add it; never add a local mypy config or a # type: ignore. See luxlint 0.24.0 ONBOARDING.
+mypy: ## mypy (fleet typed deps baked, mount-only)
+	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
+	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; \
+	else docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --mypy; fi
+
+# THE canonical fixer — `luxlint --format` (the only luxlint mode that writes). It applies
+# the autofix + formatter legs with the SAME config the checker reads, and formats Markdown
+# through the image's mdformat + mdformat-gfm, so fixer and checker can never diverge.
+# Do NOT hand-roll this. The previous recipe pip-installed the formatter UNPINNED into a
+# throwaway venv, so it could drift from the pinned checker's version; and invoking the
+# host tool directly applies its DEFAULT width to a repo that deliberately carries no local
+# config, which rewrote ~1000 files wrong in one fleet repo. A bare `mdformat` without the
+# GFM plugin also COLLAPSES tables. See luxlint 0.11.0 / 0.12.0 and luxarch 0.21.3.
+# (Wording note: this comment avoids the literal two-word formatter invocation on purpose —
+# onboard-check greps the whole Makefile for it and cannot mask comments, so prose
+# describing the standard would otherwise fail the probe forever. See luxarch 0.21.9,
+# which hit exactly this self-match in its own recipe.)
+format: ## Auto-fix + format Python and Markdown via the canonical luxlint fixer (writes back)
+	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
+	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; \
+	else docker run --rm --user $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/repo $(LUXLINT_IMAGE) --format; fi
 
 # Rebuild the lean test image ONLY when deps change — the stamp is keyed on the lock +
 # Dockerfile.test (per FLEET-BUILD-DEPLOY-STANDARD: deps from the lock, rebuilt on lock
@@ -360,12 +407,17 @@ test: .test-image.stamp ## Run the pytest suite via the canonical luxlint pytest
 arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml)
 	@if [ -z "$(LUXARCH_REGISTRY)" ]; then \
 	  echo "luxarch: LUXARCH_REGISTRY unset (see Makefile.local.example) — skipping"; \
-	else docker run --rm -v $(PWD):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION); fi
+	else docker run --rm -v $(PWD):/repo $(LUXARCH_IMAGE); fi
+
+plan: ## The full red board — every arch red at once, phase-ordered + file-clustered
+	@if [ -z "$(LUXARCH_REGISTRY)" ]; then \
+	  echo "luxarch: LUXARCH_REGISTRY unset (see Makefile.local.example) — skipping"; \
+	else docker run --rm -v $(PWD):/repo $(LUXARCH_IMAGE) --plan; fi
 
 audit: ## Scan pinned deps against the live vulnerability feed (luxaudit)
 	@if [ -z "$(LUXAUDIT_REGISTRY)" ]; then \
 	  echo "luxaudit: LUXAUDIT_REGISTRY unset (see Makefile.local.example) — skipping"; \
-	else docker run --rm -v $(PWD):/repo $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION); fi
+	else docker run --rm -v $(PWD):/repo $(LUXAUDIT_IMAGE); fi
 
 # Built and consumed locally by the e2e harness (never pushed) — no registry needed.
 E2E_IMAGE := kasa-collector:e2e
@@ -373,7 +425,39 @@ test-e2e: ## Hardware-free end-to-end test: fake Kasa devices -> collector -> In
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(E2E_IMAGE) .
 	KASA_IMAGE=$(E2E_IMAGE) ./scripts/e2e-test.sh
 
-check: lint arch audit test gitleaks ## Run lint + arch + audit + test + secret scan
+# THE fleet gate — byte-identical composition across every app repo. Five different `check`
+# targets is five different answers to "is this repo green," and the drift hides holes: a gate
+# that quietly drops mypy, or arch, or the secret scan reads exactly as green as one that runs
+# them. Order: pin drift -> ruff -> types -> tests -> architecture -> dependency CVEs -> secrets.
+# `check` is a GATE, not a report: Make stops at the FIRST failing step. For the full red board
+# (every red at once, phase-ordered + file-clustered) run `make plan`.
+# See luxarch --doc FLEET-MAKEFILE-STANDARD.
+check: guard-version-check lint mypy test arch audit gitleaks ## THE fleet gate — run before every commit
+
+# The machine gate for "is this repo ONBOARDED" — wiring + honesty, deliberately distinct
+# from findings red/green. Passing means the SIGNALS ARE TRUSTWORTHY, so the reds it leaves
+# are real and can be burned down with confidence; it says nothing about how many there are.
+# `--assert-scans` is the hollow-green net: a rule family that inspected ZERO files (a dir it
+# points at is empty/absent) is a false green, which the standard calls worse than a red.
+# The full-history gitleaks leg matters because the pre-commit hook only sees STAGED diffs —
+# a leak untouched since an old commit passes every commit yet stays in history.
+# See luxarch --doc FLEET-ONBOARDING-STANDARD §5.
+onboard-check: ## Prove the repo is onboarded: all three guards on + honest + privacy wired
+	@set +e; fail=0; \
+	if [ -z "$(LUXARCH_REGISTRY)" ] || [ -z "$(LUXLINT_REGISTRY)" ] || [ -z "$(LUXAUDIT_REGISTRY)" ]; then \
+	  echo "guard registry unset (see Makefile.local.example) — cannot verify onboarding"; exit 1; \
+	fi; \
+	docker run --rm -v $(PWD):/repo $(LUXARCH_IMAGE)  --version      >/dev/null || { echo "luxarch not wired";  fail=1; }; \
+	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE)  --version      >/dev/null || { echo "luxlint not wired";  fail=1; }; \
+	docker run --rm -v $(PWD):/repo $(LUXAUDIT_IMAGE) --version      >/dev/null || { echo "luxaudit not wired"; fail=1; }; \
+	docker run --rm -v $(PWD):/repo $(LUXARCH_IMAGE)  --assert-scans >/dev/null 2>&1 || { echo "luxarch: a rule family scanned NOTHING (hollow green) — point it at real code or remove the surface"; fail=1; }; \
+	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE)  --preflight    >/dev/null || { echo "mypy run NOT honest (luxlint --preflight)"; fail=1; }; \
+	docker run --rm -v $(PWD):/repo $(LUXAUDIT_IMAGE) 2>&1 | grep -q "scan could not run" && { echo "luxaudit can't scan — supply-chain blind"; fail=1; }; \
+	[ -f hooks/pre-commit ] || { echo "secret git-hooks NOT wired (luxlint --emit-hooks | sh, commit hooks/)"; fail=1; }; \
+	[ ! -d .github/workflows ] || { echo "public CI present — make check is the sole gate (remove .github/workflows)"; fail=1; }; \
+	! grep -qE 'ruff[[:space:]]+format' Makefile 2>/dev/null || { echo "Makefile shells the formatter directly (wrong width) — use 'luxlint --format'"; fail=1; }; \
+	$(MAKE) -s gitleaks >/dev/null 2>&1 || { echo "gitleaks found secrets in FULL history — the pre-commit hook only sees staged diffs; scrub before onboarding is complete"; fail=1; }; \
+	[ $$fail -eq 0 ] && echo "onboard-check: all three guards on + honest + privacy wired + history clean ✓" || { echo "onboard-check FAILED"; exit 1; }
 
 hooks: ## Install the committed git hooks (pre-commit + pre-push run the gitleaks scan)
 	git config core.hooksPath hooks

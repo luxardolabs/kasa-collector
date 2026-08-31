@@ -1,17 +1,48 @@
-[tool.poetry]
+[project]
 name = "kasa-collector"
-version = "2025.7.0"
+dynamic = ["version"]
 description = "Data collection service for TP-Link Kasa smart plugs and power strips — discovers devices, collects energy metrics, and writes to InfluxDB."
-authors = ["Luxardo Labs"]
+authors = [{ name = "Luxardo Labs" }]
 license = "AGPL-3.0-only"
 readme = "README.md"
-packages = [{include = "app"}]
+requires-python = ">=3.14,<4.0"
+dependencies = [
+    "aiofiles>=25.1.0,<26.0.0",
+    "influxdb-client>=1.50.0,<2.0.0",
+    "python-kasa>=0.10.2,<0.11.0",
+    # --- Transitive security floors (luxaudit) ---
+    # These are pulled in by influxdb-client (async) and python-kasa, whose ranges are
+    # unbounded above — so a plain re-lock resolves straight back to the vulnerable
+    # version and "re-locked = patched" is a trap (luxaudit 0.1.10). The floor has to be
+    # declared HERE, in our own manifest, so the lock cannot pick below the fix.
+    # aiohttp: CVE-2026-69244 (OOB heap read in the C response parser while building an
+    # error message for a malformed response — we are a client, so a misbehaving device
+    # or InfluxDB reaches it), CVE-2026-69243, CVE-2026-59881. Fixed in 3.14.3.
+    "aiohttp>=3.14.3",
+    # cryptography: CVE-2026-69247 (pkcs7_decrypt_* distinguishable outcomes). Fixed in 50.0.0.
+    "cryptography>=50.0.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.14"
-aiofiles = "^25.1.0"
-influxdb-client = "^1.50.0"
-python-kasa = "^0.10.2"
+# The fleet build backend is hatchling (repo.hatchling_build_backend) and the VERSION file is
+# the ONE version literal (repo.version_single_source) — everything else derives, so the
+# pyproject/VERSION drift that had us at 2025.7.0 here while VERSION said 2026.8.0 cannot recur.
+# Poetry remains the dependency manager and poetry.lock is unaffected; both Dockerfiles run
+# `poetry install --no-root`, so the backend is never exercised at image-build time.
+[tool.hatch.version]
+path = "VERSION"
+pattern = "(?P<version>.+)"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# Poetry is the DEPENDENCY MANAGER here, not the build backend — so it runs in
+# non-package mode. Both Dockerfiles do `poetry install --no-root` (deps only; the app is
+# copied in, never wheel-installed), so Poetry never needs to build or version this project.
+# This is also what keeps repo.version_single_source honest: package mode would demand a
+# `[tool.poetry] version = "..."` literal, i.e. exactly the second version declaration that
+# drifted from VERSION in the first place. The version has one home: the VERSION file.
+[tool.poetry]
+package-mode = false
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.15.21"
@@ -21,8 +52,8 @@ pytest-asyncio = "^1.4.0"
 types-aiofiles = "^25.1.0"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 # The ruff (lint + format) and mypy configuration is owned by luxlint — the fleet
 # code-style guard — and is NOT kept here. See .luxlint.toml and `make lint`. A

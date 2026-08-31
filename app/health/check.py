@@ -25,7 +25,7 @@ Configuration:
 import asyncio
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 # Health check configuration
@@ -65,7 +65,12 @@ def check_recent_data_files() -> tuple[bool, str]:
     most_recent_file = max(emeter_files, key=lambda f: f.stat().st_mtime)
 
     # Check file age
-    file_age = datetime.now() - datetime.fromtimestamp(most_recent_file.stat().st_mtime)
+    # Both sides must be aware, and both in the same zone. Naive `fromtimestamp()` reads a
+    # stored epoch as PROCESS-local and naive `now()` is process-local too, so the freshness
+    # window was only ever correct while the container's TZ matched whatever wrote the file.
+    file_age = datetime.now(UTC) - datetime.fromtimestamp(
+        most_recent_file.stat().st_mtime, UTC
+    )
 
     if file_age > timedelta(seconds=MAX_AGE_SECONDS):
         return (

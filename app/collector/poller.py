@@ -21,7 +21,7 @@ issues or problematic devices.
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from kasa import Device
 from kasa.iot import IotStrip
@@ -107,7 +107,7 @@ class Poller:
             as an asyncio task that runs for the lifetime of the application.
         """
         while True:
-            start_time = datetime.now()
+            start_time = datetime.now(UTC)
             device_count = len(devices)
             outcome = {"ok": 0, "failed": 0}
             self.logger.debug(
@@ -135,7 +135,7 @@ class Poller:
                     "; ".join(str(err) for err in eg.exceptions),
                 )
 
-            end_time = datetime.now()
+            end_time = datetime.now(UTC)
             elapsed = (end_time - start_time).total_seconds()
 
             await self.storage.write_collector_metrics(
@@ -172,12 +172,20 @@ class Poller:
                 )
 
             # Calculate the next fetch time and log it
+            # Aware UTC, then .astimezone() to the container's zone for DISPLAY — a bare
+            # .strftime() on an aware UTC value renders UTC verbatim, it does not convert.
             next_fetch_time = (
-                datetime.now()
-                + timedelta(
-                    seconds=max(0, Config.KASA_COLLECTOR_DATA_FETCH_INTERVAL - elapsed)
+                (
+                    datetime.now(UTC)
+                    + timedelta(
+                        seconds=max(
+                            0, Config.KASA_COLLECTOR_DATA_FETCH_INTERVAL - elapsed
+                        )
+                    )
                 )
-            ).strftime("%Y-%m-%d %H:%M:%S")
+                .astimezone()
+                .strftime("%Y-%m-%d %H:%M:%S")
+            )
             self.logger.debug("Next emeter data fetch will run at %s.", next_fetch_time)
 
             # Sleep for the remaining time (if any) before the next cycle
@@ -204,7 +212,7 @@ class Poller:
             as an asyncio task that runs for the lifetime of the application.
         """
         while True:
-            start_time = datetime.now()
+            start_time = datetime.now(UTC)
             device_count = len(devices)
             outcome = {"ok": 0, "failed": 0}
             self.logger.debug(
@@ -232,7 +240,7 @@ class Poller:
                     "; ".join(str(err) for err in eg.exceptions),
                 )
 
-            end_time = datetime.now()
+            end_time = datetime.now(UTC)
             elapsed = (end_time - start_time).total_seconds()
 
             await self.storage.write_collector_metrics(
@@ -269,14 +277,20 @@ class Poller:
                 )
 
             # Calculate the next fetch time and log it
+            # Aware UTC, then .astimezone() to the container's zone for DISPLAY — a bare
+            # .strftime() on an aware UTC value renders UTC verbatim, it does not convert.
             next_fetch_time = (
-                datetime.now()
-                + timedelta(
-                    seconds=max(
-                        0, Config.KASA_COLLECTOR_SYSINFO_FETCH_INTERVAL - elapsed
+                (
+                    datetime.now(UTC)
+                    + timedelta(
+                        seconds=max(
+                            0, Config.KASA_COLLECTOR_SYSINFO_FETCH_INTERVAL - elapsed
+                        )
                     )
                 )
-            ).strftime("%Y-%m-%d %H:%M:%S")
+                .astimezone()
+                .strftime("%Y-%m-%d %H:%M:%S")
+            )
             self.logger.debug("Next system info fetch will run at %s.", next_fetch_time)
 
             # Sleep for the remaining time (if any) before the next cycle

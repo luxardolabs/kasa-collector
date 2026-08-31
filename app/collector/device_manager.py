@@ -21,7 +21,7 @@ The module maintains three device registries:
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from kasa import Device
 
@@ -174,7 +174,7 @@ class DeviceManager:
             self.logger.debug("Starting device discovery...")
 
         # Track the start time for measuring how long the discovery takes
-        start_time = datetime.now()
+        start_time = datetime.now(UTC)
 
         # Discover devices
         discovered_devices = await KasaAPI.discover_devices()
@@ -213,7 +213,7 @@ class DeviceManager:
                 )
 
         # Track the time taken for discovery and authentication
-        end_time = datetime.now()
+        end_time = datetime.now(UTC)
         elapsed_time = (end_time - start_time).total_seconds()
 
         # Show completion at INFO level for first discovery
@@ -232,9 +232,14 @@ class DeviceManager:
 
         # Calculate the time of the next discovery based on the interval and log it
         next_discovery_interval = Config.KASA_COLLECTOR_DEVICE_DISCOVERY_INTERVAL
+        # Compute in aware UTC, then .astimezone() to the container's zone for DISPLAY.
+        # A bare .strftime() on an aware UTC value renders UTC verbatim — it does not
+        # convert — so this log line would silently flip from local to UTC without it.
         next_discovery_time = (
-            datetime.now() + timedelta(seconds=next_discovery_interval)
-        ).strftime("%Y-%m-%d %H:%M:%S")
+            (datetime.now(UTC) + timedelta(seconds=next_discovery_interval))
+            .astimezone()
+            .strftime("%Y-%m-%d %H:%M:%S")
+        )
         self.logger.debug("Next device discovery will run at %s.", next_discovery_time)
 
         # Mark first discovery as complete

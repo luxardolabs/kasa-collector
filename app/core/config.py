@@ -26,6 +26,11 @@ Environment Variable Naming Convention:
 import logging
 import os
 
+# Module logger, not the root logger: a bare `logging.warning(...)` call goes to the root
+# logger, which bypasses this module's own logger and so cannot be filtered or routed
+# per-module (the collector sets per-component levels via KASA_COLLECTOR_LOG_LEVEL_*).
+logger = logging.getLogger(__name__)
+
 type ConfigValue = int | str | bool
 type ConfigDict = dict[str, ConfigValue]
 
@@ -53,7 +58,7 @@ class ConfigValidator:
             num = int(value)
         except ValueError, TypeError:
             if default is not None:
-                logging.warning(
+                logger.warning(
                     "Value %r is not an integer, using default %s", value, default
                 )
                 return default
@@ -62,7 +67,7 @@ class ConfigValidator:
             max_val is not None and num > max_val
         ):
             if default is not None:
-                logging.warning(
+                logger.warning(
                     "Value %s out of range [%s, %s], using default %s",
                     num,
                     min_val,
@@ -81,9 +86,7 @@ class ConfigValidator:
         if low in ("false", "0", "no", "off"):
             return False
         if default is not None:
-            logging.warning(
-                "Invalid boolean value %r, using default %s", value, default
-            )
+            logger.warning("Invalid boolean value %r, using default %s", value, default)
             return default
         raise ValueError(f"Invalid boolean value: {value}")
 
@@ -92,7 +95,7 @@ class ConfigValidator:
         upper = value.upper()
         if upper in ConfigValidator.VALID_LOG_LEVELS:
             return upper
-        logging.warning("Invalid log level %r, using default %s", value, default)
+        logger.warning("Invalid log level %r, using default %s", value, default)
         return default
 
 

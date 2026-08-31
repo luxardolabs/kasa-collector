@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Kasa Collector is a Python-based data collection service for TP-Link Kasa smart plugs and power strips. It discovers devices on the network, collects energy consumption metrics, stores data in InfluxDB, and provides Grafana dashboards for visualization.
 
-**Version**: 2025.7.0 (Latest) **Python**: 3.14+ with modern Python features **Architecture**: Asynchronous event-driven with comprehensive resource management
+**Version**: 2026.08.0 (CalVer `YYYY.0M.MICRO`; the VERSION file is the one version literal) **Python**: 3.14+ with modern Python features **Architecture**: Asynchronous event-driven with comprehensive resource management
 
 ## Common Development Commands
 
@@ -46,10 +46,10 @@ make demo-up           # http://localhost:3000 — make demo-down / demo-clean
 # test: hardware-free end-to-end (all fake device kinds -> collector -> InfluxDB)
 make test-e2e          # builds from source, pass/fail, self-tears-down
 
-# Unit tests + lint. Both are decoupled from :dev (FLEET-BUILD-DEPLOY-STANDARD): ruff is
-# mount-only luxlint, mypy is python:3.14-slim + fresh pip, pytest runs in a lean image
-# built from poetry.lock (Dockerfile.test), rebuilt only when the lock changes.
-make test              # pytest        make lint   # luxlint (ruff) + mypy tail
+# Unit tests + lint. All decoupled from :dev (FLEET-BUILD-DEPLOY-STANDARD): ruff AND mypy
+# are mount-only luxlint (the repo installs nothing), pytest runs in a lean image built
+# from poetry.lock (Dockerfile.test), rebuilt only when the lock changes.
+make test              # pytest    make lint   # ruff    make mypy   # types
 ```
 
 ### Development Workflow
@@ -57,8 +57,12 @@ make test              # pytest        make lint   # luxlint (ruff) + mypy tail
 Everything runs in containers — there is no host Python/Poetry requirement.
 
 ```bash
-make lint            # luxlint (canonical ruff, mount-only) + mypy tail (one recipe)
-make format          # auto-fix + format with the canonical luxlint ruff config
+make lint            # luxlint — ruff/format/docs/secret checks (canonical config, mount-only)
+make mypy            # luxlint --mypy — types, mount-only (fleet typed deps baked in the image)
+make format          # THE canonical fixer (`luxlint --format`) — autofix + formatter + Markdown,
+                     # all from the image, with the same config the checker reads. Never
+                     # hand-roll it: an unpinned host formatter drifts from the pinned checker
+                     # and applies its default width to a repo that carries no local config.
 make test            # pytest suite (self-contained; no external services)
 make poetry-lock     # regenerate poetry.lock (poetry-in-docker)
 make gitleaks-staged # secret scan of staged changes (run before git commit)
@@ -99,7 +103,8 @@ All configuration is done through environment variables. Key settings include:
 - Data is stored both in InfluxDB and optionally as `.jsonl` files in `/app/output` (bind-mounted)
 - Docker health check included for container orchestration (no web server required)
 - Tests: pytest suite under `tests/`; `make test` runs it in a lean image built from `poetry.lock` (`Dockerfile.test`) with the source over-mounted — never `FROM :dev`
-- Multi-platform builds support amd64 and arm64 architectures (`make release`)
+- Multi-platform builds support amd64 and arm64 architectures (`make release`), on the ONE shared fleet buildx builder (`luxardo-builder`, GC-capped) — never a per-project builder, which holds an un-deduplicated cache plus an idle buildkit daemon
+- Build backend is **hatchling**, versioned dynamically from `VERSION`; Poetry stays the dependency manager in non-package mode (`poetry install --no-root` in both Dockerfiles, so the backend is never exercised at image-build time)
 - Grafana dashboards are pre-configured in the `/grafana` directory
 - Comprehensive resource cleanup and timeout management for long-running deployments
 - The runtime image installs `tzdata` + `tzdata-legacy` — python-kasa resolves each device's timezone via `zoneinfo`, and TP-Link's timezone index uses legacy POSIX names (e.g. `PST8PDT`, `CST6CDT`) that would otherwise crash `update()`
@@ -143,7 +148,7 @@ Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because th
 - **Underscores** are required for Python imports and module names
 - This follows Python PEP8 and industry best practices
 
-## Recent Changes (2025.7.0)
+## Recent Changes (2025.7.0 baseline)
 
 ### Fixed Issues
 
@@ -172,11 +177,23 @@ The canonical ruff (lint + format) and mypy config is owned by **luxlint** (`.lu
 - `make lint`), not kept in this repo — a local `[tool.ruff]`/`[tool.mypy]` is exactly the drift luxlint's `no_local_ruff_config` / `no_local_mypy_config` checks flag. Emit the canonical config for your editor with `--emit-config ruff > .ruff.local.toml` (gitignored):
 
 ```bash
-make lint    # luxlint (canonical ruff, mount-only) + mypy tail (one recipe)
+make lint    # luxlint — ruff/format/docs/secret checks (canonical config, mount-only)
+make mypy    # luxlint --mypy — mount-only; the fleet's typed dependency union is BAKED into
+             # the image, so py.typed libs resolve. The old in-repo tail ran without the app's
+             # deps, degrading every typed symbol to Any — a hollow-green type checker.
 make arch    # architecture conformance via luxarch (pinned container, reads .luxarch.toml)
+make plan    # the full arch red board: every red at once, phase-ordered + file-clustered
 make test    # pytest
-make check   # lint + arch + audit + test + gitleaks
+make check   # THE fleet gate: guard-version-check lint mypy test arch audit gitleaks
+make onboard-check  # the MACHINE GATE for "is this repo onboarded" — wiring + honesty,
+             # deliberately distinct from findings red/green. Checks all three guards run,
+             # luxarch --assert-scans (no rule family inspected ZERO files — a hollow green),
+             # luxlint --preflight (the mypy run is honest), luxaudit actually scans, secret
+             # hooks committed, no public CI, and gitleaks over FULL history (the pre-commit
+             # hook only sees staged diffs, so an old untouched leak passes every commit).
 ```
+
+`make check` is byte-identical across every fleet app repo (`repo.makefile_canonical`) — a gate that quietly drops mypy, arch, or the secret scan reads exactly as green as one that runs them. It is a **gate, not a report**: Make stops at the first failing step, so use `make plan` to work a list down. `guard-version-check` is **fatal** — a guard pin behind the published `:latest` fails the gate, so no one works off a stale guard; `make guard-upgrade` bumps every pin and prints what newly bites.
 
 Secret scanning is fleet-owned too: there is no local `.gitleaks.toml` (luxlint's `secret.no_local_gitleaks_config` flags one). `make gitleaks` emits the canonical config (gitleaks defaults + the org denylist) from the luxlint image at scan time and runs it over full history; `make gitleaks-staged` scans staged changes. The committed `hooks/` (pre-commit → `gitleaks-staged`, pre-push → `gitleaks`) fire the scan on every commit/push once wired with `make hooks` (`core.hooksPath hooks`) — enforced by luxlint's `secret.githooks_wired`. There is deliberately **no** public CI: `make check` is the sole gate (luxarch's `repo.no_public_ci` — a public GitHub Actions workflow would expose its YAML + logs).
 

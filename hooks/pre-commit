@@ -1,3 +1,16 @@
 #!/bin/sh
-# luxlint: REQUIRED fleet secret guard — runs on EVERY commit (do not delete).
+# luxlint: REQUIRED fleet git hooks — run on EVERY commit (do not delete).
+# 1) Commit identity. Commits must match this repo's declared identity
+#    ([repo].commit_identity; default = the luxardolabs fleet account). A `-c user.email=…`
+#    override or a wrong repo-local email UNLINKS the commit from the account — block it here.
+author=$(git var GIT_AUTHOR_IDENT 2>/dev/null)
+case "$author" in
+  *"214140984+luxardolabs@users.noreply.github.com"*) ;;
+  *)
+    echo "commit BLOCKED — author is: $author" >&2
+    echo "Commit as luxardolabs (your GLOBAL git config)." >&2
+    echo "Do NOT override with -c user.email or a repo-local email — set your GLOBAL git config." >&2
+    exit 1 ;;
+esac
+# 2) fleet secret guard.
 exec make -s gitleaks-staged

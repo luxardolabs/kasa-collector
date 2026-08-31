@@ -19,6 +19,15 @@ services:
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: kasa-e2e-token
     volumes:
       - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    # Map the image's DECLARED data path (influxdb:2.7 declares /var/lib/influxdb2 and
+    # /etc/influxdb2) or every `up` mints a fresh anonymous volume and every `down`
+    # abandons it — the disk-filler. Mapping only the init script above left the data
+    # path anonymous and looked compliant, which is why repo.compose_db_ephemeral_volume
+    # checks the DATA PATH specifically. This stack is throwaway e2e data, so tmpfs:
+    # fast, auto-freed, zero orphans. Persistent data would take a named volume instead.
+    tmpfs:
+      - /var/lib/influxdb2
+      - /etc/influxdb2
     healthcheck:
       test: ["CMD", "influx", "ping"]
       interval: 3s
