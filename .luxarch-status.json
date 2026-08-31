@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.102.0",
+  "guard_version": "0.104.0",
   "repo": "/repo",
   "targets": [
     {
@@ -77,6 +77,15 @@
         "rule": "repo.build_config_committed",
         "status": "PASS",
         "since": "0.17.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.guards_wired",
+        "status": "PASS",
+        "since": "0.104.0",
         "violations": 0,
         "deferred": false,
         "inert": false,
@@ -237,7 +246,7 @@
       }
     ],
     "summary": {
-      "PASS": 17,
+      "PASS": 18,
       "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
@@ -245,12 +254,12 @@
     }
   },
   "summary": {
-    "PASS": 23,
+    "PASS": 24,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
     "INERT": 1
   },
-  "commit": "5d1e80d37d2dad70a1cc566d4d9eac4da95e4970",
-  "generated_at": "2026-08-31T00:58:15Z"
+  "commit": "55e65dc8a60d0f2e6e3c9a428c4afe6e32a665fc",
+  "generated_at": "2026-08-31T01:07:50Z"
 }
