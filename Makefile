@@ -35,7 +35,7 @@ PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  ?= 0.102.0
+LUXARCH_VERSION  ?= 0.104.0
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
@@ -81,7 +81,18 @@ REPO_GID := $(shell stat -c %g . 2>/dev/null || echo 1000)
 # (overridable: `make poetry-lock POETRY_VERSION=x.y.z`). Keep in sync with the Dockerfile.
 POETRY_VERSION ?= 2.4.1
 POETRY_SPEC := poetry$(if $(POETRY_VERSION),==$(POETRY_VERSION),)
-POETRY_RUN := docker run --rm -u $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/work -w /work python:3.14-slim sh -c
+# POETRY_VIRTUALENVS_IN_PROJECT=false is load-bearing, not hygiene. The repo is mounted at
+# /work, and Poetry silently ADOPTS an existing ./.venv when it finds one — so a stray local
+# venv becomes the resolution environment inside the container. That is not theoretical: it
+# made `poetry update --dry-run` report NO changes while 11 packages were actually behind
+# (the truth only appeared when resolving in a throwaway copy). A container that reads host
+# state through the mount isn't hermetic, and a lock tool that lies about "nothing to do" is
+# the worst kind of quiet. Any venv Poetry needs (poetry-install) now lands in the cache under
+# HOME=/tmp, ephemeral with the container. The fleet rule is no local .venv — everything in
+# Docker; a .venv is at most a gitignored editor convenience and never an execution path.
+POETRY_RUN := docker run --rm -u $(REPO_UID):$(REPO_GID) -e HOME=/tmp \
+              -e POETRY_VIRTUALENVS_IN_PROJECT=false -e POETRY_VIRTUALENVS_CREATE=true \
+              -v $(PWD):/work -w /work python:3.14-slim sh -c
 POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-action=ignore $(POETRY_SPEC)
 
 # Compose stacks (all .yml, short-form volumes). Four flavors:
