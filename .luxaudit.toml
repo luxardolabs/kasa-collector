@@ -1,0 +1,22 @@
+# luxaudit — fleet dependency-vulnerability (SCA) guard. Run via `make audit`.
+# The pinned scanner + fleet ignore-policy ship IN the image; the OSV + PyPA advisory feed is
+# fetched at RUN TIME, never baked — so every run is current as of now, and a green result is a
+# statement about today, not a durable property of this commit. A new CVE lands on code nobody
+# touched. This file carries only repo-local, evidence-backed ignores.
+#
+# kasa-collector's SCA lock is poetry.lock (auto-detected: a lock wins outright over any stray
+# requirements.txt). Runtime deps are aiofiles, influxdb-client and python-kasa, plus the
+# transitive aiohttp/cryptography floors declared in pyproject.
+#
+# An [[ignore]] entry HIDES a real finding and is OWNER-ONLY (see luxarch --doc
+# FLEET-ONBOARDING-STANDARD §3). It is still REPORTED, still needs a written reason, and shows as
+# XFAIL rather than PASS. None are claimed today.
+#
+# NOTE — a CVE fix needs a version FLOOR, not just a re-lock. For a transitive vuln whose parent
+# allows an unbounded range, regenerating the lock resolves straight back to the vulnerable
+# version; declare the floor in pyproject so the lock cannot pick below the fix. See the aiohttp
+# and cryptography floors there, and luxaudit --changelog 0.1.10.
+
+# [[ignore]]
+# id       = "GHSA-xxxx-xxxx-xxxx"
+# evidence = "why this advisory does not apply here + the tracking ticket"
