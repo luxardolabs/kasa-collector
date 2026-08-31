@@ -1,0 +1,145 @@
+{
+  "guard": "luxlint",
+  "guard_version": "0.33.0",
+  "repo": "/repo",
+  "source": [
+    "app"
+  ],
+  "rules": [
+    {
+      "rule": "lint.no_local_ruff_config",
+      "status": "PASS",
+      "since": "0.1.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "types.no_local_mypy_config",
+      "status": "PASS",
+      "since": "0.1.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "test.no_local_pytest_config",
+      "status": "PASS",
+      "since": "0.4.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "lint.no_local_eslint_config",
+      "status": "PASS",
+      "since": "0.17.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "secret.no_local_gitleaks_config",
+      "status": "PASS",
+      "since": "0.9.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "secret.githooks_wired",
+      "status": "PASS",
+      "since": "0.10.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "lint.ruff",
+      "status": "PASS",
+      "since": "0.1.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "lint.format",
+      "status": "PASS",
+      "since": "0.1.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "lint.eslint",
+      "status": "PASS",
+      "since": "0.18.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "lint.js_declared",
+      "status": "PASS",
+      "since": "0.25.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "test.suite_exists",
+      "status": "PASS",
+      "since": "0.3.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "test.location",
+      "status": "PASS",
+      "since": "0.4.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "test.db_tested",
+      "status": "PASS",
+      "since": "0.3.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "test.db_isolated",
+      "status": "PASS",
+      "since": "0.33.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "docs.coverage",
+      "status": "PASS",
+      "since": "0.5.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "docs.substantive",
+      "status": "PASS",
+      "since": "0.5.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "docs.markdown_format",
+      "status": "PASS",
+      "since": "0.10.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "security.jwt_decode_algorithms",
+      "status": "PASS",
+      "since": "0.14.0",
+      "violations": 0,
+      "deferred": false
+    }
+  ],
+  "summary": {
+    "PASS": 18,
+    "FAIL": 0,
+    "XFAIL": 0,
+    "XPASS": 0
+  },
+  "mypy": "separate: `luxlint --mypy` ([mypy].baseline ratchet)",
+  "commit": "69fa1b0d608326584afe117ef81724fd1366da03",
+  "generated_at": "2026-08-31T00:30:48Z"
+}

@@ -1,0 +1,247 @@
+{
+  "guard": "luxarch",
+  "guard_version": "0.100.3",
+  "repo": "/repo",
+  "targets": [
+    {
+      "kind": "collector",
+      "app": "app",
+      "rules": [
+        {
+          "rule": "collector.layout",
+          "status": "PASS",
+          "since": "0.1.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": false,
+          "inert_reason": ""
+        },
+        {
+          "rule": "collector.influx_async_client_only",
+          "status": "PASS",
+          "since": "0.1.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": false,
+          "inert_reason": ""
+        },
+        {
+          "rule": "collector.no_bare_except",
+          "status": "PASS",
+          "since": "0.1.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": false,
+          "inert_reason": ""
+        },
+        {
+          "rule": "collector.client_lifecycle",
+          "status": "PASS",
+          "since": "0.1.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": false,
+          "inert_reason": ""
+        },
+        {
+          "rule": "collector.no_per_request_http",
+          "status": "PASS",
+          "since": "0.1.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": false,
+          "inert_reason": ""
+        },
+        {
+          "rule": "collector.graceful_shutdown",
+          "status": "PASS",
+          "since": "0.1.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": false,
+          "inert_reason": ""
+        }
+      ],
+      "summary": {
+        "PASS": 6,
+        "FAIL": 0,
+        "XFAIL": 0,
+        "XPASS": 0,
+        "INERT": 0
+      }
+    }
+  ],
+  "shared": {
+    "rules": [
+      {
+        "rule": "repo.build_config_committed",
+        "status": "PASS",
+        "since": "0.17.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.no_public_ci",
+        "status": "PASS",
+        "since": "0.20.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.oci_image_labels",
+        "status": "PASS",
+        "since": "0.21.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.components_declared",
+        "status": "PASS",
+        "since": "0.23.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.no_piped_installer",
+        "status": "PASS",
+        "since": "0.25.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.makefile_canonical",
+        "status": "FAIL",
+        "since": "0.96.0",
+        "violations": 3,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.compose_conventions",
+        "status": "PASS",
+        "since": "0.37.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.shared_buildx_builder",
+        "status": "PASS",
+        "since": "0.42.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.compose_project_name",
+        "status": "PASS",
+        "since": "0.72.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.compose_db_ephemeral_volume",
+        "status": "PASS",
+        "since": "0.72.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.alembic_path_separator",
+        "status": "PASS",
+        "since": "0.71.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.buildx_builder_gc_capped",
+        "status": "PASS",
+        "since": "0.46.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.version_single_source",
+        "status": "PASS",
+        "since": "0.52.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.hatchling_build_backend",
+        "status": "PASS",
+        "since": "0.62.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.app_version_calver",
+        "status": "PASS",
+        "since": "0.50.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.dockerfile_provenance_args",
+        "status": "PASS",
+        "since": "0.50.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.entrypoint_execs",
+        "status": "PASS",
+        "since": "0.27.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      }
+    ],
+    "summary": {
+      "PASS": 16,
+      "FAIL": 1,
+      "XFAIL": 0,
+      "XPASS": 0,
+      "INERT": 0
+    }
+  },
+  "summary": {
+    "PASS": 22,
+    "FAIL": 1,
+    "XFAIL": 0,
+    "XPASS": 0,
+    "INERT": 0
+  },
+  "commit": "69fa1b0d608326584afe117ef81724fd1366da03",
+  "generated_at": "2026-08-31T00:30:48Z"
+}
