@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.100.3",
+  "guard_version": "0.102.0",
   "repo": "/repo",
   "targets": [
     {
@@ -120,12 +120,21 @@
       },
       {
         "rule": "repo.makefile_canonical",
-        "status": "FAIL",
+        "status": "PASS",
         "since": "0.96.0",
-        "violations": 3,
+        "violations": 0,
         "deferred": false,
         "inert": false,
         "inert_reason": ""
+      },
+      {
+        "rule": "repo.makefile_test_db_harness",
+        "status": "INERT",
+        "since": "0.102.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": true,
+        "inert_reason": "no relational data layer (no SQLAlchemy/SQLModel/Alembic/psycopg/asyncpg dependency, no alembic.ini, no app/db|app/models dir) \u2014 there is no throwaway DB to protect and no dev DB a suite could hit, so the test-DB harness does not apply (a collector/poller that writes only to InfluxDB; KASACOLLEC-51). Standing up an unused Postgres to turn this green would be a hollow green \u2014 don't."
       },
       {
         "rule": "repo.compose_conventions",
@@ -228,20 +237,20 @@
       }
     ],
     "summary": {
-      "PASS": 16,
-      "FAIL": 1,
+      "PASS": 17,
+      "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
-      "INERT": 0
+      "INERT": 1
     }
   },
   "summary": {
-    "PASS": 22,
-    "FAIL": 1,
+    "PASS": 23,
+    "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 0
+    "INERT": 1
   },
-  "commit": "69fa1b0d608326584afe117ef81724fd1366da03",
-  "generated_at": "2026-08-31T00:30:48Z"
+  "commit": "8e00061d86cf4adfd7db6bb211384ea3fcedfd14",
+  "generated_at": "2026-08-31T00:54:09Z"
 }
