@@ -185,6 +185,13 @@ make arch    # architecture conformance via luxarch (pinned container, reads .lu
 make plan    # the full arch red board: every red at once, phase-ordered + file-clustered
 make test    # pytest
 make check   # THE fleet gate: guard-version-check lint mypy test arch audit gitleaks
+make status  # regenerate the committed guard-status files (.lux*-status.json), then COMMIT them.
+             # The fleet reads these instead of re-running every guard on every repo
+             # (`luxarch/scripts/fleet-status.py`). A lockfile, not a cache: guard-generated,
+             # stamped with the commit it was computed at, freshness-verified on read — the
+             # reader marks a row STALE when HEAD moves past that SHA, so a committed green
+             # that no longer reflects the code can't pass as current. Regenerate and commit
+             # AFTER the change it describes, or the row lands STALE immediately.
 make onboard-check  # the MACHINE GATE for "is this repo onboarded" — wiring + honesty,
              # deliberately distinct from findings red/green. Checks all three guards run,
              # luxarch --assert-scans (no rule family inspected ZERO files — a hollow green),

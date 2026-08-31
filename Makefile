@@ -112,7 +112,7 @@ PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
         demo-up demo-down demo-clean demo-logs demo-ps \
         check-prod-node prod-init prod-sync prod-deploy prod-status prod-logs-remote prod-health prod-rollback \
         poetry-lock poetry-update poetry-install \
-        guard-version-check guard-upgrade lint mypy format test arch plan audit test-e2e check onboard-check \
+        guard-version-check guard-upgrade lint mypy format test arch plan status audit test-e2e check onboard-check \
         gitleaks gitleaks-staged hooks clean clean-all
 
 .DEFAULT_GOAL := help
@@ -408,6 +408,29 @@ arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml)
 	@if [ -z "$(LUXARCH_REGISTRY)" ]; then \
 	  echo "luxarch: LUXARCH_REGISTRY unset (see Makefile.local.example) — skipping"; \
 	else docker run --rm -v $(PWD):/repo $(LUXARCH_IMAGE); fi
+
+# Committed guard-status files, so the fleet can answer "who's red on what" by READING each
+# repo instead of re-running every guard everywhere. The design is a LOCKFILE, not a cache:
+# guard-generated (never hand-edited), stamped with the commit it was computed at, and
+# freshness-verified on read — `fleet-status.py` marks a row STALE when HEAD has moved past
+# the recorded SHA, so a committed green that no longer reflects the code cannot masquerade
+# as current. The guards stay READ-ONLY on /repo (load-bearing: a guard must never mutate the
+# code it judges), so `--json` is a pure stdout primitive and THIS recipe does the stamping.
+# `|| true` because --json exits non-zero on a red repo — the verdict is IN the JSON, and a
+# red repo still has a valid, committable status. `set -e` so a failed/empty stamp ABORTS
+# rather than printing a false "wrote". See luxarch --doc FLEET-STATUS.
+GUARD_RUN = docker run --rm -v $(PWD):/repo
+STAMP = python3 -c 'import json,sys,os; d=json.load(open(sys.argv[1])); d["commit"]=os.environ["SHA"]; d["generated_at"]=os.environ["TS"]; json.dump(d,open(sys.argv[2],"w"),indent=2)'
+
+status: ## Regenerate the committed guard-status files (.lux*-status.json) — commit them
+	@if [ -z "$(LUXARCH_REGISTRY)" ] || [ -z "$(LUXLINT_REGISTRY)" ] || [ -z "$(LUXAUDIT_REGISTRY)" ]; then \
+	  echo "guard registry unset (see Makefile.local.example) — cannot generate status"; exit 1; \
+	fi
+	@set -e; export SHA=$$(git rev-parse HEAD) TS=$$(date -u +%FT%TZ); \
+	$(GUARD_RUN) $(LUXLINT_IMAGE)  --json > /tmp/lux.json || true; $(STAMP) /tmp/lux.json .luxlint-status.json; \
+	$(GUARD_RUN) $(LUXARCH_IMAGE)  --json > /tmp/lux.json || true; $(STAMP) /tmp/lux.json .luxarch-status.json; \
+	$(GUARD_RUN) $(LUXAUDIT_IMAGE) --json > /tmp/lux.json || true; $(STAMP) /tmp/lux.json .luxaudit-status.json; \
+	echo "wrote .lux*-status.json at $$SHA — commit them"
 
 plan: ## The full red board — every arch red at once, phase-ordered + file-clustered
 	@if [ -z "$(LUXARCH_REGISTRY)" ]; then \
