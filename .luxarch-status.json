@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.104.0",
+  "guard_version": "0.125.0",
   "repo": "/repo",
   "targets": [
     {
@@ -146,6 +146,15 @@
         "inert_reason": "no relational data layer (no SQLAlchemy/SQLModel/Alembic/psycopg/asyncpg dependency, no alembic.ini, no app/db|app/models dir) \u2014 there is no throwaway DB to protect and no dev DB a suite could hit, so the test-DB harness does not apply (a collector/poller that writes only to InfluxDB; KASACOLLEC-51). Standing up an unused Postgres to turn this green would be a hollow green \u2014 don't."
       },
       {
+        "rule": "repo.migrations_build_schema",
+        "status": "INERT",
+        "since": "0.120.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": true,
+        "inert_reason": "no alembic migration chain (no alembic.ini, no versions/ dir) \u2014 there is no chain to build-verify; a create_all-only or non-relational repo has nothing here to check. Standing up alembic just to satisfy this would be a hollow green \u2014 don't."
+      },
+      {
         "rule": "repo.compose_conventions",
         "status": "PASS",
         "since": "0.37.0",
@@ -185,6 +194,15 @@
         "rule": "repo.alembic_path_separator",
         "status": "PASS",
         "since": "0.71.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.alembic_autogen_comparisons",
+        "status": "PASS",
+        "since": "0.123.0",
         "violations": 0,
         "deferred": false,
         "inert": false,
@@ -246,20 +264,20 @@
       }
     ],
     "summary": {
-      "PASS": 18,
+      "PASS": 19,
       "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
-      "INERT": 1
+      "INERT": 2
     }
   },
   "summary": {
-    "PASS": 24,
+    "PASS": 25,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 1
+    "INERT": 2
   },
-  "commit": "55e65dc8a60d0f2e6e3c9a428c4afe6e32a665fc",
-  "generated_at": "2026-08-31T01:07:50Z"
+  "commit": "0070b0cc711dbc757e84243986854db0f96b9905",
+  "generated_at": "2026-09-05T22:35:05Z"
 }

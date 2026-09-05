@@ -1,9 +1,10 @@
 {
   "guard": "luxlint",
-  "guard_version": "0.33.0",
+  "guard_version": "0.41.0",
   "repo": "/repo",
   "source": [
-    "app"
+    "app",
+    "harness"
   ],
   "rules": [
     {
@@ -24,6 +25,13 @@
       "rule": "test.no_local_pytest_config",
       "status": "PASS",
       "since": "0.4.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "test.pytest_config_wired",
+      "status": "PASS",
+      "since": "0.35.0",
       "violations": 0,
       "deferred": false
     },
@@ -77,6 +85,13 @@
       "deferred": false
     },
     {
+      "rule": "lint.source_declared",
+      "status": "PASS",
+      "since": "0.38.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
       "rule": "test.suite_exists",
       "status": "PASS",
       "since": "0.3.0",
@@ -101,6 +116,13 @@
       "rule": "test.db_isolated",
       "status": "PASS",
       "since": "0.33.0",
+      "violations": 0,
+      "deferred": false
+    },
+    {
+      "rule": "test.no_handrolled_cleanup",
+      "status": "PASS",
+      "since": "0.36.0",
       "violations": 0,
       "deferred": false
     },
@@ -134,12 +156,12 @@
     }
   ],
   "summary": {
-    "PASS": 18,
+    "PASS": 21,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0
   },
   "mypy": "separate: `luxlint --mypy` ([mypy].baseline ratchet)",
-  "commit": "55e65dc8a60d0f2e6e3c9a428c4afe6e32a665fc",
-  "generated_at": "2026-08-31T01:07:50Z"
+  "commit": "0070b0cc711dbc757e84243986854db0f96b9905",
+  "generated_at": "2026-09-05T22:35:05Z"
 }
