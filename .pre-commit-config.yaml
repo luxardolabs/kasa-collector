@@ -18,10 +18,20 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
-      # Heavier (build a lint image + run ruff/mypy) — runs on push, not every commit.
+      # Heavier — runs on push, not every commit. Both legs run mount-only inside the
+      # pinned luxlint image; nothing is installed host-side or in this repo.
       - id: lint
-        name: ruff + mypy (make lint)
+        name: luxlint — ruff/format/docs/secret (make lint)
         entry: make lint
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      # Types are a SEPARATE target since the mount-only migration — `make lint` no longer
+      # runs mypy, so without this hook a pre-push would ship un-type-checked code.
+      - id: mypy
+        name: luxlint --mypy (make mypy)
+        entry: make mypy
         language: system
         pass_filenames: false
         stages: [pre-push]

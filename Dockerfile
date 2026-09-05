@@ -28,7 +28,7 @@ WORKDIR /app
 COPY pyproject.toml poetry.lock* ./
 RUN poetry install --no-root --only main
 
-# ---- Stage 1b: builder-dev — add the dev group (ruff/mypy/pytest, pinned) ----
+# ---- Stage 1b: builder-dev — add the dev group (pytest + pytest-asyncio, pinned) ----
 FROM builder AS builder-dev
 RUN poetry install --no-root --with dev
 
@@ -60,7 +60,7 @@ COPY --chown=appuser:appuser app /app/app
 
 # Own the whole workdir by appuser: the output dir must exist for a clean-clone
 # build (bind-mounted at runtime, but the writer + healthcheck reference ./output
-# relative to WORKDIR when unmounted), and tool caches (ruff/mypy) need it writable.
+# relative to WORKDIR when unmounted), and pytest's cache needs it writable.
 RUN mkdir -p /app/output && chown -R appuser:appuser /app
 
 USER appuser
@@ -93,7 +93,7 @@ CMD ["python3", "-m", "app.main"]
 FROM base AS dev
 
 USER root
-# Overlay the dev-group site-packages (ruff/mypy/pytest, pinned by poetry.lock)
+# Overlay the dev-group site-packages (pytest + pytest-asyncio, pinned by poetry.lock)
 # on top of the runtime deps. No ad-hoc pip install — versions match pyproject.
 COPY --from=builder-dev /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
 COPY --from=builder-dev /usr/local/bin/ /usr/local/bin/

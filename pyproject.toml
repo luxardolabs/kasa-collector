@@ -44,12 +44,17 @@ packages = ["app"]
 [tool.poetry]
 package-mode = false
 
+# The dev group exists for ONE consumer: the pytest suite (Dockerfile.test installs
+# `--with dev`). ruff, mypy and the types-* stubs are deliberately NOT here — since the
+# mount-only migration, luxlint runs ruff and mypy inside its own pinned image against the
+# mounted repo, so a copy in this group is never invoked by any make target and is invisible
+# to `make mypy` (that run resolves only against luxlint's baked typed-dependency union).
+# Keeping them would pin a second, drifting version of the very tools the guard owns — the
+# drift luxlint exists to kill — and drag mypy's compiled runtime (ast-serialize, librt)
+# into both the lock and the test image for nothing.
 [tool.poetry.group.dev.dependencies]
-ruff = "^0.15.21"
-mypy = "^2.2.0"
 pytest = "^9.1.1"
 pytest-asyncio = "^1.4.0"
-types-aiofiles = "^25.1.0"
 
 [build-system]
 requires = ["hatchling"]
