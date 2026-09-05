@@ -139,12 +139,26 @@ class InfluxDBStorage:
                 "InfluxDB connection established successfully (server %s)",
                 server_version,
             )
-        except Exception:
-            self.logger.info("InfluxDB connection established successfully")
+        # swallowed-exceptions: HANDLED, and the handling was the fix. The connection IS
+        # established by this point -- only the cosmetic version probe failed. The original
+        # code logged the IDENTICAL success line either way, so a failed probe was invisible;
+        # it now says "server version unknown" and keeps the cause at debug. Broad because a
+        # version endpoint can fail as a transport error, a 404 on an old server, or a parse
+        # error, and none of them mean the connection is bad.
+        except Exception as e:
+            self.logger.info(
+                "InfluxDB connection established successfully (server version unknown)"
+            )
+            self.logger.debug("Could not read InfluxDB server version: %s", e)
 
     async def _close_client(self) -> None:
         """Close the async client if it was opened, ignoring teardown errors."""
         if self.client is not None:
+            # swallowed-exceptions: best-effort teardown on the shutdown path. The client is
+            # being discarded either way, so a close() failure has nothing to recover; letting
+            # it propagate would abort graceful shutdown and drop the buffered writes that
+            # KASACOLLEC-13 exists to flush. Deliberately broad: this runs while the event
+            # loop is closing, where the raisable set is not enumerable in advance.
             with contextlib.suppress(Exception):
                 await self.client.close()
             self.client = None
@@ -266,6 +280,10 @@ class InfluxDBStorage:
             await self.send_to_influxdb(points)
             await self._append_to_file(device_data)
 
+        # swallowed-exceptions: per-device boundary. One device's malformed payload must
+        # not abort the whole poll cycle for every other device; the traceback survives via
+        # logger.exception (KASACOLLEC-17) and the cycle's failure count is written to the
+        # collector_stats point. Broad by intent -- device firmware returns arbitrary shapes.
         except Exception as e:
             self.logger.exception("Error processing emeter data for InfluxDB: %s", e)
 
@@ -382,6 +400,10 @@ class InfluxDBStorage:
             await self.send_to_influxdb(points)
             await self._append_to_file(device_data)
 
+        # swallowed-exceptions: per-device boundary. One device's malformed payload must
+        # not abort the whole poll cycle for every other device; the traceback survives via
+        # logger.exception (KASACOLLEC-17) and the cycle's failure count is written to the
+        # collector_stats point. Broad by intent -- device firmware returns arbitrary shapes.
         except Exception as e:
             self.logger.exception("Error processing sysinfo data for InfluxDB: %s", e)
 
@@ -479,6 +501,11 @@ class InfluxDBStorage:
             await self.write_api.write(bucket=self.bucket, org=self.org, record=points)
         except InfluxDBError as e:
             self._log_write_error(e)
+        # swallowed-exceptions: KASACOLLEC-63 -- the write failure IS logged with a traceback,
+        # but it is not propagated to the caller, so the per-cycle collector_stats point still
+        # counts the device as succeeded. Logs and metrics disagree. Left broad and lit rather
+        # than half-fixed: making the counter honest is a signature change through
+        # process_emeter_data -> _fetch_counted, tracked separately.
         except Exception as e:
             self.logger.exception("Error sending data to InfluxDB: %s", e)
 
@@ -534,12 +561,25 @@ class InfluxDBStorage:
                 )
 
                 # Newline-delimited JSON (.jsonl): one compact object per line, appended.
+                # blocking-io: FALSE POSITIVE -- this is aiofiles.open, the ASYNC file API
+                # (awaited, off-loop), i.e. the sweep's own prescribed fix, not the defect.
+                # The sweep is type-inference-free and keys on the method NAME `.open(`, so it
+                # cannot tell an aiofiles receiver from a pathlib.Path one; its output names
+                # exactly this case ("a same-named method on a NON-Path receiver ... confirm
+                # the receiver is a pathlib.Path"). Marker left in the form the sweep will
+                # recognise once the waiver rollout reaches blocking-io (luxarch 0.127.0
+                # tracks it); today it reports regardless. Verified: no blocking pathlib call
+                # exists on any async path -- the only blocking file I/O in this repo is in
+                # app/health/check.py, a synchronous one-shot process with no event loop.
                 async with aiofiles.open(filename, "a") as f:
                     await f.write(json.dumps({ip: device_data}) + "\n")
                     self.logger.debug(
                         "Appended %s data to JSONL file: %s", file_type, filename
                     )
 
+        # swallowed-exceptions: the optional .jsonl side-channel (KASA_COLLECTOR_WRITE_TO_FILE).
+        # InfluxDB is the system of record; a full disk or a bad mount must not take the
+        # collector down or stop the InfluxDB writes, which have already happened by here.
         except Exception as e:
             self.logger.exception("Error writing data to file: %s", e)
 

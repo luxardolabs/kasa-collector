@@ -137,6 +137,9 @@ class DeviceManager:
                     ip,
                     hostname,
                 )
+            # swallowed-exceptions: per-device boundary inside a TaskGroup. One unreachable
+            # manual host must not cancel its siblings -- an unhandled raise here would abort
+            # the whole parallel add. Traceback preserved via logger.exception.
             except Exception as e:
                 self.logger.exception("Failed to add manual device %s: %s", ip, e)
 
@@ -491,6 +494,9 @@ class DeviceManager:
         for ip, device in self.devices.items():
             try:
                 disconnect_tasks.append(KasaAPI.disconnect_device(device))
+            # swallowed-exceptions: shutdown teardown. A device that cannot even be queued
+            # for disconnect is already gone; failing here would abandon the remaining
+            # devices' disconnects and the InfluxDB flush that follows.
             except Exception as e:
                 self.logger.debug("Error preparing disconnect for %s: %s", ip, e)
 

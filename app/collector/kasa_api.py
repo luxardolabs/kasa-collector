@@ -167,6 +167,10 @@ class KasaAPI:
                 try:
                     await device.update()
                     return True
+                # swallowed-exceptions: HANDLED -- this is a capability PROBE, not an
+                # operation. The bool return IS the handling: False means "this device does
+                # not speak the protocol we just tried", which the caller branches on. An
+                # exception here is the expected negative result, not a failure to report.
                 except Exception as smart_error:
                     logger.debug("SmartDevice update failed: %s", smart_error)
                     return False
@@ -251,6 +255,10 @@ class KasaAPI:
                     ip,
                 )
                 return device
+        # swallowed-exceptions: HANDLED by a real fallback -- discovery is strategy 1 of 3
+        # (see this method's docstring); failure falls through to Device.connect below, which
+        # is the path that serves cross-subnet and manually-configured hosts. If every
+        # strategy fails, THAT raises. Not a dropped error: a tried-and-rejected branch.
         except Exception as discover_error:
             logger.debug("discover_single failed for %s: %s", ip, discover_error)
             # Fall through to try Device.connect
@@ -398,6 +406,9 @@ class KasaAPI:
         loop = asyncio.get_event_loop()
         try:
             return await loop.getnameinfo((ip, 0), socket.NI_NAMEREQD)
+        # swallowed-exceptions: HANDLED -- reverse DNS is a decorative label and the method's
+        # docstring states the contract ("Failures are logged but don't raise"). A LAN host
+        # with no PTR record is the normal case, not an error worth propagating.
         except Exception as e:
             logger.warning("DNS lookup failed for %s: %s", ip, e)
             return "unknown"
@@ -462,6 +473,10 @@ class KasaAPI:
             logger.debug(
                 "Disconnected from device %s", getattr(device, "host", "unknown")
             )
+        # swallowed-exceptions: teardown on the shutdown path, and re-raising here would
+        # actively cause harm -- disconnect_device is called from cleanup that often runs while
+        # an ORIGINAL exception is propagating, so raising would replace the real cause with a
+        # teardown artifact. Deliberately broad for the same reason as _close_client.
         except Exception as e:
             # Log but don't re-raise to avoid masking original errors
             logger.debug(

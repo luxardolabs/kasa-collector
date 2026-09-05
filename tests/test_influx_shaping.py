@@ -176,5 +176,7 @@ class TestProcessSysinfo:
         child_tags = [_tags(p) for p in s.captured if p._name == "sysinfo_child"]
         assert {t["plug_id"] for t in child_tags} == {"1", "2"}  # sequential
         # the raw 'id' field is excluded from child points
-        child_fields = [set(p._fields.keys()) for p in s.captured if p._name == "sysinfo_child"]
+        child_fields = [
+            set(p._fields.keys()) for p in s.captured if p._name == "sysinfo_child"
+        ]
         assert all("id" not in fields for fields in child_fields)

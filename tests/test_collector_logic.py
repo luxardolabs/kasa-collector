@@ -51,7 +51,9 @@ class TestRemoveMissingDevices:
         async def fake_hostname(ip):
             return ip
 
-        monkeypatch.setattr("app.collector.device_manager.get_hostname_cached", fake_hostname)
+        monkeypatch.setattr(
+            "app.collector.device_manager.get_hostname_cached", fake_hostname
+        )
         from app.collector.device_manager import DeviceManager
 
         return DeviceManager(logging.getLogger("test"))

@@ -54,7 +54,9 @@ class TestConfigValidator:
         assert config.ConfigValidator.validate_bool("nonsense", default=True) is True
 
     def test_log_level_invalid_falls_back_to_default(self):
-        assert config.ConfigValidator.validate_log_level("LOUD", default="INFO") == "INFO"
+        assert (
+            config.ConfigValidator.validate_log_level("LOUD", default="INFO") == "INFO"
+        )
 
     def test_log_level_normalizes_case(self):
         assert config.ConfigValidator.validate_log_level("debug") == "DEBUG"

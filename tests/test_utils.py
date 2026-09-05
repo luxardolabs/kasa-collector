@@ -34,13 +34,17 @@ class TestSanitizeTag:
 class TestDeviceContextExit:
     async def test_cancellation_is_not_logged_as_error(self, caplog):
         # A clean shutdown cancels in-flight ops; that must not log at ERROR.
-        ctx = DeviceContext(SimpleNamespace(alias="Plug", host="10.0.0.5"), "10.0.0.5", "fetch")
+        ctx = DeviceContext(
+            SimpleNamespace(alias="Plug", host="10.0.0.5"), "10.0.0.5", "fetch"
+        )
         with caplog.at_level(logging.DEBUG):
             await ctx.__aexit__(asyncio.CancelledError, asyncio.CancelledError(), None)
         assert not any(r.levelno >= logging.ERROR for r in caplog.records)
 
     async def test_real_error_still_logs_as_error(self, caplog):
-        ctx = DeviceContext(SimpleNamespace(alias="Plug", host="10.0.0.5"), "10.0.0.5", "fetch")
+        ctx = DeviceContext(
+            SimpleNamespace(alias="Plug", host="10.0.0.5"), "10.0.0.5", "fetch"
+        )
         with caplog.at_level(logging.ERROR):
             await ctx.__aexit__(ValueError, ValueError("boom"), None)
         assert any(r.levelno >= logging.ERROR for r in caplog.records)
@@ -49,7 +53,9 @@ class TestDeviceContextExit:
 @pytest.mark.unit
 class TestGetDeviceName:
     def test_prefers_alias(self):
-        device = SimpleNamespace(alias="Living Room Lamp", host="10.0.0.5", model="HS110")
+        device = SimpleNamespace(
+            alias="Living Room Lamp", host="10.0.0.5", model="HS110"
+        )
         assert get_device_name(device) == "Living Room Lamp"
 
     def test_falls_back_to_host(self):

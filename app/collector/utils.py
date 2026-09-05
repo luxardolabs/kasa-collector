@@ -60,6 +60,9 @@ def get_device_name(device: Device) -> str:
             return str(device.model)
         else:
             return "Unknown Device"
+    # swallowed-exceptions: HANDLED -- this is a display-name helper whose whole contract is
+    # "never raises, always returns a string" (see the docstring). It runs inside log calls and
+    # error paths, so raising here would mask the original error it is being used to report.
     except Exception:
         return "Unknown Device"
 

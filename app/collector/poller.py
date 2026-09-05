@@ -368,6 +368,9 @@ class Poller:
                     "Storing child plug data for %s (IP: %s).", plug_alias, ip
                 )
                 await self.storage.process_emeter_data({ip: child_data})
+        # swallowed-exceptions: per-device boundary. A strip with one malformed child payload
+        # must not abort the cycle for the other devices; the outcome is counted into the
+        # cycle's collector_stats point and the traceback survives via logger.exception.
         except Exception as e:
             self.logger.exception("Error processing smart strip data for %s: %s", ip, e)
 
@@ -400,6 +403,11 @@ class Poller:
             self.logger.exception(
                 "Data processing error for emeter data at %s: %s", ip, e
             )
+        # swallowed-exceptions: the broad tail behind an already-narrowed handler above
+        # (AttributeError/KeyError/ValueError/TypeError cover the known device-payload shapes).
+        # It stays broad because device firmware returns arbitrary JSON and one device must not
+        # end the poll cycle -- but it is deliberately a SEPARATE branch so an unexpected type
+        # is visible as such in the logs rather than blending into the expected ones.
         except Exception as e:
             self.logger.exception(
                 "Unexpected error processing emeter data for %s: %s", ip, e

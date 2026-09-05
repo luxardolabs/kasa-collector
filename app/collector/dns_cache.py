@@ -104,6 +104,9 @@ class DNSCache:
 
             return hostname
 
+        # swallowed-exceptions: HANDLED, not dropped -- reverse DNS is decorative (a friendlier
+        # label) and the IP is the real identity, so the fallback below is the correct answer,
+        # not a silent failure. Resolution failure is normal on a LAN with no PTR records.
         except Exception as e:
             logger.warning("DNS lookup failed for %s: %s", ip, e)
             return ip  # Return IP as fallback

@@ -172,6 +172,10 @@ class KasaCollector:
             try:
                 self.logger.debug("Running periodic device discovery.")
                 await self.device_manager.discover_devices()
+            # swallowed-exceptions: the discovery task must outlive a failed cycle. This is a
+            # `while True` background task; an unhandled raise ends discovery for the process
+            # lifetime and the collector silently stops finding new devices. The finally-sleep
+            # below then retries next interval. Traceback preserved via logger.exception.
             except Exception as e:
                 self.logger.exception("Error during periodic device discovery: %s", e)
             finally:

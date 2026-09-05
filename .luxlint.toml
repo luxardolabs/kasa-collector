@@ -13,17 +13,16 @@ paths = ["app", "harness"]
 # NEW violation of the same code anywhere else still reds, and a carve-out that stops
 # suppressing anything is itself a red — it can never bless forever.
 #
-# Both entries below are the same class luxlint already recognises for `.claude/hooks/**`
-# in 0.39.1: "printing to stdout IS the protocol." T20 bans print in APPLICATION code
-# because it bypasses the log aggregator — correct, and app/main.py's print was a real hit
-# that we fixed to logger.info. These two are not application code; stdout is their entire
-# output contract, so routing them to a logger would break the thing that reads them.
-[[allowlist.ruff]]
-code     = "T201"
-file     = "check.py"
-match    = "print("
-evidence = "Docker HEALTHCHECK entrypoint (`python -m app.health.check`, per the fleet collector layout). Its interface is an exit code plus stdout, which Docker captures and surfaces in `docker inspect .State.Health.Log` — that text is what an operator reads when a container is unhealthy. Sending it to the logger instead would empty the healthcheck output. Same category as the `.claude/hooks/**` carve-out (luxlint 0.39.1); escalated for a fleet-wide T20 path carve-out since the healthcheck entrypoint is the documented fleet collector pattern."
-
+# The entry below is the same class luxlint recognises for `.claude/hooks/**` (0.39.1):
+# "printing to stdout IS the protocol." T20 bans print in APPLICATION code because it
+# bypasses the log aggregator — correct, and app/main.py's print was a real hit we fixed
+# to logger.info. This one is not application code; stdout is its entire output contract.
+#
+# A second entry for app/health/check.py was removed in the luxlint 0.42.0 bump: that
+# release added `**/health/check.py` to the canonical T20 entrypoint carve-out (LUXSTATS-83,
+# the fleet-wide fix this repo's evidence line said it was escalating for), so the per-repo
+# entry stopped suppressing anything — and a carve-out that suppresses nothing is itself a
+# red. Guard learns the pattern, every repo benefits; the local workaround retires.
 [[allowlist.ruff]]
 code     = "T201"
 file     = "fake_kasa.py"
