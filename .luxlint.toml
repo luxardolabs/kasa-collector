@@ -3,7 +3,32 @@
 # Run via `make lint`; see /mnt/luxardolabs/luxlint/docs/REFERENCE.md for the schema.
 
 [source]
-paths = ["app"]
+# `harness` is covered rather than excluded: fake_kasa.py is first-party code we maintain
+# and ship in the demo/e2e stacks (harness/Dockerfile builds it), so it is style-held like
+# any other source. Excluding it would be the hollow green lint.source_declared exists to
+# close — `make lint` passing having never scanned a file a bare `ruff .` would.
+paths = ["app", "harness"]
+
+# Evidence-backed carve-outs for genuine false positives. Scoped to code+file+match, so a
+# NEW violation of the same code anywhere else still reds, and a carve-out that stops
+# suppressing anything is itself a red — it can never bless forever.
+#
+# Both entries below are the same class luxlint already recognises for `.claude/hooks/**`
+# in 0.39.1: "printing to stdout IS the protocol." T20 bans print in APPLICATION code
+# because it bypasses the log aggregator — correct, and app/main.py's print was a real hit
+# that we fixed to logger.info. These two are not application code; stdout is their entire
+# output contract, so routing them to a logger would break the thing that reads them.
+[[allowlist.ruff]]
+code     = "T201"
+file     = "check.py"
+match    = "print("
+evidence = "Docker HEALTHCHECK entrypoint (`python -m app.health.check`, per the fleet collector layout). Its interface is an exit code plus stdout, which Docker captures and surfaces in `docker inspect .State.Health.Log` — that text is what an operator reads when a container is unhealthy. Sending it to the logger instead would empty the healthcheck output. Same category as the `.claude/hooks/**` carve-out (luxlint 0.39.1); escalated for a fleet-wide T20 path carve-out since the healthcheck entrypoint is the documented fleet collector pattern."
+
+[[allowlist.ruff]]
+code     = "T201"
+file     = "fake_kasa.py"
+match    = "print("
+evidence = "Standalone device-emulator server started as a container CMD; the one startup banner (flush=True) is read via `docker logs` by the e2e harness. The module configures no logging at all — stdout is deliberately its only output, the 'standalone script whose purpose is stdout' class the T20 carve-out already describes for scripts/ and ops/. Not reached by application code."
 
 # This is a Python 3.14 app — check ruff/mypy at 3.14 so 3.12+/3.14 syntax
 # (PEP 695 type aliases, etc.) is understood, not rejected against the fleet floor.

@@ -263,7 +263,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Received KeyboardInterrupt. Exiting gracefully.")
+        logger.info("Received KeyboardInterrupt. Exiting gracefully.")
     except SystemExit as e:
         # Exit with the specified code without printing traceback
         exit(e.code if e.code is not None else 1)

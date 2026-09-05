@@ -23,12 +23,14 @@ Pure stdlib — no dependencies. Not part of the app package; test tooling only.
 """
 
 import asyncio
+import contextlib
 import json
 import math
 import os
 import random
 import struct
 import time
+from typing import Any
 
 KEY0 = 0xAB
 PORT = 9999
@@ -53,10 +55,16 @@ def decrypt(data: bytes) -> str:
 
 
 KIND = os.getenv("KASA_FAKE_KIND", "plug")
-_DEFAULT_MODEL = {"plug": "HS110(US)", "plug_noemeter": "HS103(US)", "strip": "HS300(US)"}
+_DEFAULT_MODEL = {
+    "plug": "HS110(US)",
+    "plug_noemeter": "HS103(US)",
+    "strip": "HS300(US)",
+}
 MODEL = os.getenv("KASA_FAKE_MODEL", _DEFAULT_MODEL.get(KIND, "HS110(US)"))
 ALIAS = os.getenv("KASA_FAKE_ALIAS", f"Fake {MODEL}")
-DEVICE_ID = os.getenv("KASA_FAKE_ID", "8006" + "".join(f"{ord(c):02X}" for c in ALIAS)[:20])
+DEVICE_ID = os.getenv(
+    "KASA_FAKE_ID", "8006" + "".join(f"{ord(c):02X}" for c in ALIAS)[:20]
+)
 MAC = os.getenv("KASA_FAKE_MAC", "50:C7:BF:00:00:01")
 BASE_W = float(os.getenv("KASA_FAKE_BASE_W", "42.0"))
 OUTLETS = int(os.getenv("KASA_FAKE_OUTLETS", "6"))
@@ -69,11 +77,13 @@ _start = time.time()
 _totals: dict[str, float] = {}
 
 
-def _emeter_realtime(key: str, base_w: float) -> dict:
+def _emeter_realtime(key: str, base_w: float) -> dict[str, int]:
     t = time.time() - _start
     # Deterministic-ish base + slow sway + jitter; unique phase per key.
     phase = (hash(key) % 100) / 100.0 * math.tau
-    power_w = max(0.5, base_w + base_w * 0.25 * math.sin(t / 30.0 + phase) + random.uniform(-2, 2))
+    power_w = max(
+        0.5, base_w + base_w * 0.25 * math.sin(t / 30.0 + phase) + random.uniform(-2, 2)
+    )
     voltage_v = 120.0 + random.uniform(-0.8, 0.8)
     current_a = power_w / voltage_v
     _totals[key] = _totals.get(key, 1000.0) + power_w / 3600.0
@@ -86,21 +96,23 @@ def _emeter_realtime(key: str, base_w: float) -> dict:
     }
 
 
-def _children() -> list:
-    out = []
+def _children() -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     for i in range(OUTLETS):
-        out.append({
-            "id": f"{DEVICE_ID}{i:02d}",
-            "state": 1,
-            "alias": f"{ALIAS} Outlet {i + 1}",
-            "on_time": 3600 + i * 60,
-            "next_action": {"type": -1},
-        })
+        out.append(
+            {
+                "id": f"{DEVICE_ID}{i:02d}",
+                "state": 1,
+                "alias": f"{ALIAS} Outlet {i + 1}",
+                "on_time": 3600 + i * 60,
+                "next_action": {"type": -1},
+            }
+        )
     return out
 
 
-def sysinfo() -> dict:
-    info = {
+def sysinfo() -> dict[str, Any]:
+    info: dict[str, Any] = {
         "sw_ver": "1.2.5 Build 171213 Rel.101523",
         "hw_ver": "1.0",
         "type": "IOT.SMARTPLUGSWITCH",
@@ -140,10 +152,10 @@ def _child_base_w(child_id: str) -> float:
     return BASE_W * (0.5 + 0.3 * idx)
 
 
-def handle(query: dict) -> dict:
+def handle(query: dict[str, Any]) -> dict[str, Any]:
     """Build a response mirroring the request's module/command structure."""
     child_ids = query.get("context", {}).get("child_ids") or []
-    resp: dict = {}
+    resp: dict[str, Any] = {}
     for mod, cmds in query.items():
         if mod == "context":
             continue
@@ -166,8 +178,12 @@ def handle(query: dict) -> dict:
             elif mod == "time" and cmd == "get_time":
                 lt = time.localtime()
                 resp[mod][cmd] = {
-                    "year": lt.tm_year, "month": lt.tm_mon, "mday": lt.tm_mday,
-                    "hour": lt.tm_hour, "min": lt.tm_min, "sec": lt.tm_sec,
+                    "year": lt.tm_year,
+                    "month": lt.tm_mon,
+                    "mday": lt.tm_mday,
+                    "hour": lt.tm_hour,
+                    "min": lt.tm_min,
+                    "sec": lt.tm_sec,
                     "err_code": 0,
                 }
             elif mod == "time" and cmd == "get_timezone":
@@ -179,10 +195,19 @@ def handle(query: dict) -> dict:
 
 
 class UDPProtocol(asyncio.DatagramProtocol):
-    def connection_made(self, transport):
+    transport: asyncio.DatagramTransport
+
+    def connection_made(self, transport: asyncio.BaseTransport) -> None:
+        # The base signature is BaseTransport (contravariance), but a DatagramProtocol is
+        # only ever handed a DatagramTransport -- narrow it for real rather than casting,
+        # so a wrong transport fails loudly here instead of at the first sendto().
+        if not isinstance(transport, asyncio.DatagramTransport):
+            raise TypeError(
+                f"expected a DatagramTransport, got {type(transport).__name__}"
+            )
         self.transport = transport
 
-    def datagram_received(self, data, addr):
+    def datagram_received(self, data: bytes, addr: tuple[str | Any, int]) -> None:
         try:
             query = json.loads(decrypt(data))
         except Exception:
@@ -190,7 +215,9 @@ class UDPProtocol(asyncio.DatagramProtocol):
         self.transport.sendto(encrypt(json.dumps(handle(query))), addr)
 
 
-async def tcp_handler(reader, writer):
+async def tcp_handler(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+) -> None:
     try:
         while True:
             header = await reader.readexactly(4)
@@ -200,21 +227,26 @@ async def tcp_handler(reader, writer):
             enc = encrypt(json.dumps(handle(query)))
             writer.write(struct.pack(">I", len(enc)) + enc)
             await writer.drain()
-    except (asyncio.IncompleteReadError, ConnectionResetError):
+    except asyncio.IncompleteReadError, ConnectionResetError:
         pass
     finally:
-        try:
+        # swallow: best-effort teardown of a connection that has already ended (the client
+        # went away, or the read above failed). close() on an already-closed or half-dead
+        # transport is the only thing that can raise here, and there is nothing left to
+        # recover or report -- the request is over either way. Deliberate, not a dropped error.
+        with contextlib.suppress(Exception):
             writer.close()
-        except Exception:
-            pass
 
 
-async def main():
+async def main() -> None:
     loop = asyncio.get_running_loop()
     await loop.create_datagram_endpoint(UDPProtocol, local_addr=("0.0.0.0", PORT))
     server = await asyncio.start_server(tcp_handler, "0.0.0.0", PORT)
     extra = f", {OUTLETS} outlets" if IS_STRIP else ""
-    print(f"fake-kasa: {ALIAS} ({MODEL}, kind={KIND}{extra}) on UDP+TCP :{PORT}", flush=True)
+    print(
+        f"fake-kasa: {ALIAS} ({MODEL}, kind={KIND}{extra}) on UDP+TCP :{PORT}",
+        flush=True,
+    )
     async with server:
         await server.serve_forever()
 

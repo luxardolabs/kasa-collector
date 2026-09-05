@@ -6,7 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.collector.utils import DeviceContext, format_duration, get_device_name, sanitize_tag
+from app.collector.utils import (
+    DeviceContext,
+    format_duration,
+    get_device_name,
+    sanitize_tag,
+)
 
 
 @pytest.mark.unit

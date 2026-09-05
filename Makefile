@@ -35,13 +35,13 @@ PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  ?= 0.104.0
+LUXARCH_VERSION  ?= 0.125.0
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
 # same out-of-tree pattern as luxarch. Unset host → make lint/format skip gracefully.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  ?= 0.33.0
+LUXLINT_VERSION  ?= 0.41.0
 LUXLINT_IMAGE    ?= $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; pulled via LUXAUDIT_REGISTRY (Makefile.local).
@@ -123,7 +123,7 @@ PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
         demo-up demo-down demo-clean demo-logs demo-ps \
         check-prod-node prod-init prod-sync prod-deploy prod-status prod-logs-remote prod-health prod-rollback \
         poetry-lock poetry-update poetry-install \
-        guard-version-check guard-upgrade lint mypy format test arch plan status audit test-e2e check onboard-check \
+        guard-version-check guard-upgrade honest lint mypy format test arch plan status audit test-e2e check onboard-check \
         gitleaks gitleaks-staged hooks clean clean-all
 
 .DEFAULT_GOAL := help
@@ -466,7 +466,21 @@ test-e2e: ## Hardware-free end-to-end test: fake Kasa devices -> collector -> In
 # `check` is a GATE, not a report: Make stops at the FIRST failing step. For the full red board
 # (every red at once, phase-ordered + file-clustered) run `make plan`.
 # See luxarch --doc FLEET-MAKEFILE-STANDARD.
-check: guard-version-check lint mypy test arch audit gitleaks ## THE fleet gate — run before every commit
+check: guard-version-check honest lint mypy test arch audit gitleaks ## THE fleet gate — run before every commit
+
+# A green check must MEAN nothing was silently unchecked. `--assert-scans` fails only when a
+# rule family inspected ZERO files (a dir it points at is empty/absent) — never on reds — and
+# `--preflight` fails when the mypy run isn't honest. Both probes already lived in
+# onboard-check, but that target isn't the daily gate: luxarch 0.114.0 closed exactly that
+# loophole after a repo certified 8/9 green for two days with two blind rule families,
+# because nothing turned the scanned-nothing footer into an exit code. Placed early in
+# `check` so a later red step can't skip it.
+honest: ## a green check must mean nothing was silently unchecked
+	@if [ -z "$(LUXARCH_REGISTRY)" ] || [ -z "$(LUXLINT_REGISTRY)" ]; then \
+	  echo "guard registry unset (see Makefile.local.example) — cannot verify honesty"; exit 1; \
+	fi
+	@docker run --rm -v $(PWD):/repo $(LUXARCH_IMAGE) --assert-scans
+	@docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --preflight
 
 # The machine gate for "is this repo ONBOARDED" — wiring + honesty, deliberately distinct
 # from findings red/green. Passing means the SIGNALS ARE TRUSTWORTHY, so the reds it leaves
