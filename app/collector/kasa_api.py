@@ -29,6 +29,7 @@ from typing import Any
 
 from kasa import Credentials, Device, DeviceConfig, Discover
 
+from app.collector.kasa_compat import reclass_strip_if_needed
 from app.core.config import Config
 from app.utils.logging import setup_logger
 
@@ -306,6 +307,13 @@ class KasaAPI:
 
             # Ensure full initialization by calling update
             await device.update()
+
+            # A KLAP-only strip arrives from python-kasa as a plain IotPlug with no
+            # children (python-kasa#1748). sys_info is populated by the update above,
+            # so this is where the multi-outlet case can be detected and corrected --
+            # and it covers all three entry points at once, including the discovery
+            # path whose synchronous factory cannot query the device at all.
+            device = await reclass_strip_if_needed(device)
 
             # Check if the device has emeter capability
             if device.has_emeter:
