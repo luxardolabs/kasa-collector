@@ -182,6 +182,25 @@ class Config:
     )
     """Number of discovery packets to send during each discovery attempt."""
 
+    KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD: int = _get_int_config(
+        "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", default=3, min_value=1
+    )
+    """Consecutive missed discovery rounds before a discovered device is pruned.
+
+    Discovery is a UDP broadcast, so it is lossy: a healthy device can simply fail
+    to answer a round. Pruning on the first miss removes it from collection until
+    the next discovery (a gap of up to KASA_COLLECTOR_DEVICE_DISCOVERY_INTERVAL) —
+    observed on a device that was reachable on both ports with no errors logged.
+
+    The two mistakes are not symmetric. Pruning too early costs a visible data gap
+    on a working device; pruning too late costs a few seconds of retry budget per
+    cycle on a dead one. So this tolerates loss rather than reacting to it.
+
+    Set to 1 for the previous behaviour (prune on the first miss). Manually
+    configured hosts are never pruned regardless — they do not appear in broadcast
+    results at all.
+    """
+
     # Data collection intervals
     KASA_COLLECTOR_DATA_FETCH_INTERVAL: int = _get_int_config(
         "KASA_COLLECTOR_DATA_FETCH_INTERVAL", default=15, min_value=1
@@ -333,6 +352,9 @@ def describe_settings() -> dict[str, str]:
         ),
         "KASA_COLLECTOR_DISCOVERY_TIMEOUT": str(
             Config.KASA_COLLECTOR_DISCOVERY_TIMEOUT
+        ),
+        "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD": str(
+            Config.KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD
         ),
         "KASA_COLLECTOR_DISCOVERY_PACKETS": str(
             Config.KASA_COLLECTOR_DISCOVERY_PACKETS

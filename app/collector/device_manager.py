@@ -67,6 +67,10 @@ class DeviceManager:
             str, Device
         ] = {}  # Devices needing polling (can be expanded)
         self.first_discovery_complete = False  # Track if we've done initial discovery
+        # Consecutive missed discovery rounds per device IP. Discovery is a lossy UDP
+        # broadcast, so absence from ONE round does not mean the device is gone; a host
+        # is pruned only after KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD consecutive misses.
+        self.discovery_misses: dict[str, int] = {}
 
         # Initialize manual devices if provided
         self.device_hosts: list[str] = []
@@ -429,28 +433,50 @@ class DeviceManager:
         """
         if Config.KASA_COLLECTOR_KEEP_MISSING_DEVICES:
             return
+        threshold = Config.KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD
         for ip in list(self.devices.keys()):
             # Never prune manually-configured devices: they won't appear in a
             # broadcast discovery result (e.g. cross-subnet), so their absence
             # there doesn't mean they're gone.
             if ip in self.device_hosts:
                 continue
-            if ip not in discovered_devices:
-                missing_device = self.devices.pop(ip)
-                device_name = get_device_name(missing_device)
-                self.emeter_devices.pop(
-                    ip, None
-                )  # Remove from emeter devices if applicable
-                self.polling_devices.pop(
-                    ip, None
-                )  # Remove from polling devices if applicable
-                hostname = await get_hostname_cached(ip)
-                self.logger.warning(
-                    "Device removed (no longer discovered): %s (IP: %s, Host: %s)",
-                    device_name,
+
+            if ip in discovered_devices:
+                # Seen again — any earlier misses were transient loss, not absence.
+                self.discovery_misses.pop(ip, None)
+                continue
+
+            misses = self.discovery_misses.get(ip, 0) + 1
+            self.discovery_misses[ip] = misses
+            if misses < threshold:
+                # Tolerate a lossy round rather than dropping a healthy device out of
+                # collection until the next discovery interval.
+                self.logger.debug(
+                    "Device not seen in discovery (%s/%s) — keeping: %s",
+                    misses,
+                    threshold,
                     ip,
-                    hostname,
                 )
+                continue
+
+            missing_device = self.devices.pop(ip)
+            self.discovery_misses.pop(ip, None)
+            device_name = get_device_name(missing_device)
+            self.emeter_devices.pop(
+                ip, None
+            )  # Remove from emeter devices if applicable
+            self.polling_devices.pop(
+                ip, None
+            )  # Remove from polling devices if applicable
+            hostname = await get_hostname_cached(ip)
+            self.logger.warning(
+                "Device removed after %s consecutive missed discovery rounds: "
+                "%s (IP: %s, Host: %s)",
+                misses,
+                device_name,
+                ip,
+                hostname,
+            )
 
     def _check_and_add_emeter_device(self, ip: str, device: Device) -> None:
         """Check device capabilities and add to appropriate registries.

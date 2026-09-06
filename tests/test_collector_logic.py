@@ -80,10 +80,61 @@ class TestRemoveMissingDevices:
         }
         dm.emeter_devices = dict(dm.devices)
         dm.polling_devices = dict(dm.devices)
-        await dm.remove_missing_devices({})  # discovery returned nothing
+        threshold = config.Config.KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD
+        for _ in range(threshold):
+            await dm.remove_missing_devices({})  # discovery returned nothing
         assert "manual-host" in dm.devices  # manual device protected
         assert "10.0.0.9" not in dm.devices  # discovered-and-now-missing pruned
         assert "10.0.0.9" not in dm.emeter_devices
+
+    async def test_single_missed_round_does_not_prune(self, monkeypatch):
+        """Discovery is a lossy UDP broadcast — one miss is not absence.
+
+        Observed live: a device reachable on both ports, with zero errors logged,
+        dropped out of collection because it missed a single broadcast round.
+        """
+        from app.core import config
+
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 3)
+        dm = self._dm(monkeypatch)
+        dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
+        dm.emeter_devices = dict(dm.devices)
+
+        await dm.remove_missing_devices({})
+        assert "10.0.0.9" in dm.devices  # still collecting after one miss
+        assert dm.discovery_misses["10.0.0.9"] == 1
+
+        await dm.remove_missing_devices({})
+        assert "10.0.0.9" in dm.devices  # and after two
+        assert dm.discovery_misses["10.0.0.9"] == 2
+
+        await dm.remove_missing_devices({})
+        assert "10.0.0.9" not in dm.devices  # pruned on the third
+        assert "10.0.0.9" not in dm.emeter_devices
+
+    async def test_reappearing_device_resets_the_miss_count(self, monkeypatch):
+        # Two misses then a sighting must not leave the device one miss from
+        # eviction -- otherwise intermittent loss still evicts a healthy host.
+        from app.core import config
+
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 3)
+        dm = self._dm(monkeypatch)
+        device = SimpleNamespace(alias="Fridge", host="10.0.0.9")
+        dm.devices = {"10.0.0.9": device}
+
+        await dm.remove_missing_devices({})
+        await dm.remove_missing_devices({})
+        assert dm.discovery_misses["10.0.0.9"] == 2
+
+        await dm.remove_missing_devices({"10.0.0.9": device})  # seen again
+        assert dm.discovery_misses.get("10.0.0.9", 0) == 0
+
+        # A fresh run of misses must start from zero, not from two.
+        await dm.remove_missing_devices({})
+        await dm.remove_missing_devices({})
+        assert "10.0.0.9" in dm.devices
 
 
 @pytest.mark.unit
