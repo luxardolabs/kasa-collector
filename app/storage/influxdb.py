@@ -195,7 +195,7 @@ class InfluxDBStorage:
             "Wrote data to InfluxDB: %s, Tags: %s, Data: %s", measurement, tags, data
         )
 
-    async def process_emeter_data(self, device_data: dict[str, dict[str, Any]]) -> None:
+    async def process_emeter_data(self, device_data: dict[str, dict[str, Any]]) -> bool:
         """Process energy meter data and write to InfluxDB.
 
         Args:
@@ -277,8 +277,9 @@ class InfluxDBStorage:
                     point = point.time(datetime.now(UTC))
                     points.append(point)
 
-            await self.send_to_influxdb(points)
+            written = await self.send_to_influxdb(points)
             await self._append_to_file(device_data)
+            return written
 
         # swallowed-exceptions: per-device boundary. One device's malformed payload must
         # not abort the whole poll cycle for every other device; the traceback survives via
@@ -286,6 +287,7 @@ class InfluxDBStorage:
         # collector_stats point. Broad by intent -- device firmware returns arbitrary shapes.
         except Exception as e:
             self.logger.exception("Error processing emeter data for InfluxDB: %s", e)
+            return False
 
     def _get_plug_info_from_sysinfo_by_alias(
         self, sysinfo: dict[str, Any], plug_alias: str
@@ -314,7 +316,7 @@ class InfluxDBStorage:
 
     async def process_sysinfo_data(
         self, device_data: dict[str, dict[str, Any]]
-    ) -> None:
+    ) -> bool:
         """Process system information data and write to InfluxDB.
 
         Args:
@@ -397,8 +399,9 @@ class InfluxDBStorage:
                 self.logger.debug("Full sysinfo data: %s", normalized_sysinfo)
 
             self.logger.debug("Collected points for InfluxDB: %s", points)
-            await self.send_to_influxdb(points)
+            written = await self.send_to_influxdb(points)
             await self._append_to_file(device_data)
+            return written
 
         # swallowed-exceptions: per-device boundary. One device's malformed payload must
         # not abort the whole poll cycle for every other device; the traceback survives via
@@ -406,6 +409,7 @@ class InfluxDBStorage:
         # collector_stats point. Broad by intent -- device firmware returns arbitrary shapes.
         except Exception as e:
             self.logger.exception("Error processing sysinfo data for InfluxDB: %s", e)
+            return False
 
     def normalize_sysinfo(self, sysinfo: dict[str, Any]) -> dict[str, Any]:
         """Normalize system info for consistent storage across device models.
@@ -455,6 +459,7 @@ class InfluxDBStorage:
         succeeded: int,
         failed: int,
         duration: float,
+        write_failed: int = 0,
     ) -> None:
         """Write the collector's own per-cycle health metrics.
 
@@ -465,9 +470,18 @@ class InfluxDBStorage:
         Args:
             cycle: Which loop produced this ("emeter" or "sysinfo").
             devices: Number of devices attempted this cycle.
-            succeeded: Devices polled successfully.
-            failed: Devices that failed after retries.
+            succeeded: Devices polled successfully AND whose data reached InfluxDB.
+            failed: Devices that failed to poll after retries.
             duration: Wall-clock seconds the cycle took.
+            write_failed: Devices polled fine but whose write to InfluxDB failed.
+
+        ``write_failed`` is a SEPARATE field rather than being folded into ``failed``
+        because the two are different operational problems -- a device that won't answer
+        versus a storage backend that won't accept -- and because adding a field keeps
+        every existing Grafana panel's meaning intact. A device counted here is NOT
+        counted in ``succeeded``: before KASACOLLEC-63 a failed write left the device
+        reported as succeeded, so during an InfluxDB outage this point claimed everything
+        was fine while nothing landed.
         """
         point = (
             Point("collector_stats")
@@ -475,23 +489,33 @@ class InfluxDBStorage:
             .field("devices", int(devices))
             .field("succeeded", int(succeeded))
             .field("failed", int(failed))
+            .field("write_failed", int(write_failed))
             .field("duration_seconds", float(duration))
             .time(datetime.now(UTC))
         )
+        # Chicken-and-egg: if THIS write fails there is nowhere to record that fact, so the
+        # log is the only signal. send_to_influxdb already logs it with actionable guidance.
         await self.send_to_influxdb([point])
 
-    async def send_to_influxdb(self, points: list[Point]) -> None:
+    async def send_to_influxdb(self, points: list[Point]) -> bool:
         """Write a batch of points to InfluxDB in a single awaited request.
 
         Args:
             points: List of Point objects to write.
 
+        Returns:
+            True if the batch was written (or there was nothing to write);
+            False if the write failed.
+
         The whole list is handed to the async write API as one batched write.
-        Errors are logged — with actionable guidance for auth/bucket problems —
-        but don't stop the collector; the next cycle simply retries.
+        A failure is logged — with actionable guidance for auth/bucket problems —
+        and does NOT stop the collector; the next cycle simply retries. But the
+        outcome is RETURNED so the caller can count it: a swallowed write failure
+        used to leave the cycle reporting every device as succeeded while nothing
+        landed, so the logs and the collector_stats point disagreed (KASACOLLEC-63).
         """
         if not points or self.write_api is None:
-            return
+            return True
         try:
             if self.logger.isEnabledFor(logging.DEBUG):
                 for point in points:
@@ -501,13 +525,15 @@ class InfluxDBStorage:
             await self.write_api.write(bucket=self.bucket, org=self.org, record=points)
         except InfluxDBError as e:
             self._log_write_error(e)
-        # swallowed-exceptions: KASACOLLEC-63 -- the write failure IS logged with a traceback,
-        # but it is not propagated to the caller, so the per-cycle collector_stats point still
-        # counts the device as succeeded. Logs and metrics disagree. Left broad and lit rather
-        # than half-fixed: making the counter honest is a signature change through
-        # process_emeter_data -> _fetch_counted, tracked separately.
+            return False
+        # swallowed-exceptions: HANDLED -- the failure is now REPORTED via the return value,
+        # not dropped (KASACOLLEC-63). Still broad and still non-fatal by intent: an InfluxDB
+        # outage must not kill a long-running collector, and the next cycle retries. What
+        # changed is that the caller can no longer mistake this for a success.
         except Exception as e:
             self.logger.exception("Error sending data to InfluxDB: %s", e)
+            return False
+        return True
 
     def _log_write_error(self, error: InfluxDBError) -> None:
         """Log an InfluxDB write failure with actionable guidance."""

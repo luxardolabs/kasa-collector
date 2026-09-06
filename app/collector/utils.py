@@ -19,7 +19,7 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from functools import wraps
 from types import TracebackType
-from typing import Any, ParamSpec, Self, TypeVar, cast
+from typing import Any, Literal, ParamSpec, Self, TypeVar, cast
 
 from kasa import Device
 
@@ -232,7 +232,7 @@ class DeviceContext:
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
-    ) -> bool:
+    ) -> Literal[False]:
         """Exit async context with appropriate logging.
 
         Args:
@@ -241,7 +241,11 @@ class DeviceContext:
             exc_tb: Exception traceback if error occurred.
 
         Returns:
-            False to propagate exceptions.
+            Always ``False`` — this context manager never suppresses. Typed
+            ``Literal[False]`` rather than ``bool`` so callers can return from
+            inside the ``with`` block: a plain ``bool`` leaves mypy assuming the
+            block might swallow an exception and fall through, which reads as a
+            missing return in every caller that returns from the body.
 
         Logs success or failure based on exception presence.
         """

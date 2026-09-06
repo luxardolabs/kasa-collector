@@ -20,6 +20,7 @@ def _storage():
 
     async def send(points):
         s.captured.extend(points)
+        return True
 
     async def append(data):
         pass
@@ -148,6 +149,55 @@ class TestCollectorMetrics:
         assert fields["succeeded"] == 18
         assert fields["failed"] == 2
         assert fields["duration_seconds"] == 3.5
+        assert fields["write_failed"] == 0  # additive field, defaults to 0
+
+    async def test_write_failed_is_a_separate_field_from_failed(self):
+        # A device that polled fine but whose write failed is NOT a poll failure:
+        # the two are different operational problems and Grafana panels read them
+        # separately. See KASACOLLEC-63.
+        s = _storage()
+        await s.write_collector_metrics(
+            cycle="emeter",
+            devices=20,
+            succeeded=15,
+            failed=2,
+            duration=3.5,
+            write_failed=3,
+        )
+        fields = dict(s.captured[0]._fields)
+        assert fields["failed"] == 2
+        assert fields["write_failed"] == 3
+        assert fields["succeeded"] == 15
+
+
+@pytest.mark.unit
+class TestWriteFailurePropagates:
+    """A failed InfluxDB write must reach the caller, not read as success.
+
+    Before KASACOLLEC-63 send_to_influxdb swallowed the error and returned None, so
+    a device whose data never landed was still counted as succeeded — the logs and
+    the collector_stats point disagreed, and the dashboard showed everything fine
+    during an outage.
+    """
+
+    async def test_process_emeter_data_reports_a_failed_write(self):
+        s = _storage()
+
+        async def failing_send(points):
+            return False
+
+        s.send_to_influxdb = failing_send
+        ok = await s.process_emeter_data(
+            {"10.0.0.5": {"emeter": {"power_mw": 1000}, "alias": "Plug"}}
+        )
+        assert ok is False
+
+    async def test_process_emeter_data_reports_a_successful_write(self):
+        s = _storage()
+        ok = await s.process_emeter_data(
+            {"10.0.0.5": {"emeter": {"power_mw": 1000}, "alias": "Plug"}}
+        )
+        assert ok is True
 
 
 @pytest.mark.unit

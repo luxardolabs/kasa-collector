@@ -69,7 +69,7 @@ class Poller:
 
     async def _fetch_counted(
         self,
-        fetch: Callable[[str, Device], Awaitable[None]],
+        fetch: Callable[[str, Device], Awaitable[bool | None]],
         ip: str,
         device: Device,
         outcome: dict[str, int],
@@ -80,10 +80,22 @@ class Poller:
         Per-device failures (after ``async_retry`` is exhausted) are swallowed and
         counted, so a single unreachable device can't cancel the rest of the cycle's
         TaskGroup. The counts feed the per-cycle collector metrics.
+
+        Three outcomes, deliberately distinct (KASACOLLEC-63): the device answered and
+        its data was stored (``ok``); the device could not be polled (``failed``); or the
+        device answered fine but the write to InfluxDB failed (``write_failed``). The
+        third used to be counted as ``ok``, so an InfluxDB outage produced a cycle
+        reporting every device as succeeded while nothing landed.
         """
         try:
-            await fetch(ip, device)
-            outcome["ok"] += 1
+            stored = await fetch(ip, device)
+            if stored is False:
+                outcome["write_failed"] += 1
+                self.logger.warning(
+                    "%s polled %s but the InfluxDB write failed", label, ip
+                )
+            else:
+                outcome["ok"] += 1
         except Exception as e:
             outcome["failed"] += 1
             self.logger.warning("%s failed for %s after retries: %s", label, ip, e)
@@ -109,7 +121,7 @@ class Poller:
         while True:
             start_time = datetime.now(UTC)
             device_count = len(devices)
-            outcome = {"ok": 0, "failed": 0}
+            outcome = {"ok": 0, "failed": 0, "write_failed": 0}
             self.logger.debug(
                 "Starting emeter data fetch for %s devices.", device_count
             )
@@ -143,6 +155,7 @@ class Poller:
                 devices=device_count,
                 succeeded=outcome["ok"],
                 failed=outcome["failed"],
+                write_failed=outcome["write_failed"],
                 duration=elapsed,
             )
 
@@ -214,7 +227,7 @@ class Poller:
         while True:
             start_time = datetime.now(UTC)
             device_count = len(devices)
-            outcome = {"ok": 0, "failed": 0}
+            outcome = {"ok": 0, "failed": 0, "write_failed": 0}
             self.logger.debug(
                 "Starting system info fetch for %s devices.", device_count
             )
@@ -248,6 +261,7 @@ class Poller:
                 devices=device_count,
                 succeeded=outcome["ok"],
                 failed=outcome["failed"],
+                write_failed=outcome["write_failed"],
                 duration=elapsed,
             )
 
@@ -299,7 +313,7 @@ class Poller:
             )
 
     @async_retry(operation_name="emeter data fetch")
-    async def fetch_and_store_emeter_data(self, ip: str, device: Device) -> None:
+    async def fetch_and_store_emeter_data(self, ip: str, device: Device) -> bool:
         """Fetch and store energy data for a single device.
 
         Args:
@@ -315,11 +329,13 @@ class Poller:
         async with DeviceContext(device, ip, "emeter fetch"):
             await device.update()
             if isinstance(device, IotStrip):
-                await self.process_smart_strip_data(ip, device)
-            elif device.has_emeter:
-                await self.process_device_data(ip, device)
+                return await self.process_smart_strip_data(ip, device)
+            if device.has_emeter:
+                return await self.process_device_data(ip, device)
+            # No emeter on this device: nothing to store, so nothing failed to store.
+            return True
 
-    async def process_smart_strip_data(self, ip: str, smart_strip: IotStrip) -> None:
+    async def process_smart_strip_data(self, ip: str, smart_strip: IotStrip) -> bool:
         """Process energy data for power strip and all child plugs.
 
         Args:
@@ -348,7 +364,7 @@ class Poller:
             self.logger.debug(
                 "Storing smart strip data for %s (IP: %s).", smart_strip.alias, ip
             )
-            await self.storage.process_emeter_data({ip: smart_strip_data})
+            stored = await self.storage.process_emeter_data({ip: smart_strip_data})
 
             for child in smart_strip.children:
                 await child.update()
@@ -367,14 +383,20 @@ class Poller:
                 self.logger.debug(
                     "Storing child plug data for %s (IP: %s).", plug_alias, ip
                 )
-                await self.storage.process_emeter_data({ip: child_data})
+                # A strip counts as stored only if the parent AND every child landed --
+                # a partially-written strip is not a success.
+                stored = (
+                    await self.storage.process_emeter_data({ip: child_data}) and stored
+                )
+            return stored
         # swallowed-exceptions: per-device boundary. A strip with one malformed child payload
         # must not abort the cycle for the other devices; the outcome is counted into the
         # cycle's collector_stats point and the traceback survives via logger.exception.
         except Exception as e:
             self.logger.exception("Error processing smart strip data for %s: %s", ip, e)
+            return False
 
-    async def process_device_data(self, ip: str, device: Device) -> None:
+    async def process_device_data(self, ip: str, device: Device) -> bool:
         """Process energy data for a single smart plug.
 
         Args:
@@ -398,11 +420,12 @@ class Poller:
                 "equipment_type": "device",
             }
             self.logger.debug("Storing emeter data for %s (IP: %s).", device_alias, ip)
-            await self.storage.process_emeter_data({ip: device_data})
+            return await self.storage.process_emeter_data({ip: device_data})
         except (AttributeError, KeyError, ValueError, TypeError) as e:
             self.logger.exception(
                 "Data processing error for emeter data at %s: %s", ip, e
             )
+            return False
         # swallowed-exceptions: the broad tail behind an already-narrowed handler above
         # (AttributeError/KeyError/ValueError/TypeError cover the known device-payload shapes).
         # It stays broad because device firmware returns arbitrary JSON and one device must not
@@ -412,9 +435,10 @@ class Poller:
             self.logger.exception(
                 "Unexpected error processing emeter data for %s: %s", ip, e
             )
+            return False
 
     @async_retry(operation_name="sysinfo fetch")
-    async def fetch_and_store_sysinfo(self, ip: str, device: Device) -> None:
+    async def fetch_and_store_sysinfo(self, ip: str, device: Device) -> bool:
         """Fetch and store system information for a single device.
 
         Args:
@@ -439,4 +463,4 @@ class Poller:
             self.logger.debug(
                 "Storing sysinfo data for %s (IP: %s)", ctx.device_name, ip
             )
-            await self.storage.process_sysinfo_data({ip: sysinfo_data})
+            return await self.storage.process_sysinfo_data({ip: sysinfo_data})

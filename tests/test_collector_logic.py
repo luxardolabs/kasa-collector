@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.collector.poller import Poller
 from app.collector.utils import async_retry
 
 
@@ -105,3 +106,56 @@ class TestFetchCounted:
         await poller._fetch_counted(boom, "10.0.0.2", None, outcome, "emeter fetch")
 
         assert outcome == {"ok": 1, "failed": 1}
+
+
+@pytest.mark.unit
+class TestFetchCountedWriteFailures:
+    """A polled-but-unwritten device is counted separately, not as a success.
+
+    The regression this locks (KASACOLLEC-63): send_to_influxdb swallowed write
+    failures, so `_fetch_counted` saw a clean return and incremented `ok`. During an
+    InfluxDB outage the per-cycle collector_stats point therefore reported every
+    device as succeeded while nothing landed — the metric contradicted the logs.
+    """
+
+    def _poller(self):
+        p = object.__new__(Poller)
+        p.logger = logging.getLogger("test")
+        return p
+
+    async def test_failed_write_counts_as_write_failed_not_ok(self):
+        p = self._poller()
+        outcome = {"ok": 0, "failed": 0, "write_failed": 0}
+
+        async def fetch_that_stores_nothing(ip, device):
+            return False  # polled fine, write rejected
+
+        await p._fetch_counted(
+            fetch_that_stores_nothing, "10.0.0.5", object(), outcome, "emeter fetch"
+        )
+        assert outcome == {"ok": 0, "failed": 0, "write_failed": 1}
+
+    async def test_successful_write_counts_as_ok(self):
+        p = self._poller()
+        outcome = {"ok": 0, "failed": 0, "write_failed": 0}
+
+        async def fetch_that_stores(ip, device):
+            return True
+
+        await p._fetch_counted(
+            fetch_that_stores, "10.0.0.5", object(), outcome, "emeter fetch"
+        )
+        assert outcome == {"ok": 1, "failed": 0, "write_failed": 0}
+
+    async def test_unreachable_device_still_counts_as_failed(self):
+        # The pre-existing outcome must not be disturbed by the new third state.
+        p = self._poller()
+        outcome = {"ok": 0, "failed": 0, "write_failed": 0}
+
+        async def fetch_that_raises(ip, device):
+            raise ConnectionError("device unreachable")
+
+        await p._fetch_counted(
+            fetch_that_raises, "10.0.0.5", object(), outcome, "emeter fetch"
+        )
+        assert outcome == {"ok": 0, "failed": 1, "write_failed": 0}
