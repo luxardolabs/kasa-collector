@@ -41,12 +41,15 @@ Bug 2 — device built as IotPlug, so no child sockets and no per-outlet emeter
 """
 
 import inspect
+import sys
 from typing import Any
 
 from kasa import Device, DeviceConfig
 from kasa import device_factory as _device_factory
+from kasa.device_factory import get_device_class_from_sys_info
 from kasa.iot import IotDevice, IotStrip
 from kasa.protocols import IotProtocol
+from kasa.protocols.iotprotocol import IotProtocol as _IotProtocolCls
 from kasa.transports import KlapTransport, KlapTransportV2
 
 from app.core.config import Config
@@ -59,7 +62,11 @@ from app.utils.logging import setup_logger
 logger = setup_logger("KasaCompat", Config.KASA_COLLECTOR_LOG_LEVEL_KASA_API)
 
 _orig_get_protocol = _device_factory.get_protocol
+_orig_connect = _device_factory._connect
 _patched = False
+
+# python-kasa's own sysinfo probe, used by the _connect patch below.
+_GET_SYSINFO_QUERY = {"system": {"get_sysinfo": None}}
 
 
 def _needs_v2_transport(config: DeviceConfig, protocol: Any) -> bool:
@@ -92,12 +99,52 @@ def _get_protocol_login_version_aware(
     return protocol
 
 
+async def _connect_sysinfo_over_klap(config: DeviceConfig, protocol: Any) -> Device:
+    """``_connect`` that derives the class from sysinfo for IOT over ANY transport.
+
+    Upstream gates the sysinfo branch on ``XorTransport``, so IOT-over-KLAP falls
+    through to the family table and a strip is built as ``IotPlug``. That is not merely
+    a missing-children problem: ``IotPlug._initialize_modules()`` reads ``has_emeter``
+    during ``update()``, which raises *"You need to await update() to access the data"*
+    on a multi-outlet device — so the update never completes and there is no built
+    device to correct afterwards. The class must be right BEFORE update, which is why
+    this patches the factory rather than fixing up the result.
+
+    ``GET_SYSINFO_QUERY`` works fine over KLAP; only the gate was wrong.
+    """
+    if isinstance(protocol, _IotProtocolCls):
+        info = await protocol.query(_GET_SYSINFO_QUERY)
+        device_class = get_device_class_from_sys_info(info)
+        device = device_class(config.host, protocol=protocol)
+        device.update_from_discover_info(info)
+        await device.update()
+        logger.debug(
+            "kasa_compat: %s built as %s from its own sysinfo (upstream would have used "
+            "the family table)",
+            config.host,
+            type(device).__name__,
+        )
+        return device
+    return await _orig_connect(config, protocol)
+
+
 def apply_patches() -> None:
     """Install the local python-kasa patches. Idempotent; call once at startup."""
     global _patched
     if _patched:
         return
-    _device_factory.get_protocol = _get_protocol_login_version_aware
+    # Rebind in EVERY module that holds a reference, not just device_factory.
+    # `kasa/discover.py` does `from kasa.device_factory import (...)` at module level,
+    # which binds the original function object at import time -- so patching only the
+    # factory module leaves the entire discovery path running the unpatched code. That
+    # would be a silent half-patch: the connect path fixed, discovery quietly not.
+    for _mod in list(sys.modules.values()):
+        if _mod is None or not getattr(_mod, "__name__", "").startswith("kasa"):
+            continue
+        if getattr(_mod, "get_protocol", None) is _orig_get_protocol:
+            _mod.get_protocol = _get_protocol_login_version_aware  # type: ignore[attr-defined]
+        if getattr(_mod, "_connect", None) is _orig_connect:
+            _mod._connect = _connect_sysinfo_over_klap  # type: ignore[attr-defined]
     _patched = True
     logger.info(
         "kasa_compat: applied local python-kasa patches (KLAP login_version transport "
