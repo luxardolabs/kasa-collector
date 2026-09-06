@@ -94,7 +94,7 @@ class DeviceManager:
         the resulting device clients are reused across poll cycles and released via
         ``close()`` on shutdown. Periodic re-discovery runs as a separate task.
         """
-        await self.initialize_manual_devices()
+        await self.reconcile_manual_devices()
         if Config.KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY:
             self.logger.debug("Starting initial device discovery...")
             await self.discover_devices()
@@ -103,8 +103,36 @@ class DeviceManager:
         """Release all device clients on shutdown (disconnect + clear registries)."""
         await self.disconnect_all_devices()
 
-    async def initialize_manual_devices(self) -> None:
-        """Initialize manually configured devices from environment config.
+    async def reconcile_manual_devices(self) -> None:
+        """Ensure every host in KASA_COLLECTOR_DEVICE_HOSTS is registered.
+
+        Listing a host in the env var is an explicit operator statement — "collect
+        this" — so it must not depend on a lossy broadcast, and it must not depend on
+        the one moment the process happened to start. Previously this ran ONCE at
+        startup: a manual host that was briefly unreachable then (a reboot, DNS not
+        yet warm, a flapping link) was silently absent for the life of the process,
+        recoverable only by restarting. That left the devices the operator explicitly
+        asked for with the WEAKEST recovery — discovered hosts get another chance
+        every discovery interval; manual ones got one chance ever.
+
+        Now it runs on every discovery cycle and attempts only the hosts that are not
+        currently registered, so an env-listed device always converges to collected
+        without re-connecting (and re-handshaking) the ones already working.
+        """
+        missing = [ip for ip in self.device_hosts if ip not in self.devices]
+        if not missing:
+            return
+        if self.devices:
+            # Not the first pass — say what is being recovered and why.
+            self.logger.info(
+                "Re-attempting %s configured device(s) not currently registered: %s",
+                len(missing),
+                ", ".join(missing),
+            )
+        await self._add_manual_devices(missing)
+
+    async def _add_manual_devices(self, hosts: list[str]) -> None:
+        """Connect and register the given manually configured hosts, in parallel.
 
         Processes devices specified in KASA_COLLECTOR_DEVICE_HOSTS environment
         variable. Manual devices are useful for:
@@ -116,7 +144,7 @@ class DeviceManager:
         devices are configured. Errors for individual devices don't prevent
         others from being added.
         """
-        if not self.device_hosts:
+        if not hosts:
             return
 
         async def add_manual_device(ip: str) -> None:
@@ -149,7 +177,7 @@ class DeviceManager:
 
         # Process all manual devices in parallel
         async with asyncio.TaskGroup() as tg:
-            for ip in self.device_hosts:
+            for ip in hosts:
                 tg.create_task(add_manual_device(ip))
 
     async def discover_devices(self) -> None:
@@ -170,6 +198,10 @@ class DeviceManager:
             Discovery only finds devices on the same subnet. For devices
             on different subnets, use manual configuration.
         """
+        # Configured hosts are re-checked every pass, independently of discovery:
+        # they are intent, and broadcast results have no bearing on them.
+        await self.reconcile_manual_devices()
+
         if not Config.KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY:
             self.logger.debug("Auto-discovery is disabled. Skipping device discovery.")
             return

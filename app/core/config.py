@@ -182,6 +182,20 @@ class Config:
     )
     """Number of discovery packets to send during each discovery attempt."""
 
+    KASA_COLLECTOR_DISCOVERY_CATCH_UP_DELAY: int = _get_int_config(
+        "KASA_COLLECTOR_DISCOVERY_CATCH_UP_DELAY", default=30, min_value=1
+    )
+    """Delay before the FIRST re-discovery pass after startup, in seconds.
+
+    The startup discovery round is a single lossy broadcast, and at that point the
+    registry is empty — so a device that misses it is not protected by
+    KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD (there is no entry to keep) and would
+    otherwise stay uncollected for a full DEVICE_DISCOVERY_INTERVAL. A short
+    catch-up pass closes that window; the normal interval applies from then on.
+
+    Capped at DEVICE_DISCOVERY_INTERVAL, so a short interval is never lengthened.
+    """
+
     KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD: int = _get_int_config(
         "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", default=3, min_value=1
     )
@@ -352,6 +366,9 @@ def describe_settings() -> dict[str, str]:
         ),
         "KASA_COLLECTOR_DISCOVERY_TIMEOUT": str(
             Config.KASA_COLLECTOR_DISCOVERY_TIMEOUT
+        ),
+        "KASA_COLLECTOR_DISCOVERY_CATCH_UP_DELAY": str(
+            Config.KASA_COLLECTOR_DISCOVERY_CATCH_UP_DELAY
         ),
         "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD": str(
             Config.KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD

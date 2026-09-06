@@ -165,13 +165,22 @@ class KasaCollector:
             Respects existing manual devices and won't override them.
             Errors during discovery are logged but don't stop the periodic task.
         """
-        self.logger.debug(
-            "Waiting %ss before first periodic discovery.",
+        # The FIRST re-discovery runs soon, not a full interval later. Discovery is a
+        # lossy UDP broadcast, so a device can simply miss the startup round -- and at
+        # startup there is nothing in the registry yet, so the miss-threshold cannot
+        # protect it (there is no entry to keep). Waiting a whole interval would leave
+        # that device uncollected for up to DEVICE_DISCOVERY_INTERVAL for no reason.
+        # A short catch-up pass closes that window; the normal cadence resumes after.
+        catch_up = min(
+            Config.KASA_COLLECTOR_DISCOVERY_CATCH_UP_DELAY,
             Config.KASA_COLLECTOR_DEVICE_DISCOVERY_INTERVAL,
         )
-
-        # Wait for the discovery interval to pass before starting periodic discovery
-        await asyncio.sleep(Config.KASA_COLLECTOR_DEVICE_DISCOVERY_INTERVAL)
+        self.logger.debug(
+            "Waiting %ss before the catch-up discovery pass (interval %ss).",
+            catch_up,
+            Config.KASA_COLLECTOR_DEVICE_DISCOVERY_INTERVAL,
+        )
+        await asyncio.sleep(catch_up)
 
         while True:
             try:

@@ -210,3 +210,76 @@ class TestFetchCountedWriteFailures:
             fetch_that_raises, "10.0.0.5", object(), outcome, "emeter fetch"
         )
         assert outcome == {"ok": 0, "failed": 1, "write_failed": 0}
+
+
+@pytest.mark.unit
+class TestManualHostsAreIntent:
+    """A host in KASA_COLLECTOR_DEVICE_HOSTS must converge to collected.
+
+    Listing a host in the env var is an explicit operator statement, so it cannot
+    depend on a lossy broadcast OR on the one moment the process started. The old
+    code called initialize_manual_devices() exactly once at startup: a manual host
+    unreachable at that instant was absent for the life of the process.
+    """
+
+    def _dm(self, monkeypatch):
+        async def fake_hostname(ip):
+            return f"host-{ip}"
+
+        monkeypatch.setattr(
+            "app.collector.device_manager.get_hostname_cached", fake_hostname
+        )
+        from app.collector.device_manager import DeviceManager
+
+        return DeviceManager(logging.getLogger("test"))
+
+    async def test_missing_manual_host_is_retried_on_a_later_pass(self, monkeypatch):
+        from app.collector import device_manager as dm_mod
+
+        attempts: list[str] = []
+        fail_first = {"on": True}
+
+        async def fake_get_device(ip, user, pw):
+            attempts.append(ip)
+            if fail_first["on"]:
+                raise ConnectionError("device rebooting")
+            return SimpleNamespace(alias="Recovered", host=ip, has_emeter=False)
+
+        async def no_devices_found():
+            return {}
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+        monkeypatch.setattr(dm_mod.KasaAPI, "discover_devices", no_devices_found)
+        dm = self._dm(monkeypatch)
+        dm.device_hosts = ["kasa-backroom-fridge.example.com"]
+
+        await dm.connect()  # startup: device is down
+        assert dm.devices == {}  # not registered
+
+        fail_first["on"] = False
+        # The contract is that a DISCOVERY PASS reconciles configured hosts -- not that
+        # someone remembers to call reconcile. Asserting the wiring is the point: the
+        # old code called initialize_manual_devices() only from connect(), so a later
+        # discovery pass did nothing for a manual host that had failed at startup.
+        await dm.discover_devices()
+        assert "kasa-backroom-fridge.example.com" in dm.devices  # recovered
+        assert len(attempts) > 1  # re-attempted, not abandoned after startup
+
+    async def test_already_registered_manual_host_is_not_reconnected(self, monkeypatch):
+        # Re-connecting a working device every cycle would churn its session for
+        # nothing -- reconcile must only attempt hosts that are actually absent.
+        from app.collector import device_manager as dm_mod
+
+        attempts: list[str] = []
+
+        async def fake_get_device(ip, user, pw):
+            attempts.append(ip)
+            return SimpleNamespace(alias="X", host=ip, has_emeter=False)
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+        dm = self._dm(monkeypatch)
+        dm.device_hosts = ["a.example.com"]
+        dm.devices = {"a.example.com": SimpleNamespace(alias="X", host="a.example.com")}
+
+        await dm.reconcile_manual_devices()
+        assert attempts == []  # nothing re-attempted
