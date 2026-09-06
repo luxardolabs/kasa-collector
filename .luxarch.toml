@@ -9,3 +9,11 @@ app = "app"
 # (disconnect via close()) by DeviceManager — this is the source-client owner,
 # not poller.py (whose connect() opens storage, not devices).
 source_client = ["collector/device_manager.py"]
+
+# The observability overlay is opt-in across kinds, so a collector is not automatically N/A —
+# it adopts the pack or records an evidence-backed opt-out (luxarch 0.135.0). Recording the
+# opt-out rather than leaving it unanswered: an item that can't be dispositioned just trains
+# readers to scroll past it, which is what --plan's "nothing here is optional" exists to stop.
+[observability]
+enabled = false
+exempt_reason = "Headless collector: no OTel dependency, no span helpers, and no request tree to trace — the unit of work is a poll cycle, not a request. It already self-reports through the collector_stats measurement (devices/succeeded/failed/write_failed/duration_seconds per cycle, surfaced on the Collector Health dashboard row), which covers the same questions the overlay would answer here. Revisit if the collector grows an HTTP surface or fans out across services."

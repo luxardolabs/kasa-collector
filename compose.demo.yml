@@ -67,7 +67,7 @@ services:
     restart: unless-stopped
 
   kasa-collector:
-    image: ${KASA_IMAGE:-ghcr.io/luxardolabs/kasa-collector:latest}
+    image: ${KASA_IMAGE:-ghcr.io/luxardolabs/kasa-collector:dev}
     container_name: kasa-collector
     env_file:
       - .env.demo

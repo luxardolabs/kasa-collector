@@ -27,6 +27,12 @@ VERSION_IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(VERSION)
 IMAGE         := $(REGISTRY)/$(IMAGE_NAME):latest
 # Locally-built runtime image for the local stacks (up / dev / demo) — no registry needed.
 LOCAL_IMAGE   := kasa-collector:local
+# What the local stacks actually reference. The fleet standard is that compose pulls the
+# REGISTRY tag and never a bare/ad-hoc local one, and that `:dev` (not the prod rolling
+# `:latest`) is the tag for the dev/demo/test stacks. With REGISTRY set we therefore point
+# the stacks at $(DEV_IMAGE); a public clone with no private registry falls back to the
+# local tag so `make dev-up` still works out of the box.
+STACK_IMAGE   := $(if $(REGISTRY),$(DEV_IMAGE),$(LOCAL_IMAGE))
 # Public OSS image on GitHub Container Registry (the fleet's external registry,
 # not Docker Hub). EXTERNAL_REGISTRY overridable.
 EXTERNAL_REGISTRY ?= ghcr.io
@@ -35,13 +41,13 @@ PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  ?= 0.128.0
+LUXARCH_VERSION  ?= 0.144.0
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
 # same out-of-tree pattern as luxarch. Unset host → make lint/format skip gracefully.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  ?= 0.42.1
+LUXLINT_VERSION  ?= 0.44.2
 LUXLINT_IMAGE    ?= $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; pulled via LUXAUDIT_REGISTRY (Makefile.local).
@@ -172,8 +178,10 @@ dev-build-push: ## Build + push :dev ONLY (tooling stage: dev deps + tests baked
 	docker push $(DEV_IMAGE)
 	@echo "Pushed $(DEV_IMAGE)"
 
-build-local: ## Build the runtime image from CURRENT source as a local tag (no push, no registry)
+build-local: ## Build the runtime image from CURRENT source (tags :local, and :dev when REGISTRY is set)
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(LOCAL_IMAGE) .
+	@if [ -n "$(REGISTRY)" ]; then docker tag $(LOCAL_IMAGE) $(DEV_IMAGE); \
+	  echo "tagged $(DEV_IMAGE) (the tag the dev/demo stacks reference)"; fi
 
 version-build-push: ## Build + push :$(VERSION) ONLY (runtime base stage) to the private registry
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(VERSION_IMAGE) .
@@ -204,7 +212,7 @@ docker-clean: ## Remove local image tags (:dev, :$(VERSION), :latest)
 ##@ Collector-only — plug into your existing InfluxDB/Grafana (compose.yml, .env.dev)
 
 up: build-local ## Build locally + start the collector against YOUR external InfluxDB (edit .env.dev)
-	KASA_IMAGE=$(LOCAL_IMAGE) $(RUN_DC) up -d
+	KASA_IMAGE=$(STACK_IMAGE) $(RUN_DC) up -d
 	@echo "kasa-collector $(VERSION) running (collector only, host network)"
 
 down: ## Stop the collector
@@ -225,7 +233,7 @@ shell: ## Shell into the collector container
 ##@ Dev — full LOCAL stack (your real devices + bundled InfluxDB + Grafana)
 
 dev-up: build-local ## Build locally + start the full dev stack (real devices; Grafana http://localhost:3000)
-	KASA_IMAGE=$(LOCAL_IMAGE) $(DEV_DC) up -d
+	KASA_IMAGE=$(STACK_IMAGE) $(DEV_DC) up -d
 	@echo "kasa-collector [dev] — Grafana http://localhost:3000 (admin/admin)"
 
 dev-down: ## Stop the dev stack (keep data volumes)
@@ -293,7 +301,7 @@ prod-rollback: check-prod-node ## List image tags cached on the node for rollbac
 ##@ Demo / quickstart (self-contained: collector + InfluxDB + Grafana)
 
 demo-up: build-local ## Bring up the demo stack — FAKE devices + auto-provisioned InfluxDB + Grafana
-	KASA_IMAGE=$(LOCAL_IMAGE) $(DEMO_DC) up -d --build
+	KASA_IMAGE=$(STACK_IMAGE) $(DEMO_DC) up -d --build
 	@echo "Grafana:  http://localhost:3000  (admin/admin)  — dashboards populate from fake devices"
 	@echo "InfluxDB: http://localhost:8086"
 
