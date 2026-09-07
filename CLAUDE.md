@@ -30,21 +30,25 @@ make release-public
 make prod-deploy PROD_NODE=<host>
 ```
 
-### The four stacks (all build locally — no registry needed)
+### The stacks — ONE compose.yaml, plus two fake-device topologies
 
 ```bash
-# collector-only → YOUR external InfluxDB/Grafana (edit .env.dev). The plug-in.
+# collector-only → YOUR external InfluxDB/Grafana (edit .env.prod). The plug-in.
 make up                # make down / logs / ps / shell
 
-# dev: your REAL devices + bundled InfluxDB + Grafana (daily local driver)
-make dev-up            # open http://localhost:3000 (admin/admin) — make dev-down
+# dev: your REAL devices + bundled InfluxDB + Grafana (daily local driver).
+# Same compose.yaml — .env.dev just sets COMPOSE_PROFILES=bundled.
+make dev-up            # make dev-down
 
 # demo: FAKE devices + bundled InfluxDB + Grafana (watch it work, no hardware)
 make demo-up           # http://localhost:3000 — make demo-down / demo-clean
-# Standard ports 3000/8086 for dev+demo (override GRAFANA_PORT/INFLUX_PORT in .env.demo).
 
 # test: hardware-free end-to-end (all fake device kinds -> collector -> InfluxDB)
-make test-e2e          # builds from source, pass/fail, self-tears-down
+make test-e2e          # builds the images, runs by tag, pass/fail, self-tears-down
+
+# Ports default to 3000/8086. They are DEPLOYMENT facts, not repo defaults: set
+# GRAFANA_PORT/INFLUX_PORT in your gitignored .env.dev when a sibling app owns one.
+# Compose never builds — `make` builds each image and compose runs it by pinned tag.
 
 # Unit tests + lint. All decoupled from :dev (FLEET-BUILD-DEPLOY-STANDARD): ruff AND mypy
 # are mount-only luxlint (the repo installs nothing), pytest runs in a lean image built

@@ -27,12 +27,6 @@ VERSION_IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(VERSION)
 IMAGE         := $(REGISTRY)/$(IMAGE_NAME):latest
 # Locally-built runtime image for the local stacks (up / dev / demo) — no registry needed.
 LOCAL_IMAGE   := kasa-collector:local
-# What the local stacks actually reference. The fleet standard is that compose pulls the
-# REGISTRY tag and never a bare/ad-hoc local one, and that `:dev` (not the prod rolling
-# `:latest`) is the tag for the dev/demo/test stacks. With REGISTRY set we therefore point
-# the stacks at $(DEV_IMAGE); a public clone with no private registry falls back to the
-# local tag so `make dev-up` still works out of the box.
-STACK_IMAGE   := $(if $(REGISTRY),$(DEV_IMAGE),$(LOCAL_IMAGE))
 # Public OSS image on GitHub Container Registry (the fleet's external registry,
 # not Docker Hub). EXTERNAL_REGISTRY overridable.
 EXTERNAL_REGISTRY ?= ghcr.io
@@ -102,9 +96,10 @@ POETRY_RUN := docker run --rm -u $(REPO_UID):$(REPO_GID) -e HOME=/tmp \
 POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-action=ignore $(POETRY_SPEC)
 
 # Compose stacks (all .yml, short-form volumes). Four flavors:
-#   compose.yml       collector-only -> your external InfluxDB/Grafana (.env.dev / :dev)
-#   compose.prod.yml  collector-only -> external, prod (.env.prod / :latest)
-#   compose.dev.yml   full LOCAL dev stack: your real devices + bundled InfluxDB+Grafana
+#   compose.yaml      THE collector stack, every environment. The bundled InfluxDB +
+#                     Grafana are a compose PROFILE (COMPOSE_PROFILES=bundled), so:
+#                       .env.prod -> collector alone, against your external InfluxDB
+#                       .env.dev  -> collector + bundled InfluxDB/Grafana, real devices
 #   compose.demo.yml  DEMO: fake devices + bundled InfluxDB+Grafana (no hardware)
 #   compose.e2e.yml   hardware-free e2e test (fakes + ephemeral InfluxDB) -> `make test-e2e`
 # ONE compose.yaml; the environment IS the --env-file (fleet standard). The fake-device
@@ -221,7 +216,7 @@ docker-inspect: ## Inspect release image metadata
 docker-clean: ## Remove local image tags (:dev, :$(VERSION), :latest)
 	docker rmi $(DEV_IMAGE) $(VERSION_IMAGE) $(IMAGE) 2>/dev/null || true
 
-##@ Collector-only — plug into your existing InfluxDB/Grafana (compose.yml, .env.dev)
+##@ Collector-only — plug into your existing InfluxDB/Grafana (compose.yaml, .env.prod)
 
 up: build-local ## Build locally + start the collector against YOUR external InfluxDB (edit .env.dev)
 	$(RUN_DC) up -d
@@ -290,8 +285,8 @@ prod-init: check-prod-node ## One-time: create the output data dir on the node (
 	$(PROD_SSH) 'mkdir -p $(PROD_DIR)/output && chown -R 1000:1000 $(PROD_DIR)/output'
 	@printf "✓ output dir created on $(PROD_NODE)\n"
 
-prod-sync: check-prod-node ## Push compose.prod.yml + .env.prod to the node (repo is source of truth)
-	rsync -az --chown=1000:1000 compose.prod.yml .env.prod $(PROD_USER)@$(PROD_NODE):$(PROD_DIR)/
+prod-sync: check-prod-node ## Push compose.yaml + .env.prod to the node (repo is source of truth)
+	rsync -az --chown=1000:1000 compose.yaml .env.prod $(PROD_USER)@$(PROD_NODE):$(PROD_DIR)/
 	@printf "✓ synced config to $(PROD_NODE):$(PROD_DIR)\n"
 
 prod-deploy: check-prod-node ## Pull :latest + recreate the collector on the node (run release first)

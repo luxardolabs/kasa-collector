@@ -5,7 +5,8 @@ name: kasa-collector-demo
 # the dashboards populate with zero physical devices. Bring up with `make demo-up`,
 # open Grafana at http://localhost:3000 (admin/admin). Everything here is on the
 # default bridge network; the collector finds the fakes by service name. Config in
-# .env.demo. Override the collector image with KASA_IMAGE=<tag> to demo a local build.
+# .env.demo, which pins the PUBLIC GHCR release so a clean clone works. Point REGISTRY/TAG
+# at your own build to demo a local image.
 
 services:
   kasa_influxdb:

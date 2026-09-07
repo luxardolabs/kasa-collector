@@ -44,29 +44,36 @@ docker pull ghcr.io/luxardolabs/kasa-collector:2026.8.0
 
 ## Collector-only deployment
 
-The production shape is the collector on its own, pointed at your external InfluxDB and Grafana. The repo ships `compose.prod.yml` for exactly this. **Compose never builds** — the Makefile builds and pushes the image, and the stack pulls it. The Dockerfile bakes in a `HEALTHCHECK` (`python -m app.health.check`), so no compose-level health check is needed.
+The production shape is the collector on its own, pointed at your external InfluxDB and Grafana. That is the default shape of `compose.yaml` — the bundled InfluxDB + Grafana are a compose **profile**, so leaving `COMPOSE_PROFILES` unset gives you the collector alone. **Compose never builds** — the Makefile builds and pushes the image, and the stack pulls it by a pinned tag. The Dockerfile bakes in a `HEALTHCHECK` (`python -m app.health.check`), so no compose-level health check is needed.
 
-`compose.prod.yml` is intentionally minimal:
+There is ONE compose file for every environment; environments differ only by their `.env.<env>`:
 
 ```yaml
-name: kasa-collector
-
 services:
   kasa-collector:
     container_name: kasa-collector
-    image: ${KASA_IMAGE:-ghcr.io/luxardolabs/kasa-collector:latest}
+    # Pinned, never :latest — a deployable does not roll.
+    image: ${REGISTRY:?}/luxardolabs/kasa-collector:${TAG:?}
     env_file:
-      - .env.prod
+      - ${ENV_FILE:?}
     network_mode: host
     restart: always
     volumes:
-      - /mnt/docker/kasa-collector/output:/app/output
+      - ${OUTPUT_DIR:-/mnt/docker/kasa-collector/output}:/app/output
+```
+
+`.env.prod` supplies the image coordinates alongside the collector's own settings:
+
+```sh
+REGISTRY=ghcr.io          # or your private registry
+TAG=2026.09.0             # the released version — pinned, never :latest
+ENV_FILE=.env.prod
 ```
 
 Run it locally against `.env.prod` with the Makefile:
 
 ```bash
-make prod-up      # docker compose pull && up -d  (compose.prod.yml, .env.prod)
+make prod-up      # docker compose pull && up -d  (compose.yaml, .env.prod)
 make prod-logs
 make prod-ps
 make prod-down
@@ -129,7 +136,7 @@ The collector must run on a host with LAN access to the Kasa devices. The Makefi
 # One-time: create the output data dir on the node (owned by appuser, uid 1000)
 make prod-init   PROD_NODE=collector01.example.com
 
-# Push compose.prod.yml + .env.prod to the node (the repo is the source of truth)
+# Push compose.yaml + .env.prod to the node (the repo is the source of truth)
 make prod-sync   PROD_NODE=collector01.example.com
 
 # Pull :latest + recreate the collector on the node (run `make release` first)

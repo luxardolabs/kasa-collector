@@ -5,7 +5,7 @@ name: kasa-collector-e2e
 # device emulators speak the IOT protocol; the collector discovers them via explicit
 # DEVICE_HOSTS (bridge can't broadcast) and writes emeter data to a throwaway InfluxDB.
 # Driven by `make test-e2e`, which builds the collector image from CURRENT source and
-# sets KASA_IMAGE. All values here are fixed test values, not secrets.
+# passes REGISTRY/TAG/FAKE_TAG. All values here are fixed test values, not secrets.
 
 services:
   kasa_influxdb:

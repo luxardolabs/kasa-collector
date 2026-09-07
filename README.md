@@ -43,7 +43,7 @@ See [Getting Started](docs/getting-started.md) for the full walkthrough and [Con
 
 ## The four stacks
 
-Everything is driven by `make`. Compose never builds — `make` builds the runtime image locally, so no registry is needed for any local stack.
+Everything is driven by `make`. There is one `compose.yaml`; environments differ only by their `.env.<env>` file. **Compose never builds** — `make` builds each image and compose runs it by a pinned tag, so no registry is needed for any local stack.
 
 | Stack              | Command         | What it does                                                                    |
 | ------------------ | --------------- | ------------------------------------------------------------------------------- |
@@ -52,7 +52,7 @@ Everything is driven by `make`. Compose never builds — `make` builds the runti
 | **collector-only** | `make up`       | Just the collector, pointed at your own external InfluxDB + Grafana             |
 | **test**           | `make test-e2e` | Hardware-free end-to-end test — fakes → collector → ephemeral InfluxDB          |
 
-The demo and dev stacks serve Grafana at http://localhost:3000 (admin/admin). See [Deployment](docs/deployment.md) for production.
+The demo and dev stacks serve Grafana at http://localhost:3000 (admin/admin) — set `GRAFANA_PORT`/`INFLUX_PORT` in your `.env` if another service already owns those ports. See [Deployment](docs/deployment.md) for production.
 
 ## Features
 
