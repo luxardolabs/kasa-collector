@@ -71,6 +71,12 @@ class DeviceManager:
         # broadcast, so absence from ONE round does not mean the device is gone; a host
         # is pruned only after KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD consecutive misses.
         self.discovery_misses: dict[str, int] = {}
+        # Configured DEVICE_HOSTS entry -> the registry key it resolved to. Devices are
+        # keyed (and tagged in InfluxDB) by RESOLVED ADDRESS, so a manual host configured
+        # by DNS name is indistinguishable from a discovered one in the data. This mapping
+        # is what still lets reconcile/prune reason about "is this configured host
+        # registered?" once the key is no longer the configured string.
+        self.manual_addresses: dict[str, str] = {}
 
         # Initialize manual devices if provided
         self.device_hosts: list[str] = []
@@ -119,7 +125,11 @@ class DeviceManager:
         currently registered, so an env-listed device always converges to collected
         without re-connecting (and re-handshaking) the ones already working.
         """
-        missing = [ip for ip in self.device_hosts if ip not in self.devices]
+        missing = [
+            entry
+            for entry in self.device_hosts
+            if self.manual_addresses.get(entry, entry) not in self.devices
+        ]
         if not missing:
             return
         if self.devices:
@@ -157,17 +167,25 @@ class DeviceManager:
                 device = await KasaAPI.get_device(
                     ip, self.tplink_username, self.tplink_password
                 )
-                self.devices[ip] = device
+                # Key on the RESOLVED address, not the configured string. get_device()
+                # resolves the hostname up front and connects on that address, so
+                # device.host is the IPv4 on every path -- which makes the `ip` tag an
+                # actual IP for manual and discovered devices alike (KASACOLLEC-64).
+                key = str(getattr(device, "host", "") or ip)
+                self.devices[key] = device
+                self.manual_addresses[ip] = key
                 # Check and store devices based on emeter capabilities
-                self._check_and_add_emeter_device(ip, device)
+                self._check_and_add_emeter_device(key, device)
                 device_name = get_device_name(device)
-                hostname = await get_hostname_cached(ip)
-                # Always show manually added devices at INFO level
+                # Always show manually added devices at INFO level. Report the RESOLVED
+                # address under "IP" and the configured entry separately -- the old line
+                # printed the DEVICE_HOSTS string under "IP", which for a DNS-configured
+                # host was a name, matching the tag defect this keying fixed.
                 self.logger.info(
-                    "Manually added device: %s (IP: %s, Host: %s)",
+                    "Manually added device: %s (IP: %s, configured as: %s)",
                     device_name,
+                    key,
                     ip,
-                    hostname,
                 )
             # swallowed-exceptions: per-device boundary inside a TaskGroup. One unreachable
             # manual host must not cancel its siblings -- an unhandled raise here would abort
@@ -470,7 +488,9 @@ class DeviceManager:
             # Never prune manually-configured devices: they won't appear in a
             # broadcast discovery result (e.g. cross-subnet), so their absence
             # there doesn't mean they're gone.
-            if ip in self.device_hosts:
+            # Never prune manually-configured devices. Match the configured entry AND the
+            # address it resolved to, since the registry is keyed by resolved address.
+            if ip in self.device_hosts or ip in self.manual_addresses.values():
                 continue
 
             if ip in discovered_devices:

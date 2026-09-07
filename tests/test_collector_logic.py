@@ -283,3 +283,81 @@ class TestManualHostsAreIntent:
 
         await dm.reconcile_manual_devices()
         assert attempts == []  # nothing re-attempted
+
+
+@pytest.mark.unit
+class TestManualHostKeyedByResolvedAddress:
+    """A manually configured host is registered by its RESOLVED address.
+
+    The `ip` tag on every point comes from the registry key. Keying manual hosts on
+    the raw DEVICE_HOSTS string meant a tag named `ip` held an IP for discovered
+    devices and a DNS name for configured ones -- in the same measurement, so it
+    could not be grouped or joined on (KASACOLLEC-64).
+    """
+
+    def _dm(self, monkeypatch):
+        async def fake_hostname(ip):
+            return f"host-{ip}"
+
+        monkeypatch.setattr(
+            "app.collector.device_manager.get_hostname_cached", fake_hostname
+        )
+        from app.collector.device_manager import DeviceManager
+
+        return DeviceManager(logging.getLogger("test"))
+
+    async def test_registry_key_is_the_resolved_ip_not_the_configured_name(
+        self, monkeypatch
+    ):
+        from app.collector import device_manager as dm_mod
+
+        async def fake_get_device(entry, user, pw):
+            # get_device resolves the name up front and connects on the address,
+            # so device.host is the resolved IPv4 on every path.
+            return SimpleNamespace(alias="Fridge", host="10.50.0.100", has_emeter=False)
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+        dm = self._dm(monkeypatch)
+        dm.device_hosts = ["kasa-backroom-fridge.example.com"]
+
+        await dm.reconcile_manual_devices()
+        assert "10.50.0.100" in dm.devices  # keyed by address
+        assert "kasa-backroom-fridge.example.com" not in dm.devices
+        assert dm.manual_addresses["kasa-backroom-fridge.example.com"] == "10.50.0.100"
+
+    async def test_resolved_manual_host_is_not_reattempted(self, monkeypatch):
+        # reconcile must recognise the host as registered via the mapping, or it
+        # would reconnect (and re-handshake) a working device every cycle.
+        from app.collector import device_manager as dm_mod
+
+        attempts: list[str] = []
+
+        async def fake_get_device(entry, user, pw):
+            attempts.append(entry)
+            return SimpleNamespace(alias="Fridge", host="10.50.0.100", has_emeter=False)
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+        dm = self._dm(monkeypatch)
+        dm.device_hosts = ["kasa-backroom-fridge.example.com"]
+
+        await dm.reconcile_manual_devices()
+        await dm.reconcile_manual_devices()
+        assert attempts == ["kasa-backroom-fridge.example.com"]  # attempted once
+
+    async def test_resolved_manual_host_is_still_protected_from_pruning(
+        self, monkeypatch
+    ):
+        # The prune guard matched the registry key against device_hosts. Once the key
+        # is an address that no longer matches, so the mapping has to be consulted --
+        # otherwise every Boutique device would be pruned on the first discovery pass.
+        from app.core import config
+
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 1)
+        dm = self._dm(monkeypatch)
+        dm.device_hosts = ["kasa-backroom-fridge.example.com"]
+        dm.manual_addresses = {"kasa-backroom-fridge.example.com": "10.50.0.100"}
+        dm.devices = {"10.50.0.100": SimpleNamespace(alias="F", host="10.50.0.100")}
+
+        await dm.remove_missing_devices({})  # never appears in a broadcast
+        assert "10.50.0.100" in dm.devices  # protected
