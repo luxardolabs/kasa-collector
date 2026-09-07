@@ -52,22 +52,22 @@ services:
 
   # --- Fake Kasa devices (emulators) — no hardware needed ---
   kasa_fake_hs110:
-    build: ./harness
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
     environment: {KASA_FAKE_KIND: plug, KASA_FAKE_MODEL: HS110(US), KASA_FAKE_ALIAS: Demo HS110 Plug, KASA_FAKE_MAC: "50:C7:BF:00:00:10", KASA_FAKE_BASE_W: "42"}
     restart: unless-stopped
 
   kasa_fake_kp115:
-    build: ./harness
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
     environment: {KASA_FAKE_KIND: plug, KASA_FAKE_MODEL: KP115(US), KASA_FAKE_ALIAS: Demo KP115 Plug, KASA_FAKE_MAC: "50:C7:BF:00:00:11", KASA_FAKE_BASE_W: "88"}
     restart: unless-stopped
 
   kasa_fake_hs300:
-    build: ./harness
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
     environment: {KASA_FAKE_KIND: strip, KASA_FAKE_MODEL: HS300(US), KASA_FAKE_ALIAS: Demo HS300 Strip, KASA_FAKE_MAC: "50:C7:BF:00:00:13", KASA_FAKE_BASE_W: "30", KASA_FAKE_OUTLETS: "6"}
     restart: unless-stopped
 
   kasa-collector:
-    image: ${KASA_IMAGE:-ghcr.io/luxardolabs/kasa-collector:dev}
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
     container_name: kasa-collector
     env_file:
       - .env.demo

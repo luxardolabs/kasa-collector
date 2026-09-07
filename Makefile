@@ -107,9 +107,11 @@ POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-act
 #   compose.dev.yml   full LOCAL dev stack: your real devices + bundled InfluxDB+Grafana
 #   compose.demo.yml  DEMO: fake devices + bundled InfluxDB+Grafana (no hardware)
 #   compose.e2e.yml   hardware-free e2e test (fakes + ephemeral InfluxDB) -> `make test-e2e`
-RUN_DC  := docker compose -f compose.yml --env-file .env.dev
-PROD_DC := docker compose -f compose.prod.yml --env-file .env.prod
-DEV_DC  := docker compose -f compose.dev.yml --env-file .env.demo
+# ONE compose.yaml; the environment IS the --env-file (fleet standard). The fake-device
+# stacks are separate topologies (bridge network + emulators), not environments of it.
+RUN_DC  := docker compose --env-file .env.prod
+PROD_DC := docker compose --env-file .env.prod
+DEV_DC  := docker compose --env-file .env.dev
 DEMO_DC := docker compose -f compose.demo.yml --env-file .env.demo
 
 # Remote prod deploy over SSH. The collector runs on a host with LAN access to the
@@ -178,6 +180,16 @@ dev-build-push: ## Build + push :dev ONLY (tooling stage: dev deps + tests baked
 	docker push $(DEV_IMAGE)
 	@echo "Pushed $(DEV_IMAGE)"
 
+# The emulator is a TEST FIXTURE, never a released artifact: it is built locally and
+# never pushed. It carries the public name so the quickstart resolves it from the local
+# store with no registry and no pull -- which is what makes `make demo-up` work on a
+# clean clone.
+FAKE_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)-fake:dev
+
+harness-build: ## Build the fake-device emulator image (compose never builds — it runs a tag)
+	docker build $(NO_CACHE_FLAG) -t $(FAKE_IMAGE) ./harness
+	@echo "built $(FAKE_IMAGE)"
+
 build-local: ## Build the runtime image from CURRENT source (tags :local, and :dev when REGISTRY is set)
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(LOCAL_IMAGE) .
 	@if [ -n "$(REGISTRY)" ]; then docker tag $(LOCAL_IMAGE) $(DEV_IMAGE); \
@@ -212,7 +224,7 @@ docker-clean: ## Remove local image tags (:dev, :$(VERSION), :latest)
 ##@ Collector-only — plug into your existing InfluxDB/Grafana (compose.yml, .env.dev)
 
 up: build-local ## Build locally + start the collector against YOUR external InfluxDB (edit .env.dev)
-	KASA_IMAGE=$(STACK_IMAGE) $(RUN_DC) up -d
+	$(RUN_DC) up -d
 	@echo "kasa-collector $(VERSION) running (collector only, host network)"
 
 down: ## Stop the collector
@@ -232,9 +244,9 @@ shell: ## Shell into the collector container
 
 ##@ Dev — full LOCAL stack (your real devices + bundled InfluxDB + Grafana)
 
-dev-up: build-local ## Build locally + start the full dev stack (real devices; Grafana http://localhost:3000)
-	KASA_IMAGE=$(STACK_IMAGE) $(DEV_DC) up -d
-	@echo "kasa-collector [dev] — Grafana http://localhost:3000 (admin/admin)"
+dev-up: build-local ## Build locally + start the full dev stack (real devices; Grafana on the port set by GRAFANA_PORT in .env.dev)
+	$(DEV_DC) up -d
+	@echo "kasa-collector [dev] — Grafana on the port set by GRAFANA_PORT in .env.dev (admin/admin)"
 
 dev-down: ## Stop the dev stack (keep data volumes)
 	$(DEV_DC) down
@@ -300,8 +312,8 @@ prod-rollback: check-prod-node ## List image tags cached on the node for rollbac
 
 ##@ Demo / quickstart (self-contained: collector + InfluxDB + Grafana)
 
-demo-up: build-local ## Bring up the demo stack — FAKE devices + auto-provisioned InfluxDB + Grafana
-	KASA_IMAGE=$(STACK_IMAGE) $(DEMO_DC) up -d --build
+demo-up: build-local harness-build ## Bring up the demo stack — FAKE devices + auto-provisioned InfluxDB + Grafana
+	$(DEMO_DC) up -d
 	@echo "Grafana:  http://localhost:3000  (admin/admin)  — dashboards populate from fake devices"
 	@echo "InfluxDB: http://localhost:8086"
 
@@ -461,11 +473,14 @@ audit: ## Scan pinned deps against the live vulnerability feed (luxaudit)
 	  echo "luxaudit: LUXAUDIT_REGISTRY unset (see Makefile.local.example) — skipping"; \
 	else docker run --rm -v $(PWD):/repo $(LUXAUDIT_IMAGE); fi
 
-# Built and consumed locally by the e2e harness (never pushed) — no registry needed.
-E2E_IMAGE := kasa-collector:e2e
-test-e2e: ## Hardware-free end-to-end test: fake Kasa devices -> collector -> InfluxDB
+# The e2e stack runs the SAME pinned tag the dev stack does, built from current source
+# just above — compose never builds, it runs a tag (repo.compose_conventions).
+# Built and run under the PUBLIC name so a clean clone can run the hardware-free test
+# with no private registry and no pull — the image exists locally, compose runs the tag.
+E2E_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME):dev
+test-e2e: harness-build ## Hardware-free end-to-end test: fake Kasa devices -> collector -> InfluxDB
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(E2E_IMAGE) .
-	KASA_IMAGE=$(E2E_IMAGE) ./scripts/e2e-test.sh
+	REGISTRY=$(EXTERNAL_REGISTRY) TAG=dev FAKE_TAG=dev ./scripts/e2e-test.sh
 
 # THE fleet gate — byte-identical composition across every app repo. Five different `check`
 # targets is five different answers to "is this repo green," and the drift hides holes: a gate

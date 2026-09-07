@@ -109,16 +109,19 @@ All configuration is done through environment variables. Key settings include:
 - Comprehensive resource cleanup and timeout management for long-running deployments
 - The runtime image installs `tzdata` + `tzdata-legacy` — python-kasa resolves each device's timezone via `zoneinfo`, and TP-Link's timezone index uses legacy POSIX names (e.g. `PST8PDT`, `CST6CDT`) that would otherwise crash `update()`
 
-### Four stacks (all `.yml`, short-form volumes), by device source + observability
+### ONE `compose.yaml` + `.env.<env>` — plus two fake-device stacks
 
-- **collector-only** — `compose.yml` (+ `compose.prod.yml`): just the collector → YOUR external InfluxDB/Grafana. The production plug-in. `make up`/`down`, `make prod-*`.
-- **dev** — `compose.dev.yml`: your REAL devices (host networking, broadcast discovery)
-  - bundled InfluxDB + Grafana. The daily local driver. `make dev-up`/`dev-down`.
-- **demo** — `compose.demo.yml`: FAKE devices (the harness emulators) + bundled InfluxDB
-  - Grafana. Watch it work with no hardware. `make demo-up`/`demo-down`.
-- **test** — `compose.e2e.yml`: all fake device kinds + ephemeral InfluxDB, bridge network, no published ports. `make test-e2e` (pass/fail). See `docs/testing.md`.
+The fleet standard is one compose file per repo; environments differ ONLY by their env file, never by an overlay (`luxarch --doc FLEET-BUILD-DEPLOY-STANDARD`, `--playbook compose-hygiene`). **Compose never builds** — every image is built outside it and referenced by a PINNED tag, so the app image never floats (no `:latest`, no `${TAG:-latest}`).
 
-Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. `.env.demo` holds the bundled-stack values (used by dev + demo). `make build-local` builds the runtime image from source; `up`/`dev-up`/`demo-up` build locally (no registry needed). The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
+- **`compose.yaml`** — the collector, host networking (Kasa discovery is a UDP broadcast and cannot cross a bridge). The bundled InfluxDB + Grafana are a compose **profile**, enabled per environment:
+  - `.env.prod` — collector → YOUR external InfluxDB. `TAG=<version>`, no profile. `make prod-*`.
+  - `.env.dev` — collector → bundled InfluxDB + Grafana, REAL devices. `TAG=dev`, `COMPOSE_PROFILES=bundled`. `make dev-up`/`dev-down`. Set `GRAFANA_PORT`/`INFLUX_PORT` per host — sibling apps share the box, so 3000 is often taken.
+- **`compose.demo.yml`** — FAKE devices + bundled stack, bridge network. `make demo-up`/`demo-down`.
+- **`compose.e2e.yml`** — all fake device kinds + throwaway InfluxDB, bridge, no published ports. `make test-e2e`. See `docs/testing.md`.
+
+demo and e2e are separate **topologies**, not environments: they run on the compose network so the collector resolves the emulators by service name, which host networking cannot do. That is why they stay distinct files rather than profiles of `compose.yaml`.
+
+Images: `make build-local` (runtime, tags `:local` and `:dev`), `make harness-build` (the fake-device emulator image — compose runs it by tag), `make dev-build-push` / `make release`. Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 
 ## Naming Convention
 

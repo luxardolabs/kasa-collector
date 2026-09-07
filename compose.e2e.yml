@@ -36,7 +36,7 @@ services:
 
   # --- emeter plug ---
   kasa_fake_hs110:
-    build: ./harness
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
     environment:
       KASA_FAKE_KIND: plug
       KASA_FAKE_MODEL: HS110(US)
@@ -46,7 +46,7 @@ services:
 
   # --- emeter plug (different model) ---
   kasa_fake_kp115:
-    build: ./harness
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
     environment:
       KASA_FAKE_KIND: plug
       KASA_FAKE_MODEL: KP115(US)
@@ -56,7 +56,7 @@ services:
 
   # --- plug WITHOUT energy monitoring (exercises the no-emeter branch) ---
   kasa_fake_hs103:
-    build: ./harness
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
     environment:
       KASA_FAKE_KIND: plug_noemeter
       KASA_FAKE_MODEL: HS103(US)
@@ -65,7 +65,7 @@ services:
 
   # --- multi-outlet power strip with per-outlet emeter (child devices) ---
   kasa_fake_hs300:
-    build: ./harness
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
     environment:
       KASA_FAKE_KIND: strip
       KASA_FAKE_MODEL: HS300(US)
@@ -75,7 +75,7 @@ services:
       KASA_FAKE_OUTLETS: "6"
 
   kasa-collector:
-    image: ${KASA_IMAGE:-ghcr.io/luxardolabs/kasa-collector:latest}
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
     environment:
       KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY: "False"
       KASA_COLLECTOR_DEVICE_HOSTS: kasa_fake_hs110,kasa_fake_kp115,kasa_fake_hs103,kasa_fake_hs300

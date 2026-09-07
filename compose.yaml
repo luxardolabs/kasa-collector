@@ -1,0 +1,100 @@
+name: kasa-collector
+
+# THE compose file for the collector, every environment (fleet standard — see
+# `luxarch --doc FLEET-BUILD-DEPLOY-STANDARD` and `--playbook compose-hygiene`).
+#
+#   docker compose --env-file .env.prod up -d      # collector -> your external InfluxDB
+#   docker compose --env-file .env.dev  up -d      # + bundled InfluxDB & Grafana
+#
+# Environments differ ONLY by `.env.<env>` — never by an overlay compose file. The
+# bundled observability stack is a compose PROFILE, enabled from the env file with
+# `COMPOSE_PROFILES=bundled`, so prod runs the collector alone from the same file.
+#
+# Compose NEVER builds. Images are built outside it (`make build-local`,
+# `make dev-build-push`, `make release`) and referenced here by a PINNED tag — the app
+# image never floats, so there is no `:latest` and no `${TAG:-latest}`.
+#
+# The collector uses HOST networking: Kasa discovery is a UDP broadcast and cannot
+# cross a bridge. The bundled InfluxDB/Grafana publish ports, which the host-networked
+# collector reaches on localhost (that is why .env.dev points INFLUXDB_URL there).
+#
+# The fake-device stacks are separate topologies, not environments of this one:
+#   compose.demo.yml  fake devices + bundled stack, bridge network  (`make demo-up`)
+#   compose.e2e.yml   hardware-free end-to-end test                 (`make test-e2e`)
+#
+# Real `.env.<env>` files are gitignored (TAG/REGISTRY/ports/secrets); `.env.example`
+# is the committed template.
+
+services:
+  kasa-collector:
+    container_name: kasa-collector
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
+    env_file:
+      # The --env-file passed on the command line supplies compose interpolation, not
+      # the container's environment, so the same file is listed here explicitly.
+      # .env.dev.local (gitignored, optional) layers real device credentials on top;
+      # the later file wins on shared keys.
+      - ${ENV_FILE:?set ENV_FILE in .env.<env>}
+      - path: .env.dev.local
+        required: false
+    network_mode: host
+    restart: always
+    healthcheck:
+      test: ["CMD", "python3", "-m", "app.health.check"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    volumes:
+      - ${OUTPUT_DIR:-/mnt/docker/kasa-collector/output}:/app/output
+
+  # -- bundled observability (profile: bundled) --------------------------------
+  # Enabled from .env.dev with COMPOSE_PROFILES=bundled. Prod omits it and points
+  # the collector at an external InfluxDB instead.
+  kasa_influxdb:
+    image: influxdb:2.7
+    container_name: kasa_influxdb
+    profiles: [bundled]
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - kasa_influxdb_data:/var/lib/influxdb2
+      - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    ports:
+      - "${INFLUX_PORT:-8086}:8086"
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  kasa_grafana:
+    image: grafana/grafana:11.3.0
+    container_name: kasa_grafana
+    profiles: [bundled]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      INFLUX_BUCKET: ${INFLUX_BUCKET}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
+      - kasa_grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      kasa_influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  kasa_influxdb_data:
+  kasa_grafana_data:

@@ -2,7 +2,8 @@
 # End-to-end harness runner: fake Kasa devices -> collector -> InfluxDB, no hardware.
 # Brings up compose.e2e.yml, waits for the collector to write emeter data for the
 # emulated devices, and asserts both device aliases show up in InfluxDB. Always tears
-# the stack down. Driven by `make test-e2e` (which builds + passes KASA_IMAGE).
+# the stack down. Driven by `make test-e2e`, which builds the collector and fake
+# images first and passes REGISTRY/TAG/FAKE_TAG — compose only runs the tags.
 set -euo pipefail
 
 DC="docker compose -f compose.e2e.yml"
@@ -16,8 +17,8 @@ TIMEOUT="${E2E_TIMEOUT:-120}"
 cleanup() { $DC down -v >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-echo "▶ building fake devices + starting e2e stack (KASA_IMAGE=${KASA_IMAGE:-default})…"
-$DC up -d --build
+echo "▶ starting e2e stack (image ${REGISTRY:?}/luxardolabs/kasa-collector:${TAG:?})…"
+$DC up -d
 
 # Query InfluxDB (InfluxQL over the v1-compat API) for the emeter device_alias tags.
 query_aliases() {
