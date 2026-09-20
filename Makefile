@@ -37,7 +37,7 @@ PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.192.4
+LUXARCH_VERSION  := 0.193.0
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
@@ -172,6 +172,21 @@ buildx-setup: ## Ensure the SHARED fleet buildx builder exists, GC-capped (multi
 		|| docker buildx create --name $(BUILDX_BUILDER) --driver docker-container --use \
 		     --buildkitd-config $(BUILDKITD_CONFIG)
 	@docker buildx use $(BUILDX_BUILDER)
+	@# REFUSE to build alongside orphan per-project builders (repo.buildx_strays_refused).
+	@# `buildx create` only ever creates: migrating to the shared builder leaves the old
+	@# daemon running forever, each with its own ungoverned cache. Four such orphans on one
+	@# fleet host reached 100GB of build cache, filled the root filesystem and killed a
+	@# production Postgres with "No space left on device" -- while every file-based rule
+	@# stayed green, because the orphan lives on the HOST and luxarch is mount-only. So the
+	@# refusal goes where the daemon is reachable, and the rule checks that it is wired.
+	@# ALLOW_STRAY_BUILDERS=1 for a deliberate non-fleet builder.
+	@strays=$$(docker buildx ls 2>/dev/null | awk '$$2=="docker-container"{print $$1}' \
+	  | grep -v '^\\_' | sed 's/\*$$//' | grep -vxF "$(BUILDX_BUILDER)" | tr '\n' ' '); \
+	if [ -n "$$strays" ] && [ -z "$(ALLOW_STRAY_BUILDERS)" ]; then \
+	  echo "REFUSING: stray per-project buildx builders are running: $$strays"; \
+	  echo "Remove them:  docker buildx rm $$strays"; \
+	  exit 1; \
+	fi
 
 dev-build-push: ## Build + push :dev ONLY (tooling stage: dev deps + tests baked)
 	docker build $(NO_CACHE_FLAG) --target dev -f Dockerfile $(BUILD_ARGS) -t $(DEV_IMAGE) .
