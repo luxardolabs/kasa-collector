@@ -21,6 +21,7 @@ The module maintains three device registries:
 
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 
 from kasa import Device
@@ -77,6 +78,11 @@ class DeviceManager:
         # is what still lets reconcile/prune reason about "is this configured host
         # registered?" once the key is no longer the configured string.
         self.manual_addresses: dict[str, str] = {}
+        # Registry key -> monotonic timestamp of the last SUCCESSFUL poll. A poll that
+        # returned data is direct evidence the device is present; a silent broadcast is
+        # only an inference that it is not. When the two disagree the evidence wins —
+        # see remove_missing_devices (KASACOLLEC-70).
+        self.last_poll_ok: dict[str, float] = {}
 
         # Initialize manual devices if provided
         self.device_hosts: list[str] = []
@@ -469,6 +475,19 @@ class DeviceManager:
             else:
                 self.logger.exception("Failed to connect to device %s: %s", ip, e)
 
+    def mark_reachable(self, ip: str) -> None:
+        """Record that a device answered a poll.
+
+        Called by the poller for every device that responded, including one whose
+        data then failed to reach InfluxDB — that is a storage failure, not a device
+        failure, and the device is demonstrably present either way.
+
+        Uses a monotonic clock: this is an elapsed-time question, and a wall clock can
+        step backwards over an NTP correction or a DST change, which would make a fresh
+        poll look stale and evict a live device.
+        """
+        self.last_poll_ok[ip] = time.monotonic()
+
     async def remove_missing_devices(
         self, discovered_devices: dict[str, Device]
     ) -> None:
@@ -480,10 +499,23 @@ class DeviceManager:
         Only removes devices if KASA_COLLECTOR_KEEP_MISSING_DEVICES is False.
         This allows handling of temporarily offline devices vs permanently
         removed devices based on configuration preference.
+
+        A device that has answered a poll recently is NEVER pruned, whatever discovery
+        says (KASACOLLEC-70). Broadcast absence is an inference; a successful poll is
+        direct evidence. Live, these disagreed badly: five healthy devices stopped
+        answering broadcast entirely — proven on the wire, they emitted nothing while
+        eleven siblings replied — yet kept serving every poll. One was deleted three
+        seconds after its last successful reading. No miss threshold can fix that,
+        because the threshold only counts how long to trust the wrong signal.
         """
         if Config.KASA_COLLECTOR_KEEP_MISSING_DEVICES:
             return
         threshold = Config.KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD
+        # Pruning is evaluated once per discovery round, so "answered a poll within one
+        # discovery interval" is the natural window: the device has proven itself since
+        # about the last time this ran.
+        grace = Config.KASA_COLLECTOR_DEVICE_DISCOVERY_INTERVAL
+        now = time.monotonic()
         for ip in list(self.devices.keys()):
             # Never prune manually-configured devices: they won't appear in a
             # broadcast discovery result (e.g. cross-subnet), so their absence
@@ -496,6 +528,18 @@ class DeviceManager:
             if ip in discovered_devices:
                 # Seen again — any earlier misses were transient loss, not absence.
                 self.discovery_misses.pop(ip, None)
+                continue
+
+            # It did not answer the broadcast, but is it actually gone? A device we are
+            # still successfully polling is present, and that outranks the broadcast.
+            last_ok = self.last_poll_ok.get(ip)
+            if last_ok is not None and (now - last_ok) <= grace:
+                self.discovery_misses.pop(ip, None)
+                self.logger.debug(
+                    "Not discovered but answered a poll %.0fs ago — keeping: %s",
+                    now - last_ok,
+                    ip,
+                )
                 continue
 
             misses = self.discovery_misses.get(ip, 0) + 1
@@ -513,6 +557,7 @@ class DeviceManager:
 
             missing_device = self.devices.pop(ip)
             self.discovery_misses.pop(ip, None)
+            self.last_poll_ok.pop(ip, None)
             device_name = get_device_name(missing_device)
             self.emeter_devices.pop(
                 ip, None

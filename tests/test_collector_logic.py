@@ -138,6 +138,145 @@ class TestRemoveMissingDevices:
 
 
 @pytest.mark.unit
+class TestPollEvidenceOutranksDiscovery:
+    """A device we are still polling must never be pruned as missing.
+
+    Live incident (KASACOLLEC-70): five devices stopped answering broadcast discovery
+    entirely -- captured on the wire, they emitted nothing while eleven siblings on the
+    same segment replied -- while continuing to serve every poll. The collector deleted
+    them anyway. One lost its last reading THREE SECONDS before being removed:
+
+        10.10.7.68  last successful data point  04:59:10Z
+        10.10.7.68  deleted as "missing"        04:59:13Z
+
+    Discovery absence is an inference; a successful poll is direct evidence. The
+    threshold work in KASACOLLEC-65 could not help -- it only sets how many rounds to
+    keep trusting the wrong signal.
+    """
+
+    def _dm(self, monkeypatch):
+        async def fake_hostname(ip):
+            return ip
+
+        monkeypatch.setattr(
+            "app.collector.device_manager.get_hostname_cached", fake_hostname
+        )
+        from app.core import config
+
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 3)
+        from app.collector.device_manager import DeviceManager
+
+        return DeviceManager(logging.getLogger("test"))
+
+    async def test_polling_device_survives_never_being_discovered(self, monkeypatch):
+        """The regression. Fails on pre-fix code: the device is pruned on round 3."""
+        dm = self._dm(monkeypatch)
+        dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
+        dm.emeter_devices = dict(dm.devices)
+
+        # Far more rounds than the threshold, and discovery NEVER sees it -- exactly the
+        # live shape, where broadcast silence was permanent rather than transient.
+        for _ in range(10):
+            dm.mark_reachable("10.0.0.9")  # ...but every poll succeeds
+            await dm.remove_missing_devices({})
+
+        assert "10.0.0.9" in dm.devices
+        assert "10.0.0.9" in dm.emeter_devices
+        # Never accrues misses: a poll is as good as a sighting.
+        assert dm.discovery_misses.get("10.0.0.9", 0) == 0
+
+    async def test_device_that_stops_answering_polls_is_still_pruned(self, monkeypatch):
+        """The control. Without it the fix could simply disable pruning."""
+        dm = self._dm(monkeypatch)
+        dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
+        dm.emeter_devices = dict(dm.devices)
+
+        dm.mark_reachable("10.0.0.9")
+        # Age the evidence past the grace window, then stop answering.
+        from app.core import config
+
+        dm.last_poll_ok["10.0.0.9"] = (
+            dm.last_poll_ok["10.0.0.9"]
+            - config.Config.KASA_COLLECTOR_DEVICE_DISCOVERY_INTERVAL
+            - 1
+        )
+        for _ in range(3):
+            await dm.remove_missing_devices({})
+
+        assert "10.0.0.9" not in dm.devices
+        assert "10.0.0.9" not in dm.emeter_devices
+        assert "10.0.0.9" not in dm.last_poll_ok  # evidence cleaned up with the device
+
+    async def test_poll_evidence_does_not_rescue_a_device_that_never_polled(
+        self, monkeypatch
+    ):
+        """A device with no successful poll on record prunes as before."""
+        dm = self._dm(monkeypatch)
+        dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
+        for _ in range(3):
+            await dm.remove_missing_devices({})
+        assert "10.0.0.9" not in dm.devices
+
+
+@pytest.mark.unit
+class TestPollerReportsReachability:
+    """The wiring half: the poller must actually report what it observed.
+
+    Tested separately from the pruning logic because the defect was the ABSENCE of a
+    connection between the two -- `discovery_misses` was written and read in one
+    function and nothing in the polling path ever reached it. A test that only
+    exercised DeviceManager would pass with the poller still silent.
+    """
+
+    def _poller(self):
+        from app.collector.poller import Poller
+
+        poller = object.__new__(Poller)
+        poller.logger = logging.getLogger("test")
+        seen: list[str] = []
+        poller.on_reachable = seen.append
+        return poller, seen
+
+    async def test_successful_poll_reports_reachable(self):
+        poller, seen = self._poller()
+
+        async def ok(ip, device):
+            return True
+
+        await poller._fetch_counted(ok, "10.0.0.1", None, {"ok": 0}, "emeter fetch")
+        assert seen == ["10.0.0.1"]
+
+    async def test_influx_write_failure_still_reports_reachable(self):
+        """A rejected write is a STORAGE failure. The device answered."""
+        poller, seen = self._poller()
+
+        async def polled_but_write_failed(ip, device):
+            return False
+
+        await poller._fetch_counted(
+            polled_but_write_failed,
+            "10.0.0.1",
+            None,
+            {"ok": 0, "write_failed": 0},
+            "emeter fetch",
+        )
+        assert seen == ["10.0.0.1"]
+
+    async def test_failed_poll_reports_nothing(self):
+        """No answer, no evidence -- the device must stay eligible for pruning."""
+        poller, seen = self._poller()
+
+        async def boom(ip, device):
+            raise ConnectionError("device unreachable")
+
+        await poller._fetch_counted(
+            boom, "10.0.0.2", None, {"ok": 0, "failed": 0}, "emeter fetch"
+        )
+        assert seen == []
+
+
+@pytest.mark.unit
 class TestFetchCounted:
     async def test_counts_success_and_failure_without_raising(self):
         from app.collector.poller import Poller

@@ -42,18 +42,31 @@ class Poller:
     Attributes:
         logger: Logger instance for this class.
         storage: InfluxDB storage backend for persisting data.
+        on_reachable: Optional callback invoked with a device key when it answers.
     """
 
-    def __init__(self, logger: logging.Logger):
+    # Class-level default so an instance built without __init__ still has it.
+    on_reachable: Callable[[str], None] | None = None
+
+    def __init__(
+        self,
+        logger: logging.Logger,
+        on_reachable: Callable[[str], None] | None = None,
+    ):
         """Initialize the Poller with storage backend.
 
         Args:
             logger: Logger instance for logging operations.
+            on_reachable: Called with a device's registry key each time that device
+                answers a poll. The DeviceManager uses it to avoid pruning a device it
+                is still collecting from (KASACOLLEC-70). Optional so the poller stays
+                usable standalone.
 
         Raises:
             SystemExit: If storage backend initialization fails.
         """
         self.logger = logger
+        self.on_reachable = on_reachable
         try:
             self.storage = InfluxDBStorage()
         except SystemExit:
@@ -89,6 +102,11 @@ class Poller:
         """
         try:
             stored = await fetch(ip, device)
+            # The device ANSWERED. Record that before splitting on whether the write
+            # landed: `write_failed` is an InfluxDB problem, not a device problem, and
+            # a device that is talking to us must not be pruned as missing.
+            if self.on_reachable is not None:
+                self.on_reachable(ip)
             if stored is False:
                 outcome["write_failed"] += 1
                 self.logger.warning(
@@ -97,6 +115,8 @@ class Poller:
             else:
                 outcome["ok"] += 1
         except Exception as e:
+            # Deliberately NOT reachable: the fetch raised after retries, so we have no
+            # evidence the device is there and must not manufacture any.
             outcome["failed"] += 1
             self.logger.warning("%s failed for %s after retries: %s", label, ip, e)
 
