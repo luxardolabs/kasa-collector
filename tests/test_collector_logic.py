@@ -220,6 +220,112 @@ class TestPollEvidenceOutranksDiscovery:
 
 
 @pytest.mark.unit
+class TestRetiredDevicesAreReclaimed:
+    """Pruning must stop us POLLING a device, not erase that it ever existed.
+
+    Before this, `self.devices.pop(ip)` was the whole mechanism and there was no other
+    record — the three registries all mean "currently collecting". So the address went
+    with it, and the only route back was the very broadcast that had already failed.
+    A device quiet for 15 minutes was unrecoverable without a human editing
+    DEVICE_HOSTS.
+
+    Measured live: two devices went silent to broadcast for twelve hours and then began
+    answering again on their own, nothing changed. Both answered a direct connection
+    throughout. Broadcast silence drifts over HOURS; pruning judges it in minutes.
+    """
+
+    def _dm(self, monkeypatch):
+        async def fake_hostname(ip):
+            return ip
+
+        monkeypatch.setattr(
+            "app.collector.device_manager.get_hostname_cached", fake_hostname
+        )
+        from app.core import config
+
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 1)
+        from app.collector.device_manager import DeviceManager
+
+        return DeviceManager(logging.getLogger("test"))
+
+    async def test_pruned_device_is_remembered_not_erased(self, monkeypatch):
+        dm = self._dm(monkeypatch)
+        dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
+        dm.emeter_devices = dict(dm.devices)
+
+        await dm.remove_missing_devices({})
+
+        assert "10.0.0.9" not in dm.devices  # stopped polling it
+        assert "10.0.0.9" in dm.retired  # but did not forget it
+
+    async def test_retired_device_that_answers_unicast_is_reclaimed(self, monkeypatch):
+        """The regression. Fails pre-fix: nothing ever re-probes a pruned address."""
+        dm = self._dm(monkeypatch)
+        dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
+        dm.emeter_devices = dict(dm.devices)
+        await dm.remove_missing_devices({})
+        assert "10.0.0.9" in dm.retired
+
+        # It is back on the network but STILL invisible to broadcast — the live shape.
+        recovered = SimpleNamespace(alias="Fridge", host="10.0.0.9", modules={})
+
+        async def fake_get_device(ip, user, pw):
+            assert ip == "10.0.0.9"
+            return recovered
+
+        monkeypatch.setattr(
+            "app.collector.device_manager.KasaAPI.get_device", fake_get_device
+        )
+        await dm.reclaim_retired_devices({})  # discovery STILL returns nothing
+
+        assert dm.devices["10.0.0.9"] is recovered  # walked back in by itself
+        assert "10.0.0.9" not in dm.retired
+        assert "10.0.0.9" in dm.last_poll_ok  # and is protected from re-pruning
+
+    async def test_still_unreachable_device_stays_retired(self, monkeypatch):
+        """The control: a genuinely departed device must not be resurrected,
+        and its failure must not abort the pass for its siblings."""
+        dm = self._dm(monkeypatch)
+        dm.retired = {"10.0.0.9": 0.0, "10.0.0.8": 0.0}
+
+        async def fake_get_device(ip, user, pw):
+            if ip == "10.0.0.8":
+                return SimpleNamespace(alias="Back", host="10.0.0.8", modules={})
+            raise ConnectionError("host unreachable")
+
+        monkeypatch.setattr(
+            "app.collector.device_manager.KasaAPI.get_device", fake_get_device
+        )
+        await dm.reclaim_retired_devices({})
+
+        assert "10.0.0.9" not in dm.devices  # still gone
+        assert "10.0.0.9" in dm.retired  # and still remembered for next round
+        assert "10.0.0.8" in dm.devices  # sibling unaffected by the failure
+
+    async def test_device_discovery_returns_is_left_to_the_normal_path(
+        self, monkeypatch
+    ):
+        """No double-registration: if broadcast found it, reclaim keeps its hands off."""
+        dm = self._dm(monkeypatch)
+        dm.retired = {"10.0.0.9": 0.0}
+        called = []
+
+        async def fake_get_device(ip, user, pw):
+            called.append(ip)
+            raise AssertionError("must not probe a device discovery already returned")
+
+        monkeypatch.setattr(
+            "app.collector.device_manager.KasaAPI.get_device", fake_get_device
+        )
+        device = SimpleNamespace(alias="Fridge", host="10.0.0.9")
+        await dm.reclaim_retired_devices({"10.0.0.9": device})
+
+        assert called == []
+        assert "10.0.0.9" not in dm.retired  # handed over to the auth path
+
+
+@pytest.mark.unit
 class TestPollerReportsReachability:
     """The wiring half: the poller must actually report what it observed.
 

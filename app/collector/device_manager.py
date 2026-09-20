@@ -83,6 +83,15 @@ class DeviceManager:
         # only an inference that it is not. When the two disagree the evidence wins —
         # see remove_missing_devices (KASACOLLEC-70).
         self.last_poll_ok: dict[str, float] = {}
+        # Addresses we have collected from before and are no longer polling, with the
+        # monotonic time they were retired. Pruning exists to stop a departed device
+        # eating the POLL budget (KASACOLLEC-60: three dead hosts dragged the cycle to
+        # 21-26s against a 15s interval). It never needed to erase the address as well —
+        # that was a side effect of using dict.pop() to stop iterating, and it is what
+        # made a device that goes quiet for 15 minutes unrecoverable without a human
+        # editing DEVICE_HOSTS. Retired devices cost one unicast probe per DISCOVERY
+        # round, off the poll path, so the original goal is preserved.
+        self.retired: dict[str, float] = {}
 
         # Initialize manual devices if provided
         self.device_hosts: list[str] = []
@@ -250,6 +259,10 @@ class DeviceManager:
         # Prune devices that have dropped off the network (no-op unless
         # KASA_COLLECTOR_KEEP_MISSING_DEVICES is False; never prunes manual hosts).
         await self.remove_missing_devices(discovered_devices)
+
+        # Pruning stops us polling a device; it does not mean we forget it. Give every
+        # previously-known address a direct probe — broadcast silence is not absence.
+        await self.reclaim_retired_devices(discovered_devices)
 
         # List to hold async tasks for parallel execution
         auth_tasks = []
@@ -475,6 +488,61 @@ class DeviceManager:
             else:
                 self.logger.exception("Failed to connect to device %s: %s", ip, e)
 
+    async def reclaim_retired_devices(
+        self, discovered_devices: dict[str, Device]
+    ) -> None:
+        """Re-probe addresses we used to collect from, by unicast.
+
+        Discovery is a broadcast, and a device that stops answering one is not
+        necessarily gone — measured live, two devices went silent for twelve hours and
+        then started answering again on their own, with nothing changed. Broadcast
+        silence drifts on a timescale of HOURS; pruning judges it in minutes.
+
+        So a retired address gets a direct connection attempt each discovery round. That
+        is the same call manual hosts use, and it demonstrably works where broadcast does
+        not: every one of the devices that had gone silent answered `get_device()`
+        instantly with full emeter data. A device that answers is re-registered and
+        collection resumes by itself; one that does not stays retired, costing a single
+        probe per round rather than a place in the 15-second poll cycle.
+
+        Anything discovery DID return is dropped from the retired set here and left to
+        the normal authentication path, so the two routes never both register a device.
+        """
+        for ip in list(self.retired):
+            if ip in discovered_devices or ip in self.devices:
+                self.retired.pop(ip, None)
+
+        candidates = list(self.retired)
+        if not candidates:
+            return
+
+        async def reclaim(ip: str) -> None:
+            try:
+                device = await KasaAPI.get_device(
+                    ip, self.tplink_username, self.tplink_password
+                )
+                key = str(getattr(device, "host", "") or ip)
+                self.devices[key] = device
+                self._check_and_add_emeter_device(key, device)
+                self.mark_reachable(key)
+                self.retired.pop(ip, None)
+                self.discovery_misses.pop(key, None)
+                self.logger.info(
+                    "Recovered device not seen by discovery: %s (IP: %s)",
+                    get_device_name(device),
+                    key,
+                )
+            # swallowed-exceptions: per-device boundary inside a TaskGroup. A retired
+            # address that is still unreachable is the EXPECTED case, not an error — it
+            # stays retired and is retried next round. Raising here would cancel the
+            # siblings and abort the whole reclaim pass.
+            except Exception as e:
+                self.logger.debug("Retired device %s still unreachable: %s", ip, e)
+
+        async with asyncio.TaskGroup() as tg:
+            for ip in candidates:
+                tg.create_task(reclaim(ip))
+
     def mark_reachable(self, ip: str) -> None:
         """Record that a device answered a poll.
 
@@ -558,6 +626,10 @@ class DeviceManager:
             missing_device = self.devices.pop(ip)
             self.discovery_misses.pop(ip, None)
             self.last_poll_ok.pop(ip, None)
+            # Stop polling it, but REMEMBER it. reclaim_retired_devices() re-probes this
+            # address by unicast every discovery round, so a device that comes back finds
+            # its own way in.
+            self.retired[ip] = time.monotonic()
             device_name = get_device_name(missing_device)
             self.emeter_devices.pop(
                 ip, None
