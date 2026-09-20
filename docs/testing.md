@@ -23,10 +23,10 @@ make test-e2e
 What it does:
 
 1. Builds the collector image from the current source.
-1. Brings up `compose.e2e.yml` on a bridge network: an ephemeral InfluxDB, a roster of fake Kasa devices (`harness/fake_kasa.py` speaking the real TP-Link IOT protocol) — two emeter plugs (HS110, KP115), a non-emeter plug (HS103), and a 6-outlet power strip (HS300) — and the collector pointed at them via `KASA_COLLECTOR_DEVICE_HOSTS` (auto-discovery off, since a bridge network can't broadcast).
+1. Brings up the `e2e` profile of `compose.yml` on a bridge network, under its own compose project so a teardown can never reach the dev or demo volumes: an ephemeral InfluxDB, a roster of fake Kasa devices (`harness/fake_kasa.py` speaking the real TP-Link IOT protocol) — two emeter plugs (HS110, KP115), a non-emeter plug (HS103), and a 6-outlet power strip (HS300) — and the collector pointed at them via `KASA_COLLECTOR_DEVICE_HOSTS` (auto-discovery off, since a bridge network can't broadcast).
 1. Polls InfluxDB and asserts the emeter data for the plugs **and** the strip lands in the `emeter` measurement, and that the non-emeter plug is handled cleanly (no emeter data, collector stays healthy), then tears everything down.
 
-To emulate other models or more devices, add services to `compose.e2e.yml` using the harness image and set `KASA_FAKE_KIND` (`plug` | `plug_noemeter` | `strip`), `KASA_FAKE_MODEL`, `KASA_FAKE_ALIAS`, `KASA_FAKE_BASE_W`, and (for strips) `KASA_FAKE_OUTLETS`. See [`harness/README.md`](../harness/README.md) and [supported-devices.md](supported-devices.md) for the device kinds the emulator covers.
+To emulate other models or more devices, add services to `compose.yml` carrying `profiles: [demo, e2e]`, using the harness image and set `KASA_FAKE_KIND` (`plug` | `plug_noemeter` | `strip`), `KASA_FAKE_MODEL`, `KASA_FAKE_ALIAS`, `KASA_FAKE_BASE_W`, and (for strips) `KASA_FAKE_OUTLETS`. See [`harness/README.md`](../harness/README.md) and [supported-devices.md](supported-devices.md) for the device kinds the emulator covers.
 
 ## Try the full system interactively
 

@@ -7,6 +7,8 @@
 # =============================================================================
 
 VERSION := $(shell cat VERSION 2>/dev/null || git -c safe.directory=$(CURDIR) describe --tags --always 2>/dev/null || echo "0.0.0-dev")
+# Human-facing name in the GitHub Release title, e.g. "Kasa Collector 2026.09.0".
+APP_TITLE := Kasa Collector
 TIMESTAMP := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 COMMIT := $(shell git -c safe.directory=$(CURDIR) rev-parse --short HEAD 2>/dev/null || echo 'local')
 
@@ -35,19 +37,19 @@ PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.149.1
+LUXARCH_VERSION  := 0.192.4
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
 # same out-of-tree pattern as luxarch. Unset host → make lint/format skip gracefully.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  := 0.45.1
+LUXLINT_VERSION  := 0.55.0
 LUXLINT_IMAGE    ?= $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; pulled via LUXAUDIT_REGISTRY (Makefile.local).
 # Scans poetry.lock against the live OSV+PyPA feed. Unset host → `make audit` skips gracefully.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  := 0.4.0
+LUXAUDIT_VERSION  := 0.9.0
 LUXAUDIT_IMAGE    ?= $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION)
 PLATFORMS ?= linux/amd64,linux/arm64
 
@@ -96,18 +98,18 @@ POETRY_RUN := docker run --rm -u $(REPO_UID):$(REPO_GID) -e HOME=/tmp \
 POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-action=ignore $(POETRY_SPEC)
 
 # Compose stacks (all .yml, short-form volumes). Four flavors:
-#   compose.yaml      THE collector stack, every environment. The bundled InfluxDB +
-#                     Grafana are a compose PROFILE (COMPOSE_PROFILES=bundled), so:
-#                       .env.prod -> collector alone, against your external InfluxDB
-#                       .env.dev  -> collector + bundled InfluxDB/Grafana, real devices
-#   compose.demo.yml  DEMO: fake devices + bundled InfluxDB+Grafana (no hardware)
-#   compose.e2e.yml   hardware-free e2e test (fakes + ephemeral InfluxDB) -> `make test-e2e`
-# ONE compose.yaml; the environment IS the --env-file (fleet standard). The fake-device
+#   compose.yml       THE one compose file. Stacks are PROFILES of it:
+#     collector         the real collector, HOST network (prod + dev)
+#     bundled           + bundled InfluxDB & Grafana (dev)
+#     demo              fake devices + bundled stack, no hardware -> `make demo-up`
+#     e2e               fakes + throwaway InfluxDB          -> `make test-e2e`
+# ONE compose.yml; the STACK is the --profile and the environment is the --env-file
+# (fleet standard). The fake-device
 # stacks are separate topologies (bridge network + emulators), not environments of it.
 RUN_DC  := docker compose --env-file .env.prod
 PROD_DC := docker compose --env-file .env.prod
 DEV_DC  := docker compose --env-file .env.dev
-DEMO_DC := docker compose -f compose.demo.yml --env-file .env.demo
+DEMO_DC := docker compose --env-file .env.demo
 
 # Remote prod deploy over SSH. The collector runs on a host with LAN access to the
 # Kasa devices; set the node explicitly (no fleet default — this app is not bb01).
@@ -118,7 +120,7 @@ PROD_DIR  ?= /opt/kasa-collector
 PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
 
 .PHONY: help version \
-        dev-build-push build-local version-build-push release release-public buildx-setup \
+        dev-build-push build-local version-build-push release release-public gh-release buildx-setup \
         docker-inspect docker-clean \
         up down restart logs ps shell \
         dev-up dev-down dev-clean dev-logs dev-ps dev-shell \
@@ -207,6 +209,20 @@ release-public: ## Promote the released :$(VERSION) + :latest (multi-arch) to GH
 		-t $(PUBLIC_IMAGE):$(VERSION) -t $(PUBLIC_IMAGE):latest \
 		$(VERSION_IMAGE)
 	@echo "Promoted $(VERSION_IMAGE) -> $(PUBLIC_IMAGE):$(VERSION) + :latest (same digest)"
+	@$(MAKE) --no-print-directory gh-release
+
+gh-release: ## Publish the GitHub Release for v$(VERSION) from its release notes
+	@test -f app/release_notes/$(VERSION).md \
+	  || { echo "app/release_notes/$(VERSION).md missing — write it before releasing"; exit 1; }
+	@git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null \
+	  || { echo "tag v$(VERSION) does not exist — tag before publishing the release"; exit 1; }
+	@if gh release view v$(VERSION) >/dev/null 2>&1; then \
+	  echo "GitHub Release v$(VERSION) already exists — leaving it alone"; \
+	else \
+	  gh release create v$(VERSION) --title "$(APP_TITLE) $(VERSION)" \
+	    --notes-file app/release_notes/$(VERSION).md --latest \
+	  && echo "Published GitHub Release v$(VERSION)"; \
+	fi
 
 docker-inspect: ## Inspect release image metadata
 	@docker inspect $(IMAGE) --format='Version: {{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null || echo "Image not built"
@@ -216,7 +232,7 @@ docker-inspect: ## Inspect release image metadata
 docker-clean: ## Remove local image tags (:dev, :$(VERSION), :latest)
 	docker rmi $(DEV_IMAGE) $(VERSION_IMAGE) $(IMAGE) 2>/dev/null || true
 
-##@ Collector-only — plug into your existing InfluxDB/Grafana (compose.yaml, .env.prod)
+##@ Collector-only — plug into your existing InfluxDB/Grafana (compose.yml, .env.prod)
 
 up: build-local ## Build locally + start the collector against YOUR external InfluxDB (edit .env.dev)
 	$(RUN_DC) up -d
@@ -285,8 +301,8 @@ prod-init: check-prod-node ## One-time: create the output data dir on the node (
 	$(PROD_SSH) 'mkdir -p $(PROD_DIR)/output && chown -R 1000:1000 $(PROD_DIR)/output'
 	@printf "✓ output dir created on $(PROD_NODE)\n"
 
-prod-sync: check-prod-node ## Push compose.yaml + .env.prod to the node (repo is source of truth)
-	rsync -az --chown=1000:1000 compose.yaml .env.prod $(PROD_USER)@$(PROD_NODE):$(PROD_DIR)/
+prod-sync: check-prod-node ## Push compose.yml + .env.prod to the node (repo is source of truth)
+	rsync -az --chown=1000:1000 compose.yml .env.prod $(PROD_USER)@$(PROD_NODE):$(PROD_DIR)/
 	@printf "✓ synced config to $(PROD_NODE):$(PROD_DIR)\n"
 
 prod-deploy: check-prod-node ## Pull :latest + recreate the collector on the node (run release first)
@@ -361,20 +377,26 @@ guard-version-check: ## FATAL: fail if any guard pin is behind :latest — pulls
 	( $(call _guard_check,luxaudit,$(LUXAUDIT_REGISTRY),$(LUXAUDIT_VERSION)) ) || rc=1; \
 	exit $$rc
 
-guard-upgrade: ## Bump every guard pin to :latest and print what newly bites
+guard-upgrade: ## Bump every guard pin to the published latest (prints what newly bites)
 	@for g in luxarch luxlint luxaudit; do \
 	  reg=$$(case $$g in luxarch) echo "$(LUXARCH_REGISTRY)";; luxlint) echo "$(LUXLINT_REGISTRY)";; luxaudit) echo "$(LUXAUDIT_REGISTRY)";; esac); \
-	  [ -z "$$reg" ] && { echo "$$g: registry unset — skipping"; continue; }; \
+	  if [ -z "$$reg" ]; then echo "!! $$g registry unset — NOT bumped"; continue; fi; \
 	  docker pull -q $$reg/luxardolabs/$$g:latest >/dev/null 2>&1 || true; \
 	  latest=$$(docker run --rm $$reg/luxardolabs/$$g:latest --version 2>/dev/null | awk '{print $$2}'); \
-	  [ -z "$$latest" ] && { echo "$$g: could not read :latest — skipping"; continue; }; \
 	  var=$$(echo $$g | tr a-z A-Z)_VERSION; \
-	  old=$$(sed -n "s/^$$var  *:= //p" Makefile); \
-	  [ "$$old" = "$$latest" ] && { echo "$$g: already $$latest"; continue; }; \
-	  sed -i "s|^$$var\( *\):= .*|$$var\1:= $$latest|" Makefile; \
-	  echo "$$g: $$old -> $$latest"; \
-	  [ "$$g" = luxarch ] && docker run --rm -v $(PWD):/repo $$reg/luxardolabs/luxarch:$$latest --new-rules --since $$old || true; \
-	done; echo "pins bumped — re-run 'make check' (a ruleset bump inside an existing check also newly fires: read --changelog)"
+	  old=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
+	  if [ -z "$$old" ]; then echo "!! no $$var pin found in Makefile — NOT bumped"; continue; fi; \
+	  if [ -z "$$latest" ]; then echo "!! could not read $$g:latest — $$var left at $$old"; continue; fi; \
+	  sed -i -E "s|^($$var[[:space:]]*:=[[:space:]]*).*|\\1$$latest|" Makefile; \
+	  new=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
+	  if [ "$$new" != "$$latest" ]; then echo "!! $$var did NOT change (still $$new)"; exit 1; fi; \
+	  checked=1; \
+	  if [ "$$old" != "$$latest" ]; then echo "$$var $$old -> $$latest"; bumped=1; fi; \
+	  [ "$$g" = luxarch ] && [ "$$old" != "$$latest" ] && docker run --rm -v $(PWD):/repo $$reg/luxardolabs/luxarch:$$latest --new-rules --since $$old || true; \
+	done; \
+	if [ -n "$$bumped" ]; then echo "pins bumped — re-run make check"; \
+	elif [ -n "$$checked" ]; then echo "all pins already at latest"; \
+	else echo "!! could not reach the registry — NO pin was checked; currency NOT established"; exit 1; fi
 
 lint: ## luxlint — ruff/format/docs/secret checks (canonical config, mount-only)
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \

@@ -55,3 +55,9 @@ Makefile.local
 # --- Claude local settings (settings.json IS committed; local is not) ---
 .claude/settings.local.json
 **/.claude/settings.local.json
+
+# Claude Code hook session state (luxarch --emit hooks)
+.claude/.hooks-heartbeat
+.claude/.luxpm-ledger.json
+.claude/settings.json.bak
+.claude/.push-hold

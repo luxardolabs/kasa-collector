@@ -43,7 +43,7 @@ See [Getting Started](docs/getting-started.md) for the full walkthrough and [Con
 
 ## The four stacks
 
-Everything is driven by `make`. There is one `compose.yaml`; environments differ only by their `.env.<env>` file. **Compose never builds** — `make` builds each image and compose runs it by a pinned tag, so no registry is needed for any local stack.
+Everything is driven by `make`. There is one `compose.yml`; the stack is a compose **profile** and the environment is the `.env.<env>` file. **Compose never builds** — `make` builds each image and compose runs it by a pinned tag, so no registry is needed for any local stack.
 
 | Stack              | Command         | What it does                                                                    |
 | ------------------ | --------------- | ------------------------------------------------------------------------------- |

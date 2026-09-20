@@ -1,0 +1,252 @@
+name: kasa-collector
+
+# THE compose file for the collector — every stack, every environment (fleet standard:
+# `luxarch --doc FLEET-BUILD-DEPLOY-STANDARD`, `--playbook compose-hygiene`).
+#
+# ONE file. Stacks differ by compose PROFILES (which services run); environments differ
+# by `.env.<env>` (which values they run with). There is no overlay file and no second
+# compose file — `repo.compose_conventions` enforces both.
+#
+#   docker compose --env-file .env.prod up -d     # collector -> your external InfluxDB
+#   docker compose --env-file .env.dev  up -d     # + bundled InfluxDB & Grafana
+#   docker compose --env-file .env.demo up -d     # fake devices + bundled stack, no hardware
+#   make test-e2e                                 # hardware-free end-to-end, self-tearing-down
+#
+# Each env file selects its stack with COMPOSE_PROFILES:
+#
+#   profile     services                                            used by
+#   ---------   -------------------------------------------------   -----------------
+#   collector   kasa-collector (HOST network, real devices)          .env.prod, .env.dev
+#   bundled     kasa_influxdb + kasa_grafana                         .env.dev
+#   demo        the same bundled pair + fakes + kasa-collector-demo  .env.demo
+#   e2e         throwaway InfluxDB + fakes + kasa-collector-e2e      make test-e2e
+#
+# WHY THREE COLLECTOR SERVICES RATHER THAN ONE. `network_mode` cannot vary by profile —
+# it is a property of a service. The real collector needs HOST networking because Kasa
+# discovery is a UDP broadcast that cannot cross a bridge; the fake-device stacks need
+# BRIDGE networking so the collector resolves the emulators by service name, which host
+# networking cannot do. Those are three different services, not one service in three
+# moods, so they are declared separately and gated by profile.
+#
+# Compose NEVER builds. Images are built outside it (`make build-local`, `make
+# harness-build`, `make release`) and referenced here by a PINNED tag — no `:latest`,
+# no `${TAG:-latest}`.
+#
+# Real `.env.dev` / `.env.prod` are gitignored (TAG/REGISTRY/ports/secrets);
+# `.env.example` is the committed template and `.env.demo` ships public defaults.
+
+services:
+  # ── profile: collector ─────────────────────────────────────────────────────
+  # The real collector against real hardware. Host networking for UDP discovery.
+  kasa-collector:
+    profiles: [collector]
+    container_name: kasa-collector
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
+    env_file:
+      # The --env-file passed on the command line supplies compose interpolation, not
+      # the container's environment, so the same file is listed here explicitly.
+      # .env.dev.local (gitignored, optional) layers real device credentials on top;
+      # the later file wins on shared keys.
+      - ${ENV_FILE:?set ENV_FILE in .env.<env>}
+      - path: .env.dev.local
+        required: false
+    network_mode: host
+    restart: always
+    healthcheck:
+      test: ["CMD", "python3", "-m", "app.health.check"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    volumes:
+      - ${OUTPUT_DIR:-/mnt/docker/kasa-collector/output}:/app/output
+
+  # ── profiles: bundled, demo ────────────────────────────────────────────────
+  # Bundled observability. Shared by the dev stack (real devices, host-networked
+  # collector reaching these on localhost) and the demo stack (fakes on the bridge).
+  kasa_influxdb:
+    profiles: [bundled, demo]
+    image: influxdb:2.7
+    container_name: kasa_influxdb
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - kasa_influxdb_data:/var/lib/influxdb2
+      - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    ports:
+      - "${INFLUX_PORT:-8086}:8086"
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  kasa_grafana:
+    profiles: [bundled, demo]
+    image: grafana/grafana:11.3.0
+    container_name: kasa_grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      INFLUX_BUCKET: ${INFLUX_BUCKET}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
+      - kasa_grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      kasa_influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── profiles: demo, e2e ────────────────────────────────────────────────────
+  # Fake Kasa devices (harness/fake_kasa.py, pure stdlib). One set serves both the
+  # demo and the e2e test: the aliases are asserted on by scripts/e2e-test.sh, and a
+  # demo that says "Fake" is more honest than one that says "Demo" anyway. The four
+  # kinds cover every device path the collector ships: emeter plug, a second model,
+  # a NON-emeter plug (the no-emeter branch), and a multi-outlet strip with per-outlet
+  # emeter (the child-device path).
+  kasa_fake_hs110:
+    profiles: [demo, e2e]
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
+    environment:
+      KASA_FAKE_KIND: plug
+      KASA_FAKE_MODEL: HS110(US)
+      KASA_FAKE_ALIAS: Fake HS110 Plug
+      KASA_FAKE_MAC: "50:C7:BF:00:00:10"
+      KASA_FAKE_BASE_W: "42"
+    restart: unless-stopped
+
+  kasa_fake_kp115:
+    profiles: [demo, e2e]
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
+    environment:
+      KASA_FAKE_KIND: plug
+      KASA_FAKE_MODEL: KP115(US)
+      KASA_FAKE_ALIAS: Fake KP115 Plug
+      KASA_FAKE_MAC: "50:C7:BF:00:00:11"
+      KASA_FAKE_BASE_W: "88"
+    restart: unless-stopped
+
+  # Plug WITHOUT energy monitoring — exercises the no-emeter branch. It must be
+  # handled cleanly and must NOT write emeter data; e2e asserts both.
+  kasa_fake_hs103:
+    profiles: [demo, e2e]
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
+    environment:
+      KASA_FAKE_KIND: plug_noemeter
+      KASA_FAKE_MODEL: HS103(US)
+      KASA_FAKE_ALIAS: Fake HS103 Plug
+      KASA_FAKE_MAC: "50:C7:BF:00:00:12"
+    restart: unless-stopped
+
+  kasa_fake_hs300:
+    profiles: [demo, e2e]
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
+    environment:
+      KASA_FAKE_KIND: strip
+      KASA_FAKE_MODEL: HS300(US)
+      KASA_FAKE_ALIAS: Fake HS300 Strip
+      KASA_FAKE_MAC: "50:C7:BF:00:00:13"
+      KASA_FAKE_BASE_W: "30"
+      KASA_FAKE_OUTLETS: "6"
+    restart: unless-stopped
+
+  # ── profile: demo ──────────────────────────────────────────────────────────
+  # Collector on the BRIDGE, pointed at the fakes by service name. Discovery is off:
+  # a broadcast cannot reach a bridge network, so the emulators are named explicitly.
+  kasa-collector-demo:
+    profiles: [demo]
+    container_name: kasa-collector-demo
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
+    env_file:
+      - ${ENV_FILE:-.env.demo}
+    environment:
+      KASA_COLLECTOR_INFLUXDB_URL: http://kasa_influxdb:8086
+      KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY: "False"
+      KASA_COLLECTOR_DEVICE_HOSTS: kasa_fake_hs110,kasa_fake_kp115,kasa_fake_hs103,kasa_fake_hs300
+      KASA_COLLECTOR_DATA_FETCH_INTERVAL: "5"
+    restart: unless-stopped
+    depends_on:
+      kasa_influxdb:
+        condition: service_healthy
+      kasa_fake_hs110:
+        condition: service_started
+      kasa_fake_kp115:
+        condition: service_started
+      kasa_fake_hs103:
+        condition: service_started
+      kasa_fake_hs300:
+        condition: service_started
+
+  # ── profile: e2e ───────────────────────────────────────────────────────────
+  # Throwaway InfluxDB for the hardware-free test. NO published ports, so it never
+  # collides with the dev/demo stack or a sibling app and is safe in CI.
+  #
+  # tmpfs, not a named volume: the image DECLARES /var/lib/influxdb2 and /etc/influxdb2,
+  # so leaving them unmapped mints a fresh anonymous volume on every `up` and abandons
+  # it on every `down` — the disk-filler `repo.compose_db_ephemeral_volume` exists to
+  # catch (KASACOLLEC-46). Throwaway data belongs in tmpfs; persistent data takes a
+  # named volume, as the bundled InfluxDB above does.
+  kasa_e2e_influxdb:
+    profiles: [e2e]
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: kasa
+      DOCKER_INFLUXDB_INIT_PASSWORD: kasa-e2e-password
+      DOCKER_INFLUXDB_INIT_ORG: kasa
+      DOCKER_INFLUXDB_INIT_BUCKET: kasa
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: kasa-e2e-token
+    volumes:
+      - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    tmpfs:
+      - /var/lib/influxdb2
+      - /etc/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  kasa-collector-e2e:
+    profiles: [e2e]
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
+    environment:
+      KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY: "False"
+      KASA_COLLECTOR_DEVICE_HOSTS: kasa_fake_hs110,kasa_fake_kp115,kasa_fake_hs103,kasa_fake_hs300
+      KASA_COLLECTOR_INFLUXDB_URL: http://kasa_e2e_influxdb:8086
+      KASA_COLLECTOR_INFLUXDB_ORG: kasa
+      KASA_COLLECTOR_INFLUXDB_BUCKET: kasa
+      KASA_COLLECTOR_INFLUXDB_TOKEN: kasa-e2e-token
+      KASA_COLLECTOR_DATA_FETCH_INTERVAL: "5"
+      KASA_COLLECTOR_SYSINFO_FETCH_INTERVAL: "10"
+      KASA_COLLECTOR_WRITE_TO_FILE: "False"
+      KASA_COLLECTOR_KEEP_MISSING_DEVICES: "False"
+      KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR: INFO
+      KASA_COLLECTOR_LOG_LEVEL_KASA_API: INFO
+      KASA_COLLECTOR_LOG_LEVEL_INFLUXDB_STORAGE: INFO
+    depends_on:
+      kasa_e2e_influxdb:
+        condition: service_healthy
+      kasa_fake_hs110:
+        condition: service_started
+      kasa_fake_kp115:
+        condition: service_started
+      kasa_fake_hs103:
+        condition: service_started
+      kasa_fake_hs300:
+        condition: service_started
+
+volumes:
+  kasa_influxdb_data:
+  kasa_grafana_data:

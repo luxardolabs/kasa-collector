@@ -44,7 +44,7 @@ docker pull ghcr.io/luxardolabs/kasa-collector:2026.8.0
 
 ## Collector-only deployment
 
-The production shape is the collector on its own, pointed at your external InfluxDB and Grafana. That is the default shape of `compose.yaml` — the bundled InfluxDB + Grafana are a compose **profile**, so leaving `COMPOSE_PROFILES` unset gives you the collector alone. **Compose never builds** — the Makefile builds and pushes the image, and the stack pulls it by a pinned tag. The Dockerfile bakes in a `HEALTHCHECK` (`python -m app.health.check`), so no compose-level health check is needed.
+The production shape is the collector on its own, pointed at your external InfluxDB and Grafana. That is the `collector` profile of the single `compose.yml` — the bundled InfluxDB + Grafana are the separate `bundled` profile, so `.env.prod` setting `COMPOSE_PROFILES=collector` gives you the collector alone. Every service is behind a profile, so an unset `COMPOSE_PROFILES` starts nothing. **Compose never builds** — the Makefile builds and pushes the image, and the stack pulls it by a pinned tag. The Dockerfile bakes in a `HEALTHCHECK` (`python -m app.health.check`), so no compose-level health check is needed.
 
 There is ONE compose file for every environment; environments differ only by their `.env.<env>`:
 
@@ -73,7 +73,7 @@ ENV_FILE=.env.prod
 Run it locally against `.env.prod` with the Makefile:
 
 ```bash
-make prod-up      # docker compose pull && up -d  (compose.yaml, .env.prod)
+make prod-up      # docker compose pull && up -d  (compose.yml, .env.prod)
 make prod-logs
 make prod-ps
 make prod-down
@@ -136,7 +136,7 @@ The collector must run on a host with LAN access to the Kasa devices. The Makefi
 # One-time: create the output data dir on the node (owned by appuser, uid 1000)
 make prod-init   PROD_NODE=collector01.example.com
 
-# Push compose.yaml + .env.prod to the node (the repo is the source of truth)
+# Push compose.yml + .env.prod to the node (the repo is the source of truth)
 make prod-sync   PROD_NODE=collector01.example.com
 
 # Pull :latest + recreate the collector on the node (run `make release` first)

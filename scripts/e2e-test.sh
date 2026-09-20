@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 # End-to-end harness runner: fake Kasa devices -> collector -> InfluxDB, no hardware.
-# Brings up compose.e2e.yml, waits for the collector to write emeter data for the
-# emulated devices, and asserts both device aliases show up in InfluxDB. Always tears
-# the stack down. Driven by `make test-e2e`, which builds the collector and fake
-# images first and passes REGISTRY/TAG/FAKE_TAG — compose only runs the tags.
+# Brings up the `e2e` PROFILE of the single compose.yml, waits for the collector to
+# write emeter data for the emulated devices, and asserts both device aliases show up
+# in InfluxDB. Always tears the stack down. Driven by `make test-e2e`, which builds the
+# collector and fake images first and passes REGISTRY/TAG/FAKE_TAG — compose only runs
+# the tags.
+#
+# Its own project name keeps the throwaway stack isolated from the dev/demo stacks, so
+# a `down -v` here can never reach their volumes.
+#
+# ENV_FILE is exported only to satisfy compose interpolation: variables are resolved
+# file-wide at parse time regardless of which profile is active, and the `collector`
+# profile's service declares `${ENV_FILE:?}`. Nothing in the e2e profile reads it --
+# kasa-collector-e2e sets its whole environment inline.
 set -euo pipefail
 
-DC="docker compose -f compose.e2e.yml"
+export ENV_FILE="${ENV_FILE:-.env.demo}"
+DC="docker compose --profile e2e -p kasa-collector-e2e"
 TOKEN="kasa-e2e-token"
 # Devices whose emeter data must reach InfluxDB (the two plugs + the strip).
 EXPECTED=("Fake HS110 Plug" "Fake KP115 Plug" "Fake HS300 Strip")
@@ -22,7 +32,7 @@ $DC up -d
 
 # Query InfluxDB (InfluxQL over the v1-compat API) for the emeter device_alias tags.
 query_aliases() {
-  $DC exec -T kasa_influxdb curl -s -G "http://localhost:8086/query" \
+  $DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \
     --data-urlencode "db=kasa" \
     --data-urlencode 'q=SHOW TAG VALUES FROM "emeter" WITH KEY = "device_alias"' \
     -H "Authorization: Token ${TOKEN}" 2>/dev/null || true
@@ -51,7 +61,7 @@ done
 if [ -z "$found" ]; then
   echo "✗ FAIL: emeter data for all expected devices did not appear within ${TIMEOUT}s"
   echo "   expected: ${EXPECTED[*]}"
-  echo "---- collector logs ----"; $DC logs --tail=50 kasa-collector || true
+  echo "---- collector logs ----"; $DC logs --tail=50 kasa-collector-e2e || true
   echo "---- last influx response ----"; query_aliases
   exit 1
 fi
@@ -64,14 +74,14 @@ if echo "$found" | grep -q "$NOT_EXPECTED"; then
   echo "✗ FAIL: non-emeter device '$NOT_EXPECTED' unexpectedly wrote emeter data"
   exit 1
 fi
-if ! $DC ps --status running --services | grep -q '^kasa-collector$'; then
+if ! $DC ps --status running --services | grep -q '^kasa-collector-e2e$'; then
   echo "✗ FAIL: collector is not running (may have crashed on the non-emeter device)"
-  $DC logs --tail=50 kasa-collector || true
+  $DC logs --tail=50 kasa-collector-e2e || true
   exit 1
 fi
 echo "✓ non-emeter plug '$NOT_EXPECTED' handled cleanly (no emeter data, collector healthy)"
 # Show a sample point count for good measure.
-count="$($DC exec -T kasa_influxdb curl -s -G "http://localhost:8086/query" \
+count="$($DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \
   --data-urlencode "db=kasa" \
   --data-urlencode 'q=SELECT COUNT(*) FROM "emeter"' \
   -H "Authorization: Token ${TOKEN}" 2>/dev/null || true)"

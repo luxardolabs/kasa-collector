@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Kasa Collector is a Python-based data collection service for TP-Link Kasa smart plugs and power strips. It discovers devices on the network, collects energy consumption metrics, stores data in InfluxDB, and provides Grafana dashboards for visualization.
 
-**Version**: 2026.08.0 (CalVer `YYYY.0M.MICRO`; the VERSION file is the one version literal) **Python**: 3.14+ with modern Python features **Architecture**: Asynchronous event-driven with comprehensive resource management
+**Version**: 2026.09.0 (CalVer `YYYY.0M.MICRO`; the VERSION file is the one version literal) **Python**: 3.14+ with modern Python features **Architecture**: Asynchronous event-driven with comprehensive resource management
 
 ## Common Development Commands
 
@@ -30,14 +30,14 @@ make release-public
 make prod-deploy PROD_NODE=<host>
 ```
 
-### The stacks — ONE compose.yaml, plus two fake-device topologies
+### The stacks — ONE `compose.yml`, four PROFILES
 
 ```bash
 # collector-only → YOUR external InfluxDB/Grafana (edit .env.prod). The plug-in.
 make up                # make down / logs / ps / shell
 
 # dev: your REAL devices + bundled InfluxDB + Grafana (daily local driver).
-# Same compose.yaml — .env.dev just sets COMPOSE_PROFILES=bundled.
+# Same compose.yml — .env.dev sets COMPOSE_PROFILES=collector,bundled.
 make dev-up            # make dev-down
 
 # demo: FAKE devices + bundled InfluxDB + Grafana (watch it work, no hardware)
@@ -113,17 +113,22 @@ All configuration is done through environment variables. Key settings include:
 - Comprehensive resource cleanup and timeout management for long-running deployments
 - The runtime image installs `tzdata` + `tzdata-legacy` — python-kasa resolves each device's timezone via `zoneinfo`, and TP-Link's timezone index uses legacy POSIX names (e.g. `PST8PDT`, `CST6CDT`) that would otherwise crash `update()`
 
-### ONE `compose.yaml` + `.env.<env>` — plus two fake-device stacks
+### ONE `compose.yml` + `.env.<env>` — four profiles
 
-The fleet standard is one compose file per repo; environments differ ONLY by their env file, never by an overlay (`luxarch --doc FLEET-BUILD-DEPLOY-STANDARD`, `--playbook compose-hygiene`). **Compose never builds** — every image is built outside it and referenced by a PINNED tag, so the app image never floats (no `:latest`, no `${TAG:-latest}`).
+The fleet standard is one compose file per repo: the STACK is a compose **profile** and the ENVIRONMENT is the `--env-file`, never an overlay file (`luxarch --doc FLEET-BUILD-DEPLOY-STANDARD`, `--playbook compose-hygiene`, `repo.compose_conventions`). **Compose never builds** — every image is built outside it and referenced by a PINNED tag, so the app image never floats (no `:latest`, no `${TAG:-latest}`).
 
-- **`compose.yaml`** — the collector, host networking (Kasa discovery is a UDP broadcast and cannot cross a bridge). The bundled InfluxDB + Grafana are a compose **profile**, enabled per environment:
-  - `.env.prod` — collector → YOUR external InfluxDB. `TAG=<version>`, no profile. `make prod-*`.
-  - `.env.dev` — collector → bundled InfluxDB + Grafana, REAL devices. `TAG=dev`, `COMPOSE_PROFILES=bundled`. `make dev-up`/`dev-down`. Set `GRAFANA_PORT`/`INFLUX_PORT` per host — sibling apps share the box, so 3000 is often taken.
-- **`compose.demo.yml`** — FAKE devices + bundled stack, bridge network. `make demo-up`/`demo-down`.
-- **`compose.e2e.yml`** — all fake device kinds + throwaway InfluxDB, bridge, no published ports. `make test-e2e`. See `docs/testing.md`.
+| profile     | services                                            | selected by             |
+| ----------- | --------------------------------------------------- | ----------------------- |
+| `collector` | `kasa-collector` — HOST network, real devices       | `.env.prod`, `.env.dev` |
+| `bundled`   | `kasa_influxdb` + `kasa_grafana`                    | `.env.dev`              |
+| `demo`      | that bundled pair + 4 fakes + `kasa-collector-demo` | `.env.demo`             |
+| `e2e`       | throwaway InfluxDB + 4 fakes + `kasa-collector-e2e` | `make test-e2e`         |
 
-demo and e2e are separate **topologies**, not environments: they run on the compose network so the collector resolves the emulators by service name, which host networking cannot do. That is why they stay distinct files rather than profiles of `compose.yaml`.
+Each env file names its stack in `COMPOSE_PROFILES`: `.env.prod` → `collector`, `.env.dev` → `collector,bundled`, `.env.demo` → `demo`. Set `GRAFANA_PORT`/`INFLUX_PORT` per host — sibling apps share the box, so 3000 is often taken.
+
+**Why three collector SERVICES rather than one.** `network_mode` is a property of a service and cannot vary by profile. The real collector needs HOST networking because Kasa discovery is a UDP broadcast that cannot cross a bridge; the fake-device stacks need BRIDGE networking so the collector resolves the emulators by service name, which host networking cannot do. Those are three different services, not one service in three moods. (This supersedes the previous note claiming demo/e2e had to be separate FILES — they had to be separate services, which profiles express fine.)
+
+**Variables interpolate file-wide, regardless of profile.** `${ENV_FILE:?}` on the `collector` service is resolved even for an `--profile e2e` run, which is why `scripts/e2e-test.sh` exports `ENV_FILE` although nothing in the e2e profile reads it.
 
 Images: `make build-local` (runtime, tags `:local` and `:dev`), `make harness-build` (the fake-device emulator image — compose runs it by tag), `make dev-build-push` / `make release`. Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 

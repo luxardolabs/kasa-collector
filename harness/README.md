@@ -6,7 +6,7 @@ A tiny, dependency-free emulator that lets you test Kasa Collector against devic
 
 ## How it's used
 
-The e2e stack (`compose.e2e.yml`, driven by `make test-e2e`) runs a couple of these on a bridge network and points the collector at them via `KASA_COLLECTOR_DEVICE_HOSTS`. Emeter values sway over time so dashboards actually move.
+The e2e stack (the `e2e` profile of `compose.yml`, driven by `make test-e2e`) runs a couple of these on a bridge network and points the collector at them via `KASA_COLLECTOR_DEVICE_HOSTS`. Emeter values sway over time so dashboards actually move.
 
 ## Configuration (environment)
 
