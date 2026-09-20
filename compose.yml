@@ -22,11 +22,15 @@ name: kasa-collector
 #   e2e         throwaway InfluxDB + fakes + kasa-collector-e2e      make test-e2e
 #
 # WHY THREE COLLECTOR SERVICES RATHER THAN ONE. `network_mode` cannot vary by profile —
-# it is a property of a service. The real collector needs HOST networking because Kasa
-# discovery is a UDP broadcast that cannot cross a bridge; the fake-device stacks need
-# BRIDGE networking so the collector resolves the emulators by service name, which host
-# networking cannot do. Those are three different services, not one service in three
-# moods, so they are declared separately and gated by profile.
+# it is a property of a service. The real collector needs HOST networking to reach real
+# devices on the LAN; the fake-device stacks need BRIDGE networking so the collector
+# resolves the emulators by service name, which host networking cannot do. Those are
+# three different services, not one service in three moods.
+#
+# Broadcast DOES work on a bridge — a Docker bridge is a Linux bridge and floods it, so
+# the e2e stack exercises real discovery. The harness used to disable discovery on the
+# assumption that it could not, which left the collector's primary path with no
+# end-to-end coverage and is why three discovery bugs shipped (KASACOLLEC-70).
 #
 # Compose NEVER builds. Images are built outside it (`make build-local`, `make
 # harness-build`, `make release`) and referenced here by a PINNED tag — no `:latest`,
@@ -161,6 +165,21 @@ services:
       KASA_FAKE_OUTLETS: "6"
     restart: unless-stopped
 
+  # Deaf to broadcast discovery, reachable by direct query -- the KASACOLLEC-70 shape.
+  # e2e only: it exists to prove a device that discovery stops seeing keeps collecting.
+  kasa_fake_deaf:
+    profiles: [e2e]
+    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
+    environment:
+      KASA_FAKE_KIND: plug
+      KASA_FAKE_MODEL: KP115(US)
+      KASA_FAKE_ALIAS: Fake Deaf Plug
+      KASA_FAKE_MAC: "50:C7:BF:00:00:14"
+      KASA_FAKE_BASE_W: "55"
+      # Discovered normally, then invisible to broadcast from 45s on.
+      KASA_FAKE_DEAF_AFTER: "45"
+    restart: unless-stopped
+
   # ── profile: demo ──────────────────────────────────────────────────────────
   # Collector on the BRIDGE, pointed at the fakes by service name. Discovery is off:
   # a broadcast cannot reach a bridge network, so the emulators are named explicitly.
@@ -222,8 +241,13 @@ services:
     profiles: [e2e]
     image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
     environment:
-      KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY: "False"
-      KASA_COLLECTOR_DEVICE_HOSTS: kasa_fake_hs110,kasa_fake_kp115,kasa_fake_hs103,kasa_fake_hs300
+      # DISCOVERY, not explicit hosts. A Docker bridge is a Linux bridge and floods
+      # broadcast, so 255.255.255.255 reaches every emulator on it -- verified. The
+      # harness previously disabled discovery on the assumption that it could not,
+      # which left the collector's primary path with no end-to-end coverage at all.
+      KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY: "True"
+      KASA_COLLECTOR_DEVICE_DISCOVERY_INTERVAL: "15"
+      KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD: "1"
       KASA_COLLECTOR_INFLUXDB_URL: http://kasa_e2e_influxdb:8086
       KASA_COLLECTOR_INFLUXDB_ORG: kasa
       KASA_COLLECTOR_INFLUXDB_BUCKET: kasa
@@ -238,6 +262,8 @@ services:
     depends_on:
       kasa_e2e_influxdb:
         condition: service_healthy
+      kasa_fake_deaf:
+        condition: service_started
       kasa_fake_hs110:
         condition: service_started
       kasa_fake_kp115:

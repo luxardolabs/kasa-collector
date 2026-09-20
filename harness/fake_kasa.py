@@ -28,6 +28,7 @@ import json
 import math
 import os
 import random
+import socket
 import struct
 import time
 from typing import Any
@@ -67,6 +68,22 @@ DEVICE_ID = os.getenv(
 )
 MAC = os.getenv("KASA_FAKE_MAC", "50:C7:BF:00:00:01")
 BASE_W = float(os.getenv("KASA_FAKE_BASE_W", "42.0"))
+# Answer UNICAST only -- deaf to broadcast discovery, exactly like the real devices in
+# KASACOLLEC-70. Captured on the wire, those plugs emitted nothing in response to a
+# broadcast while siblings on the same segment replied, yet answered a direct query
+# instantly with full emeter data. Modelled by binding UDP to this container's own
+# address instead of 0.0.0.0: a socket bound to a unicast address never receives
+# broadcast, which is the mechanism rather than an approximation of it.
+UNICAST_ONLY = os.getenv("KASA_FAKE_UNICAST_ONLY", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# Seconds to answer broadcast normally before going deaf to it. 0 disables. This models
+# the live sequence rather than just the end state: the device IS discovered, gets
+# collected, and only then stops answering broadcast -- which is what made the collector
+# delete it. A device that was never discoverable is a different (and easier) case.
+DEAF_AFTER = float(os.getenv("KASA_FAKE_DEAF_AFTER", "0"))
 OUTLETS = int(os.getenv("KASA_FAKE_OUTLETS", "6"))
 
 HAS_EMETER = KIND in ("plug", "strip")
@@ -240,11 +257,46 @@ async def tcp_handler(
 
 async def main() -> None:
     loop = asyncio.get_running_loop()
-    await loop.create_datagram_endpoint(UDPProtocol, local_addr=("0.0.0.0", PORT))
+    own_ip = socket.gethostbyname(socket.gethostname())
+    udp_host = own_ip if UNICAST_ONLY else "0.0.0.0"
+    transport, _ = await loop.create_datagram_endpoint(
+        UDPProtocol, local_addr=(udp_host, PORT)
+    )
+
+    async def go_deaf() -> None:
+        """Rebind UDP from 0.0.0.0 to this container's own address.
+
+        A socket bound to a unicast address never receives broadcast, so after this the
+        emulator is invisible to discovery while still answering a direct query -- the
+        exact mechanism, not an approximation of it.
+        """
+        await asyncio.sleep(DEAF_AFTER)
+        transport.close()
+        # transport.close() only SCHEDULES the close, so the port is still bound on the
+        # next line. Yield until the loop has actually released it, and bind the new
+        # socket with SO_REUSEADDR -- without both, the rebind dies with EADDRINUSE and
+        # the emulator stays audible, which would make the e2e assertion pass vacuously.
+        for _ in range(50):
+            await asyncio.sleep(0.1)
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind((own_ip, PORT))
+            except OSError:
+                sock.close()
+                continue
+            await loop.create_datagram_endpoint(UDPProtocol, sock=sock)
+            print(f"fake-kasa: {ALIAS} is now DEAF to broadcast discovery", flush=True)
+            return
+        raise RuntimeError(f"{ALIAS}: could not rebind to {own_ip}:{PORT} to go deaf")
+
+    if DEAF_AFTER > 0 and not UNICAST_ONLY:
+        asyncio.get_running_loop().create_task(go_deaf())
     server = await asyncio.start_server(tcp_handler, "0.0.0.0", PORT)
     extra = f", {OUTLETS} outlets" if IS_STRIP else ""
+    reach = " UNICAST-ONLY (deaf to broadcast discovery)" if UNICAST_ONLY else ""
     print(
-        f"fake-kasa: {ALIAS} ({MODEL}, kind={KIND}{extra}) on UDP+TCP :{PORT}",
+        f"fake-kasa: {ALIAS} ({MODEL}, kind={KIND}{extra}) on UDP+TCP :{PORT}{reach}",
         flush=True,
     )
     async with server:
