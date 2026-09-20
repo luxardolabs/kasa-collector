@@ -20,9 +20,12 @@ The module maintains three device registries:
 """
 
 import asyncio
+import json
 import logging
+import os
 import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from kasa import Device
 
@@ -92,6 +95,15 @@ class DeviceManager:
         # editing DEVICE_HOSTS. Retired devices cost one unicast probe per DISCOVERY
         # round, off the poll path, so the original goal is preserved.
         self.retired: dict[str, float] = {}
+        # Every address we have ever successfully collected from, persisted across
+        # restarts. Discovery is the whole point of this collector — nobody should have
+        # to know their plug's IP — so a device found ONCE must stay collected for as
+        # long as it answers, regardless of whether a later broadcast reaches it. Held
+        # only in memory, a restart forgot every device broadcast could not currently
+        # see, and the only recovery was the operator hand-listing addresses in
+        # DEVICE_HOSTS: exactly the thing discovery exists to spare them.
+        self._known_file = Path(Config.KASA_COLLECTOR_OUTPUT_DIR) / "known_devices.json"
+        self.known_addresses: set[str] = self._load_known_addresses()
 
         # Initialize manual devices if provided
         self.device_hosts: list[str] = []
@@ -488,6 +500,53 @@ class DeviceManager:
             else:
                 self.logger.exception("Failed to connect to device %s: %s", ip, e)
 
+    def _load_known_addresses(self) -> set[str]:
+        """Read the persisted device roster, tolerating every way it can be unusable.
+
+        A missing, unreadable or corrupt file must never stop the collector starting —
+        it degrades to discovery-only, which is where we were before this existed.
+        """
+        try:
+            raw = json.loads(self._known_file.read_text(encoding="utf-8"))
+            addresses = {str(a) for a in raw.get("addresses", []) if a}
+            if addresses:
+                self.logger.info(
+                    "Loaded %s previously-known device(s) to re-probe.", len(addresses)
+                )
+            return addresses
+        except FileNotFoundError:
+            return set()
+        except (OSError, ValueError, AttributeError) as e:
+            self.logger.warning(
+                "Could not read %s (%s) — starting from discovery only.",
+                self._known_file,
+                e,
+            )
+            return set()
+
+    def _remember(self, address: str) -> None:
+        """Record an address we are collecting from, and persist the roster.
+
+        Writes via a temp file + os.replace so a crash mid-write cannot leave a
+        truncated roster that reads as "no devices" on the next start.
+        """
+        if address in self.known_addresses:
+            return
+        self.known_addresses.add(address)
+        try:
+            self._known_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._known_file.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps({"addresses": sorted(self.known_addresses)}, indent=2),
+                encoding="utf-8",
+            )
+            os.replace(tmp, self._known_file)
+        except OSError as e:
+            # Persisting is an optimisation over discovery, never a precondition for it.
+            self.logger.debug(
+                "Could not persist known devices to %s: %s", self._known_file, e
+            )
+
     async def reclaim_retired_devices(
         self, discovered_devices: dict[str, Device]
     ) -> None:
@@ -512,7 +571,15 @@ class DeviceManager:
             if ip in discovered_devices or ip in self.devices:
                 self.retired.pop(ip, None)
 
-        candidates = list(self.retired)
+        # Probe every address we have ever collected from that is not currently
+        # registered and was not just discovered. `retired` covers devices pruned THIS
+        # run; `known_addresses` additionally covers a restart, after which a device
+        # broadcast cannot currently see would otherwise never be tried at all.
+        candidates = [
+            ip
+            for ip in self.known_addresses | set(self.retired)
+            if ip not in self.devices and ip not in discovered_devices
+        ]
         if not candidates:
             return
 
@@ -657,7 +724,12 @@ class DeviceManager:
         Examines the device for energy monitoring (emeter) capabilities
         and adds it to the appropriate registries. Devices with emeter
         are added to both emeter_devices and polling_devices registries.
+
+        Also the one home for remembering the address: every registration path --
+        discovery, authenticated, unauthenticated, manual and reclaim -- funnels
+        through here, so the persisted roster cannot drift from the live one.
         """
+        self._remember(ip)
         if hasattr(device, "has_emeter") and device.has_emeter:
             self.emeter_devices[ip] = device
             self.polling_devices[ip] = (

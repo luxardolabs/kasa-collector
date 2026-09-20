@@ -1,5 +1,6 @@
 """Unit tests for retry policy and the missing-device pruning logic."""
 
+import json
 import logging
 from types import SimpleNamespace
 
@@ -37,7 +38,7 @@ class TestAsyncRetry:
             await buggy()
         assert calls == 1  # surfaced immediately, NOT retried
 
-    async def test_returns_on_success(self):
+    async def test_returns_on_success(self, tmp_path):
         @async_retry(max_retries=3, base_delay=0, operation_name="test")
         async def ok():
             return 42
@@ -47,7 +48,7 @@ class TestAsyncRetry:
 
 @pytest.mark.unit
 class TestRemoveMissingDevices:
-    def _dm(self, monkeypatch):
+    def _dm(self, monkeypatch, tmp_path):
         # Avoid real reverse-DNS during pruning.
         async def fake_hostname(ip):
             return ip
@@ -55,24 +56,29 @@ class TestRemoveMissingDevices:
         monkeypatch.setattr(
             "app.collector.device_manager.get_hostname_cached", fake_hostname
         )
+        from app.core import config
+
+        # Isolate the persisted roster: the manager reads AND writes it at
+        # construction, so a shared dir leaks devices between tests.
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_OUTPUT_DIR", str(tmp_path))
         from app.collector.device_manager import DeviceManager
 
         return DeviceManager(logging.getLogger("test"))
 
-    async def test_keeps_missing_when_configured(self, monkeypatch):
+    async def test_keeps_missing_when_configured(self, monkeypatch, tmp_path):
         from app.core import config
 
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", True)
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.devices = {"10.0.0.1": SimpleNamespace(alias="A", host="10.0.0.1")}
         await dm.remove_missing_devices({})  # nothing discovered
         assert "10.0.0.1" in dm.devices  # kept
 
-    async def test_prunes_discovered_but_protects_manual(self, monkeypatch):
+    async def test_prunes_discovered_but_protects_manual(self, monkeypatch, tmp_path):
         from app.core import config
 
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.device_hosts = ["manual-host"]
         dm.devices = {
             "manual-host": SimpleNamespace(alias="Manual", host="manual-host"),
@@ -87,7 +93,7 @@ class TestRemoveMissingDevices:
         assert "10.0.0.9" not in dm.devices  # discovered-and-now-missing pruned
         assert "10.0.0.9" not in dm.emeter_devices
 
-    async def test_single_missed_round_does_not_prune(self, monkeypatch):
+    async def test_single_missed_round_does_not_prune(self, monkeypatch, tmp_path):
         """Discovery is a lossy UDP broadcast — one miss is not absence.
 
         Observed live: a device reachable on both ports, with zero errors logged,
@@ -97,7 +103,7 @@ class TestRemoveMissingDevices:
 
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 3)
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
         dm.emeter_devices = dict(dm.devices)
 
@@ -113,14 +119,16 @@ class TestRemoveMissingDevices:
         assert "10.0.0.9" not in dm.devices  # pruned on the third
         assert "10.0.0.9" not in dm.emeter_devices
 
-    async def test_reappearing_device_resets_the_miss_count(self, monkeypatch):
+    async def test_reappearing_device_resets_the_miss_count(
+        self, monkeypatch, tmp_path
+    ):
         # Two misses then a sighting must not leave the device one miss from
         # eviction -- otherwise intermittent loss still evicts a healthy host.
         from app.core import config
 
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 3)
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         device = SimpleNamespace(alias="Fridge", host="10.0.0.9")
         dm.devices = {"10.0.0.9": device}
 
@@ -154,7 +162,7 @@ class TestPollEvidenceOutranksDiscovery:
     keep trusting the wrong signal.
     """
 
-    def _dm(self, monkeypatch):
+    def _dm(self, monkeypatch, tmp_path):
         async def fake_hostname(ip):
             return ip
 
@@ -163,15 +171,18 @@ class TestPollEvidenceOutranksDiscovery:
         )
         from app.core import config
 
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_OUTPUT_DIR", str(tmp_path))
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 3)
         from app.collector.device_manager import DeviceManager
 
         return DeviceManager(logging.getLogger("test"))
 
-    async def test_polling_device_survives_never_being_discovered(self, monkeypatch):
+    async def test_polling_device_survives_never_being_discovered(
+        self, monkeypatch, tmp_path
+    ):
         """The regression. Fails on pre-fix code: the device is pruned on round 3."""
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
         dm.emeter_devices = dict(dm.devices)
 
@@ -186,9 +197,11 @@ class TestPollEvidenceOutranksDiscovery:
         # Never accrues misses: a poll is as good as a sighting.
         assert dm.discovery_misses.get("10.0.0.9", 0) == 0
 
-    async def test_device_that_stops_answering_polls_is_still_pruned(self, monkeypatch):
+    async def test_device_that_stops_answering_polls_is_still_pruned(
+        self, monkeypatch, tmp_path
+    ):
         """The control. Without it the fix could simply disable pruning."""
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
         dm.emeter_devices = dict(dm.devices)
 
@@ -209,10 +222,10 @@ class TestPollEvidenceOutranksDiscovery:
         assert "10.0.0.9" not in dm.last_poll_ok  # evidence cleaned up with the device
 
     async def test_poll_evidence_does_not_rescue_a_device_that_never_polled(
-        self, monkeypatch
+        self, monkeypatch, tmp_path
     ):
         """A device with no successful poll on record prunes as before."""
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
         for _ in range(3):
             await dm.remove_missing_devices({})
@@ -234,7 +247,7 @@ class TestRetiredDevicesAreReclaimed:
     throughout. Broadcast silence drifts over HOURS; pruning judges it in minutes.
     """
 
-    def _dm(self, monkeypatch):
+    def _dm(self, monkeypatch, tmp_path):
         async def fake_hostname(ip):
             return ip
 
@@ -243,14 +256,15 @@ class TestRetiredDevicesAreReclaimed:
         )
         from app.core import config
 
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_OUTPUT_DIR", str(tmp_path))
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 1)
         from app.collector.device_manager import DeviceManager
 
         return DeviceManager(logging.getLogger("test"))
 
-    async def test_pruned_device_is_remembered_not_erased(self, monkeypatch):
-        dm = self._dm(monkeypatch)
+    async def test_pruned_device_is_remembered_not_erased(self, monkeypatch, tmp_path):
+        dm = self._dm(monkeypatch, tmp_path)
         dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
         dm.emeter_devices = dict(dm.devices)
 
@@ -259,9 +273,11 @@ class TestRetiredDevicesAreReclaimed:
         assert "10.0.0.9" not in dm.devices  # stopped polling it
         assert "10.0.0.9" in dm.retired  # but did not forget it
 
-    async def test_retired_device_that_answers_unicast_is_reclaimed(self, monkeypatch):
+    async def test_retired_device_that_answers_unicast_is_reclaimed(
+        self, monkeypatch, tmp_path
+    ):
         """The regression. Fails pre-fix: nothing ever re-probes a pruned address."""
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.devices = {"10.0.0.9": SimpleNamespace(alias="Fridge", host="10.0.0.9")}
         dm.emeter_devices = dict(dm.devices)
         await dm.remove_missing_devices({})
@@ -283,10 +299,10 @@ class TestRetiredDevicesAreReclaimed:
         assert "10.0.0.9" not in dm.retired
         assert "10.0.0.9" in dm.last_poll_ok  # and is protected from re-pruning
 
-    async def test_still_unreachable_device_stays_retired(self, monkeypatch):
+    async def test_still_unreachable_device_stays_retired(self, monkeypatch, tmp_path):
         """The control: a genuinely departed device must not be resurrected,
         and its failure must not abort the pass for its siblings."""
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.retired = {"10.0.0.9": 0.0, "10.0.0.8": 0.0}
 
         async def fake_get_device(ip, user, pw):
@@ -304,10 +320,10 @@ class TestRetiredDevicesAreReclaimed:
         assert "10.0.0.8" in dm.devices  # sibling unaffected by the failure
 
     async def test_device_discovery_returns_is_left_to_the_normal_path(
-        self, monkeypatch
+        self, monkeypatch, tmp_path
     ):
         """No double-registration: if broadcast found it, reclaim keeps its hands off."""
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.retired = {"10.0.0.9": 0.0}
         called = []
 
@@ -323,6 +339,102 @@ class TestRetiredDevicesAreReclaimed:
 
         assert called == []
         assert "10.0.0.9" not in dm.retired  # handed over to the auth path
+
+
+@pytest.mark.unit
+class TestKnownDevicesSurviveRestart:
+    """A device found by discovery ONCE must stay collected across restarts.
+
+    Discovery is the product: a user is never expected to know their plug's IP
+    address. Holding the roster only in memory meant a restart forgot every device
+    broadcast could not see at that moment, and the sole recovery was hand-listing
+    addresses in DEVICE_HOSTS -- precisely what discovery exists to spare them.
+
+    Live, four devices were invisible to broadcast for a whole day while answering a
+    direct connection instantly. Without persistence they are lost on every restart,
+    forever, with no action the user could reasonably be expected to take.
+    """
+
+    def _dm(self, monkeypatch, tmp_path):
+        async def fake_hostname(ip):
+            return ip
+
+        monkeypatch.setattr(
+            "app.collector.device_manager.get_hostname_cached", fake_hostname
+        )
+        from app.core import config
+
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_OUTPUT_DIR", str(tmp_path))
+        from app.collector.device_manager import DeviceManager
+
+        return DeviceManager(logging.getLogger("test"))
+
+    def test_registering_a_device_persists_it(self, monkeypatch, tmp_path):
+        dm = self._dm(monkeypatch, tmp_path)
+        dm._check_and_add_emeter_device(
+            "10.0.0.9", SimpleNamespace(alias="Fridge", has_emeter=True)
+        )
+        saved = json.loads((tmp_path / "known_devices.json").read_text())
+        assert saved["addresses"] == ["10.0.0.9"]
+
+    def test_a_fresh_manager_reloads_the_roster(self, monkeypatch, tmp_path):
+        """The regression. Fails pre-fix: nothing survives the process."""
+        dm = self._dm(monkeypatch, tmp_path)
+        dm._check_and_add_emeter_device(
+            "10.0.0.9", SimpleNamespace(alias="Fridge", has_emeter=True)
+        )
+        restarted = self._dm(monkeypatch, tmp_path)  # new process
+        assert restarted.known_addresses == {"10.0.0.9"}
+        assert restarted.devices == {}  # not registered yet -- it must be re-probed
+
+    async def test_a_remembered_device_is_probed_after_restart(
+        self, monkeypatch, tmp_path
+    ):
+        """The whole point: recovered WITHOUT discovery ever seeing it, and without
+        the user knowing any address."""
+        dm = self._dm(monkeypatch, tmp_path)
+        dm._check_and_add_emeter_device(
+            "10.0.0.9", SimpleNamespace(alias="Fridge", has_emeter=True)
+        )
+        restarted = self._dm(monkeypatch, tmp_path)
+
+        recovered = SimpleNamespace(alias="Fridge", host="10.0.0.9", has_emeter=True)
+
+        async def fake_get_device(ip, user, pw):
+            return recovered
+
+        monkeypatch.setattr(
+            "app.collector.device_manager.KasaAPI.get_device", fake_get_device
+        )
+        await restarted.reclaim_retired_devices({})  # discovery returns NOTHING
+
+        assert restarted.devices["10.0.0.9"] is recovered
+
+    def test_a_corrupt_roster_never_stops_startup(self, monkeypatch, tmp_path):
+        """Degrades to discovery-only rather than refusing to start."""
+        (tmp_path / "known_devices.json").write_text("{ this is not json")
+        dm = self._dm(monkeypatch, tmp_path)
+        assert dm.known_addresses == set()
+
+    def test_an_unwritable_output_dir_never_stops_registration(
+        self, monkeypatch, tmp_path
+    ):
+        """Persisting is an optimisation over discovery, not a precondition for it."""
+        dm = self._dm(monkeypatch, tmp_path)
+        monkeypatch.setattr(
+            dm, "_known_file", tmp_path / "no" / "such" / "dir" / "x.json"
+        )
+        monkeypatch.setattr(
+            type(dm._known_file), "write_text", _raise_oserror, raising=False
+        )
+        dm._check_and_add_emeter_device(
+            "10.0.0.9", SimpleNamespace(alias="Fridge", has_emeter=True)
+        )
+        assert "10.0.0.9" in dm.known_addresses  # in-memory roster still correct
+
+
+def _raise_oserror(*a, **k):
+    raise OSError("read-only file system")
 
 
 @pytest.mark.unit
@@ -443,7 +555,7 @@ class TestFetchCountedWriteFailures:
         )
         assert outcome == {"ok": 1, "failed": 0, "write_failed": 0}
 
-    async def test_unreachable_device_still_counts_as_failed(self):
+    async def test_unreachable_device_still_counts_as_failed(self, tmp_path):
         # The pre-existing outcome must not be disturbed by the new third state.
         p = self._poller()
         outcome = {"ok": 0, "failed": 0, "write_failed": 0}
@@ -467,18 +579,24 @@ class TestManualHostsAreIntent:
     unreachable at that instant was absent for the life of the process.
     """
 
-    def _dm(self, monkeypatch):
+    def _dm(self, monkeypatch, tmp_path):
         async def fake_hostname(ip):
             return f"host-{ip}"
 
         monkeypatch.setattr(
             "app.collector.device_manager.get_hostname_cached", fake_hostname
         )
+        from app.core import config
+
+        # Isolate the persisted device roster (read+written at construction).
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_OUTPUT_DIR", str(tmp_path))
         from app.collector.device_manager import DeviceManager
 
         return DeviceManager(logging.getLogger("test"))
 
-    async def test_missing_manual_host_is_retried_on_a_later_pass(self, monkeypatch):
+    async def test_missing_manual_host_is_retried_on_a_later_pass(
+        self, monkeypatch, tmp_path
+    ):
         from app.collector import device_manager as dm_mod
 
         attempts: list[str] = []
@@ -495,7 +613,7 @@ class TestManualHostsAreIntent:
 
         monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
         monkeypatch.setattr(dm_mod.KasaAPI, "discover_devices", no_devices_found)
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.device_hosts = ["kasa-backroom-fridge.example.com"]
 
         await dm.connect()  # startup: device is down
@@ -510,7 +628,9 @@ class TestManualHostsAreIntent:
         assert "kasa-backroom-fridge.example.com" in dm.devices  # recovered
         assert len(attempts) > 1  # re-attempted, not abandoned after startup
 
-    async def test_already_registered_manual_host_is_not_reconnected(self, monkeypatch):
+    async def test_already_registered_manual_host_is_not_reconnected(
+        self, monkeypatch, tmp_path
+    ):
         # Re-connecting a working device every cycle would churn its session for
         # nothing -- reconcile must only attempt hosts that are actually absent.
         from app.collector import device_manager as dm_mod
@@ -522,7 +642,7 @@ class TestManualHostsAreIntent:
             return SimpleNamespace(alias="X", host=ip, has_emeter=False)
 
         monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.device_hosts = ["a.example.com"]
         dm.devices = {"a.example.com": SimpleNamespace(alias="X", host="a.example.com")}
 
@@ -540,19 +660,23 @@ class TestManualHostKeyedByResolvedAddress:
     could not be grouped or joined on (KASACOLLEC-64).
     """
 
-    def _dm(self, monkeypatch):
+    def _dm(self, monkeypatch, tmp_path):
         async def fake_hostname(ip):
             return f"host-{ip}"
 
         monkeypatch.setattr(
             "app.collector.device_manager.get_hostname_cached", fake_hostname
         )
+        from app.core import config
+
+        # Isolate the persisted device roster (read+written at construction).
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_OUTPUT_DIR", str(tmp_path))
         from app.collector.device_manager import DeviceManager
 
         return DeviceManager(logging.getLogger("test"))
 
     async def test_registry_key_is_the_resolved_ip_not_the_configured_name(
-        self, monkeypatch
+        self, monkeypatch, tmp_path
     ):
         from app.collector import device_manager as dm_mod
 
@@ -562,7 +686,7 @@ class TestManualHostKeyedByResolvedAddress:
             return SimpleNamespace(alias="Fridge", host="10.50.0.100", has_emeter=False)
 
         monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.device_hosts = ["kasa-backroom-fridge.example.com"]
 
         await dm.reconcile_manual_devices()
@@ -570,7 +694,7 @@ class TestManualHostKeyedByResolvedAddress:
         assert "kasa-backroom-fridge.example.com" not in dm.devices
         assert dm.manual_addresses["kasa-backroom-fridge.example.com"] == "10.50.0.100"
 
-    async def test_resolved_manual_host_is_not_reattempted(self, monkeypatch):
+    async def test_resolved_manual_host_is_not_reattempted(self, monkeypatch, tmp_path):
         # reconcile must recognise the host as registered via the mapping, or it
         # would reconnect (and re-handshake) a working device every cycle.
         from app.collector import device_manager as dm_mod
@@ -582,7 +706,7 @@ class TestManualHostKeyedByResolvedAddress:
             return SimpleNamespace(alias="Fridge", host="10.50.0.100", has_emeter=False)
 
         monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.device_hosts = ["kasa-backroom-fridge.example.com"]
 
         await dm.reconcile_manual_devices()
@@ -590,7 +714,7 @@ class TestManualHostKeyedByResolvedAddress:
         assert attempts == ["kasa-backroom-fridge.example.com"]  # attempted once
 
     async def test_resolved_manual_host_is_still_protected_from_pruning(
-        self, monkeypatch
+        self, monkeypatch, tmp_path
     ):
         # The prune guard matched the registry key against device_hosts. Once the key
         # is an address that no longer matches, so the mapping has to be consulted --
@@ -599,7 +723,7 @@ class TestManualHostKeyedByResolvedAddress:
 
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_KEEP_MISSING_DEVICES", False)
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 1)
-        dm = self._dm(monkeypatch)
+        dm = self._dm(monkeypatch, tmp_path)
         dm.device_hosts = ["kasa-backroom-fridge.example.com"]
         dm.manual_addresses = {"kasa-backroom-fridge.example.com": "10.50.0.100"}
         dm.devices = {"10.50.0.100": SimpleNamespace(alias="F", host="10.50.0.100")}
