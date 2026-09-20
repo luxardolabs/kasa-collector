@@ -11,7 +11,7 @@
 #
 # ENV_FILE is exported only to satisfy compose interpolation: variables are resolved
 # file-wide at parse time regardless of which profile is active, and the `collector`
-# profile's service declares `${ENV_FILE:?}`. Nothing in the e2e profile reads it --
+# profile's service declares `${ENV_FILE:?}`. Nothing in the e2e profile reads it —
 # kasa-collector-e2e sets its whole environment inline.
 set -euo pipefail
 

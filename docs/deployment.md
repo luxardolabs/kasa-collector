@@ -37,20 +37,22 @@ cp .env.example .env.prod   # then edit with your real values
 ```bash
 docker pull ghcr.io/luxardolabs/kasa-collector:latest
 # or pin a release
-docker pull ghcr.io/luxardolabs/kasa-collector:2026.8.0
+docker pull ghcr.io/luxardolabs/kasa-collector:2026.09.0
 ```
 
-`:latest` tracks the newest release; pin the version tag (`:2026.8.0`) for reproducible deploys.
+`:latest` tracks the newest release; pin the version tag (`:2026.09.0`) for reproducible deploys.
 
 ## Collector-only deployment
 
 The production shape is the collector on its own, pointed at your external InfluxDB and Grafana. That is the `collector` profile of the single `compose.yml` — the bundled InfluxDB + Grafana are the separate `bundled` profile, so `.env.prod` setting `COMPOSE_PROFILES=collector` gives you the collector alone. Every service is behind a profile, so an unset `COMPOSE_PROFILES` starts nothing. **Compose never builds** — the Makefile builds and pushes the image, and the stack pulls it by a pinned tag. The Dockerfile bakes in a `HEALTHCHECK` (`python -m app.health.check`), so no compose-level health check is needed.
 
-There is ONE compose file for every environment; environments differ only by their `.env.<env>`:
+There is ONE compose file for every stack and every environment: the **stack** is a compose profile and the **environment** is the `.env.<env>`.
 
 ```yaml
 services:
   kasa-collector:
+    # The stack this service belongs to. Selected by COMPOSE_PROFILES in .env.<env>.
+    profiles: [collector]
     container_name: kasa-collector
     # Pinned, never :latest — a deployable does not roll.
     image: ${REGISTRY:?}/luxardolabs/kasa-collector:${TAG:?}
@@ -65,9 +67,10 @@ services:
 `.env.prod` supplies the image coordinates alongside the collector's own settings:
 
 ```sh
-REGISTRY=ghcr.io          # or your private registry
-TAG=2026.09.0             # the released version — pinned, never :latest
+REGISTRY=ghcr.io             # or your private registry
+TAG=2026.09.0                # the released version — pinned, never :latest
 ENV_FILE=.env.prod
+COMPOSE_PROFILES=collector   # the collector alone; required, an unset value starts nothing
 ```
 
 Run it locally against `.env.prod` with the Makefile:
@@ -157,10 +160,13 @@ The build is Makefile-driven and the `VERSION` file at the repo root is the sour
 
 ```bash
 make release          # multi-arch :VERSION + :latest -> the private registry (prod pulls :latest)
-make release-public   # promote the released :VERSION + :latest (same digest) -> GHCR
+make release-public   # promote the released :VERSION + :latest (same digest) -> GHCR,
+                      # then publish the GitHub Release from the notes
 ```
 
 `make release` builds the runtime image for both architectures and pushes `:VERSION` and `:latest` to the private registry that `prod-deploy` pulls from. `make release-public` re-tags that exact digest onto `ghcr.io/luxardolabs/kasa-collector` for the public OSS image — run `make release` first. To roll out a new version to a node: `make release` → `make prod-deploy PROD_NODE=<host>`.
+
+`release-public` then chains `make gh-release`, which publishes the GitHub Release for `v$(VERSION)` from `app/release_notes/$(VERSION).md`. **A git tag is not a Release** — without this step `github.com/luxardolabs/kasa-collector/releases` stays empty while the notes sit unused, which is what happened before and is now enforced by `repo.github_release_wired`. It is idempotent (an existing Release is left alone) and refuses to run if the notes file or the tag is missing, so it cannot publish a Release for a version nobody wrote notes for.
 
 ## Health checks
 

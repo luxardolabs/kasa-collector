@@ -103,9 +103,10 @@ POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-act
 #     bundled           + bundled InfluxDB & Grafana (dev)
 #     demo              fake devices + bundled stack, no hardware -> `make demo-up`
 #     e2e               fakes + throwaway InfluxDB          -> `make test-e2e`
-# ONE compose.yml; the STACK is the --profile and the environment is the --env-file
-# (fleet standard). The fake-device
-# stacks are separate topologies (bridge network + emulators), not environments of it.
+# ONE compose.yml (fleet standard): the STACK is the --profile and the ENVIRONMENT is
+# the --env-file. The fake-device stacks need a bridge network so the collector can
+# resolve the emulators by service name, which host networking cannot do — so they are
+# separate SERVICES gated by profile, not separate files.
 RUN_DC  := docker compose --env-file .env.prod
 PROD_DC := docker compose --env-file .env.prod
 DEV_DC  := docker compose --env-file .env.dev
