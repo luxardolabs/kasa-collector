@@ -1,6 +1,6 @@
 {
   "guard": "luxlint",
-  "guard_version": "0.55.0",
+  "guard_version": "0.60.1",
   "repo": "/repo",
   "source": [
     "app",
@@ -12,6 +12,7 @@
       "status": "PASS",
       "since": "0.1.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -19,6 +20,7 @@
       "status": "PASS",
       "since": "0.1.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -26,6 +28,7 @@
       "status": "PASS",
       "since": "0.4.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -33,6 +36,7 @@
       "status": "PASS",
       "since": "0.35.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -40,6 +44,7 @@
       "status": "PASS",
       "since": "0.17.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -47,6 +52,7 @@
       "status": "PASS",
       "since": "0.9.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -54,6 +60,7 @@
       "status": "PASS",
       "since": "0.10.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -61,6 +68,7 @@
       "status": "PASS",
       "since": "0.1.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -68,6 +76,7 @@
       "status": "PASS",
       "since": "0.1.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -75,6 +84,7 @@
       "status": "PASS",
       "since": "0.18.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -82,6 +92,7 @@
       "status": "PASS",
       "since": "0.25.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -89,6 +100,7 @@
       "status": "PASS",
       "since": "0.38.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -96,6 +108,7 @@
       "status": "PASS",
       "since": "0.3.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -103,6 +116,7 @@
       "status": "PASS",
       "since": "0.4.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -110,6 +124,7 @@
       "status": "INERT",
       "since": "0.3.0",
       "violations": 0,
+      "sites": [],
       "deferred": false,
       "inert_reason": "no relational data layer (no crud/ package, no models/ declaring an ORM model, no SQLAlchemy/psycopg/asyncpg dependency) \u2014 there is no data layer to exercise, so this says nothing about the repo either way. Adding a database to turn it green would be a hollow green; don't."
     },
@@ -118,6 +133,7 @@
       "status": "INERT",
       "since": "0.33.0",
       "violations": 0,
+      "sites": [],
       "deferred": false,
       "inert_reason": "no relational data layer \u2014 there is no test database to isolate and no dev/prod database a suite could accidentally reach, so the invariant was never evaluated."
     },
@@ -126,6 +142,7 @@
       "status": "INERT",
       "since": "0.36.0",
       "violations": 0,
+      "sites": [],
       "deferred": false,
       "inert_reason": "no relational data layer \u2014 there is no DB test harness, so there is no teardown strategy to judge."
     },
@@ -134,6 +151,7 @@
       "status": "PASS",
       "since": "0.5.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -141,6 +159,7 @@
       "status": "PASS",
       "since": "0.5.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -148,6 +167,7 @@
       "status": "PASS",
       "since": "0.10.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -155,6 +175,7 @@
       "status": "PASS",
       "since": "0.14.0",
       "violations": 0,
+      "sites": [],
       "deferred": false
     }
   ],
@@ -166,6 +187,6 @@
     "INERT": 3
   },
   "mypy": "separate: `luxlint --mypy` ([mypy].baseline ratchet)",
-  "commit": "bedcf48d24aa77fc19bee8ff05a85fb64a130f9a",
-  "generated_at": "2026-09-20T21:29:36Z"
+  "commit": "3342edd7d44e32ec0a9eaa255b3aaecfd5a1a644",
+  "generated_at": "2026-10-02T14:36:36Z"
 }

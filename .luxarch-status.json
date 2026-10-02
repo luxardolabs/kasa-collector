@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.193.0",
+  "guard_version": "0.249.2",
   "repo": "/repo",
   "targets": [
     {
@@ -44,6 +44,15 @@
           "inert_reason": ""
         },
         {
+          "rule": "collector.file_size",
+          "status": "PASS",
+          "since": "0.235.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": false,
+          "inert_reason": ""
+        },
+        {
           "rule": "collector.no_per_request_http",
           "status": "PASS",
           "since": "0.1.0",
@@ -63,7 +72,7 @@
         }
       ],
       "summary": {
-        "PASS": 6,
+        "PASS": 7,
         "FAIL": 0,
         "XFAIL": 0,
         "XPASS": 0,
@@ -137,9 +146,45 @@
         "inert_reason": ""
       },
       {
+        "rule": "repo.guard_owned_tools_undeclared",
+        "status": "PASS",
+        "since": "0.243.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.dev_tools_not_in_production",
+        "status": "PASS",
+        "since": "0.243.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.fleet_skills_present",
+        "status": "PASS",
+        "since": "0.245.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
         "rule": "repo.makefile_no_command_substitution",
         "status": "PASS",
         "since": "0.185.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.makefile_no_fixed_tmp",
+        "status": "PASS",
+        "since": "0.249.0",
         "violations": 0,
         "deferred": false,
         "inert": false,
@@ -158,6 +203,96 @@
         "rule": "repo.guard_upgrade_verifies_write",
         "status": "PASS",
         "since": "0.192.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.db_verify_image_is_current",
+        "status": "INERT",
+        "since": "0.196.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": true,
+        "inert_reason": "no `db-verify` target in a committed makefile \u2014 there is no migration-chain run to judge"
+      },
+      {
+        "rule": "repo.image_name_declares_provenance",
+        "status": "PASS",
+        "since": "0.197.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.deploy_tag_is_immutable",
+        "status": "PASS",
+        "since": "0.197.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.makefile_image_ref_well_formed",
+        "status": "PASS",
+        "since": "0.208.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.alembic_env_honors_caller_url",
+        "status": "INERT",
+        "since": "0.217.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": true,
+        "inert_reason": "no alembic env.py found (nothing carrying `context.configure`) \u2014 there is no migration runner here whose URL could be overridden, so the invariant was never evaluated. NOT a clearance: a repo that DOES migrate and whose env.py this scan missed is carrying the defect unexamined, and that is worth an escalation"
+      },
+      {
+        "rule": "repo.emitted_assets_current",
+        "status": "PASS",
+        "since": "0.208.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.luxpm_receipt_current",
+        "status": "INERT",
+        "since": "0.211.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": true,
+        "inert_reason": "no `.luxpm-receipt` is committed \u2014 there is no tracker attestation to verify. NOT a clearance: it means this repo's tracker currency is entirely self-reported, which is the drift this receipt exists to make visible. Issue one with `luxpm_issue_sync_receipt` and commit it verbatim"
+      },
+      {
+        "rule": "repo.guard_status_current",
+        "status": "INERT",
+        "since": "0.222.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": true,
+        "inert_reason": "this run is WRITING the status files (`make status`), so the files on disk are the ones it is replacing \u2014 judging them would record a red about themselves in the committed snapshot. The next `make check` judges what was written"
+      },
+      {
+        "rule": "repo.claude_pointer_present",
+        "status": "PASS",
+        "since": "0.213.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.gitleaks_scans_identity",
+        "status": "PASS",
+        "since": "0.204.0",
         "violations": 0,
         "deferred": false,
         "inert": false,
@@ -254,6 +389,15 @@
         "inert_reason": ""
       },
       {
+        "rule": "repo.fleet_dep_floor",
+        "status": "PASS",
+        "since": "0.219.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
         "rule": "repo.schema_from_migrations",
         "status": "PASS",
         "since": "0.130.0",
@@ -317,6 +461,15 @@
         "inert_reason": ""
       },
       {
+        "rule": "repo.makefile_db_ephemeral_volume",
+        "status": "PASS",
+        "since": "0.240.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
         "rule": "repo.alembic_path_separator",
         "status": "PASS",
         "since": "0.71.0",
@@ -329,6 +482,15 @@
         "rule": "repo.alembic_autogen_comparisons",
         "status": "PASS",
         "since": "0.123.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.migration_notnull_safe",
+        "status": "PASS",
+        "since": "0.239.0",
         "violations": 0,
         "deferred": false,
         "inert": false,
@@ -408,20 +570,20 @@
       }
     ],
     "summary": {
-      "PASS": 35,
+      "PASS": 48,
       "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
-      "INERT": 2
+      "INERT": 6
     }
   },
   "summary": {
-    "PASS": 41,
+    "PASS": 55,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 2
+    "INERT": 6
   },
-  "commit": "bedcf48d24aa77fc19bee8ff05a85fb64a130f9a",
-  "generated_at": "2026-09-20T21:29:36Z"
+  "commit": "3342edd7d44e32ec0a9eaa255b3aaecfd5a1a644",
+  "generated_at": "2026-10-02T14:36:36Z"
 }
