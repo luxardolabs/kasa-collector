@@ -1,0 +1,13 @@
+format: luxpm-sync-receipt/1
+project: KASACOLLEC
+repository_url: https://github.com/luxardolabs/kasa-collector
+issued_at: 2026-10-02T14:51:03+00:00
+last_activity_at: 2026-10-02T14:51:02+00:00
+stale_days: 14
+open: 4
+open_stale: 4
+closed_without_summary: 17
+open_escalations: 0
+last_known_commit: 957770173f441c5553982e7d602e4c6b46779f57
+key_id: cbb673eafd0c3932
+signature: KT7YZmcLR+6XlMHOuJdSJb0L8WlGjtLY7VUC7Q57MapCG9UFB9gTYc9RYuRAL0kCviiXOIN7LmwYy2oAd3pdCw==
