@@ -49,7 +49,7 @@ PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.249.2
+LUXARCH_VERSION  := 0.249.3
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
@@ -64,7 +64,7 @@ LUXLINT = $(if $(LUXLINT_REGISTRY),$(LUXLINT_IMAGE),luxlint:local)
 # Dependency-vulnerability guard (luxaudit) — pinned; pulled via LUXAUDIT_REGISTRY (Makefile.local).
 # Scans poetry.lock against the live OSV+PyPA feed. Unset host → `make audit` skips gracefully.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  := 0.12.1
+LUXAUDIT_VERSION  := 0.13.0
 LUXAUDIT_IMAGE    ?= $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION)
 PLATFORMS ?= linux/amd64,linux/arm64
 
@@ -136,7 +136,7 @@ PROD_DIR  ?= /opt/kasa-collector
 PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
 
 .PHONY: help version \
-        guard-clean-tree dev-deploy dev-pin harness-build release release-public gh-release buildx-setup \
+        guard-clean-tree dev-deploy dev-pin harness-build release-scan release release-public gh-release buildx-setup \
         docker-inspect docker-clean \
         up down restart logs ps shell \
         dev-up dev-down dev-clean dev-logs dev-ps dev-shell \
@@ -210,8 +210,19 @@ guard-clean-tree:
 
 # Every build of the runtime stage gets its permanent `:sha-<commit>` name; `:dev` is only a
 # label moved onto it afterwards. Single-arch (the dev node's); `release` is the multi-arch path.
-dev-deploy: guard-clean-tree ## Build + push THIS commit as :sha-<commit>, pin .env.dev to it, restart the dev stack
+# SCAN THE CANDIDATE, THEN PUSH (luxaudit >= 0.13.0 `--image-archive`, image-block v5): the exact
+# bits just built are scanned mount-only, and any fixable HIGH/CRITICAL refuses the push. `make
+# audit`'s image leg only reports what the registry ALREADY holds, so it cannot gate a release.
+define scan_candidate
+	@set -e; T=$$(mktemp); trap 'rm -f "$$T"' EXIT INT TERM; \
+	docker save $(1) -o "$$T"; chmod 644 "$$T"; \
+	docker run --rm -v $(PWD):/repo -v luxaudit-cache:/root/.cache/trivy -v "$$T":/candidate.tar:ro \
+	  $(LUXAUDIT_IMAGE) --image-archive /candidate.tar --image-label $(2)
+endef
+
+dev-deploy: guard-clean-tree ## Build, SCAN, push THIS commit as :sha-<commit>, pin .env.dev to it, restart the dev stack
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(SHA_IMAGE) .
+	$(call scan_candidate,$(SHA_IMAGE),$(SHA_IMAGE))
 	docker push $(SHA_IMAGE)
 	docker tag $(SHA_IMAGE) $(DEV_ALIAS) && docker push $(DEV_ALIAS)
 	@$(MAKE) --no-print-directory dev-pin TAG=sha-$(COMMIT)
@@ -252,9 +263,16 @@ harness-build: ## Build the fake-device emulator image (compose never builds —
 	docker build $(NO_CACHE_FLAG) -t $(FAKE_IMAGE) ./harness
 	@echo "built $(FAKE_IMAGE)"
 
+# The multi-arch buildx push cannot be `docker save`d, so the candidate is the same runtime stage
+# built locally (host arch) under the BARE verification name, scanned before anything is pushed —
+# the shape luxarch, luxlint and luxaudit use for their own multi-arch releases.
+release-scan: ## Build + scan the release candidate for fixable HIGH/CRITICAL before anything is pushed
+	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(E2E_IMAGE) .
+	$(call scan_candidate,$(E2E_IMAGE),$(VERSION_IMAGE))
+
 # The cut release: multi-arch, the immutable :$(VERSION) and :sha-<commit>, plus the :latest
 # alias the public GHCR promotion copies. prod pins :$(VERSION) in .env.prod.
-release: guard-clean-tree buildx-setup ## Build + push :$(VERSION) + :sha-<commit> (multi-arch, alias :latest) to the private registry
+release: guard-clean-tree release-scan buildx-setup ## Build + push :$(VERSION) + :sha-<commit> (multi-arch, alias :latest) to the private registry
 	docker buildx build $(NO_CACHE_FLAG) --target base --platform $(PLATFORMS) -f Dockerfile $(BUILD_ARGS) \
 		-t $(VERSION_IMAGE) -t $(SHA_IMAGE) -t $(LATEST_ALIAS) --push .
 	@echo "Pushed $(VERSION_IMAGE) + $(SHA_IMAGE) + $(LATEST_ALIAS)"

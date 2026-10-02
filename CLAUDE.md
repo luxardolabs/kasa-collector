@@ -49,8 +49,10 @@ make dev-deploy
 # Bring the dev stack up at whatever .env.dev pins — host networking
 make dev-up          # make dev-logs / make dev-ps / make dev-down
 
-# Release: multi-arch :VERSION + :sha-<commit> (+ :latest alias) to the private registry;
-# prod pins TAG=<VERSION> in .env.prod
+# Release: scans the candidate first (release-scan: luxaudit --image-archive refuses the push
+# on any fixable HIGH/CRITICAL), then multi-arch :VERSION + :sha-<commit> (+ :latest alias) to
+# the private registry; prod pins TAG=<VERSION> in .env.prod. dev-deploy scans before it pushes too.
+# `make audit`'s image leg is a MONITOR of what the registry already holds — it clears by releasing.
 make release
 # Promote the released image to GHCR (ghcr.io/luxardolabs/kasa-collector) — run `make release` first
 make release-public
