@@ -2,20 +2,23 @@
 # End-to-end harness runner: fake Kasa devices -> collector -> InfluxDB, no hardware.
 # Brings up the `e2e` PROFILE of the single compose.yml, waits for the collector to
 # write emeter data for the emulated devices, and asserts both device aliases show up
-# in InfluxDB. Always tears the stack down. Driven by `make test-e2e`, which builds the
-# collector and fake images first and passes REGISTRY/TAG/FAKE_TAG — compose only runs
-# the tags.
+# in InfluxDB. Always tears the stack down. Driven by `make test-e2e`, which first builds
+# the collector and fake images under their BARE verification names (`kasa-collector:test`,
+# `kasa-collector-fake:test`) — compose only runs those tags; nothing is pulled or pushed.
 #
 # Its own project name keeps the throwaway stack isolated from the dev/demo stacks, so
 # a `down -v` here can never reach their volumes.
 #
-# ENV_FILE is exported only to satisfy compose interpolation: variables are resolved
-# file-wide at parse time regardless of which profile is active, and the `collector`
-# profile's service declares `${ENV_FILE:?}`. Nothing in the e2e profile reads it —
+# ENV_FILE, REGISTRY and TAG are exported only to satisfy compose interpolation:
+# variables are resolved file-wide at parse time regardless of which profile is active,
+# and the `collector`/`demo` services declare `${ENV_FILE:?}`, `${REGISTRY:?}` and
+# `${TAG:?}`. Nothing in the e2e profile reads them — its images are bare local tags and
 # kasa-collector-e2e sets its whole environment inline.
 set -euo pipefail
 
 export ENV_FILE="${ENV_FILE:-.env.demo}"
+export REGISTRY="${REGISTRY:-unused-by-e2e}"
+export TAG="${TAG:-unused-by-e2e}"
 DC="docker compose --profile e2e -p kasa-collector-e2e"
 TOKEN="kasa-e2e-token"
 # Devices whose emeter data must reach InfluxDB (the two plugs + the strip).
@@ -27,7 +30,7 @@ TIMEOUT="${E2E_TIMEOUT:-120}"
 cleanup() { $DC down -v >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-echo "▶ starting e2e stack (image ${REGISTRY:?}/luxardolabs/kasa-collector:${TAG:?})…"
+echo "▶ starting e2e stack (image kasa-collector:test)…"
 $DC up -d
 
 # Query InfluxDB (InfluxQL over the v1-compat API) for the emeter device_alias tags.

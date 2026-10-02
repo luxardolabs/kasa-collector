@@ -1,3 +1,5 @@
+<!-- luxarch:release-notes-guide asset v1 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit release-notes-guide`. -->
+
 # Release Notes Writing Guide
 
 Canonical fleet guide — emitted by `luxarch --emit release-notes-guide`. Drop it in at `<app>/release_notes/writing-guide.md`. This is the **user-facing** release notes — the people who actually use the app. NOT the dev team. For the internal, technical change log see `<app>/change_logs/` (`luxarch --emit changelog-guide`).

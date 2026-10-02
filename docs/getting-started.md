@@ -33,9 +33,10 @@ Then open **http://localhost:3000** (admin / admin) and watch the dashboards mov
 
 ## Option 2 — Dev: your real devices + bundled InfluxDB / Grafana
 
-Same self-contained InfluxDB and Grafana as the demo, but the collector uses host networking and broadcast discovery to find **your real** Kasa devices:
+Same self-contained InfluxDB and Grafana as the demo, but the collector uses host networking and broadcast discovery to find **your real** Kasa devices. It runs the image `.env.dev` pins — the published release is the simplest choice:
 
 ```bash
+cp .env.example .env.dev    # set REGISTRY=ghcr.io and TAG=<a released version>, e.g. 2026.09.1
 make dev-up
 ```
 
@@ -48,8 +49,8 @@ To add real devices that require authentication or to pin manual device hosts, d
 If you already run InfluxDB 2.x and Grafana, run just the collector and point it at them. Copy the environment template and fill in your `KASA_COLLECTOR_INFLUXDB_*` values:
 
 ```bash
-cp .env.example .env.dev    # edit with your InfluxDB URL / org / bucket / token
-make up                     # builds locally, host networking, reads .env.dev
+cp .env.example .env.prod   # REGISTRY=ghcr.io, TAG=<a released version>, plus your InfluxDB URL / org / bucket / token
+make up                     # host networking, reads .env.prod
 ```
 
 Or run the published image directly with the Compose snippet in the [README](../README.md#quick-start). Either way, import the bundled dashboards from `grafana/shared-local/` (or `grafana/shared-external/`) and point their datasource at your InfluxDB — see [Grafana Dashboards](grafana-dashboards.md).

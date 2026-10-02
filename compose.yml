@@ -32,9 +32,10 @@ name: kasa-collector
 # assumption that it could not, which left the collector's primary path with no
 # end-to-end coverage and is why three discovery bugs shipped (KASACOLLEC-70).
 #
-# Compose NEVER builds. Images are built outside it (`make build-local`, `make
-# harness-build`, `make release`) and referenced here by a PINNED tag — no `:latest`,
-# no `${TAG:-latest}`.
+# Compose NEVER builds. Images are built outside it (`make dev-deploy`, `make release`,
+# `make harness-build`, `make test-e2e`) and referenced here by an IMMUTABLE tag — the
+# real collector runs `:sha-<commit>` (dev) or `:<version>` (prod), never `:dev`/`:latest`;
+# the hardware-free stacks run bare local verification images (`*:test`).
 #
 # Real `.env.dev` / `.env.prod` are gitignored (TAG/REGISTRY/ports/secrets);
 # `.env.example` is the committed template and `.env.demo` ships public defaults.
@@ -118,10 +119,11 @@ services:
   # demo that says "Fake" is more honest than one that says "Demo" anyway. The four
   # kinds cover every device path the collector ships: emeter plug, a second model,
   # a NON-emeter plug (the no-emeter branch), and a multi-outlet strip with per-outlet
-  # emeter (the child-device path).
+  # emeter (the child-device path). A TEST FIXTURE: `make harness-build` builds it under a
+  # BARE name and never pushes it, so a clean clone runs the demo with no registry.
   kasa_fake_hs110:
     profiles: [demo, e2e]
-    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
+    image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug
       KASA_FAKE_MODEL: HS110(US)
@@ -132,7 +134,7 @@ services:
 
   kasa_fake_kp115:
     profiles: [demo, e2e]
-    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
+    image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug
       KASA_FAKE_MODEL: KP115(US)
@@ -145,7 +147,7 @@ services:
   # handled cleanly and must NOT write emeter data; e2e asserts both.
   kasa_fake_hs103:
     profiles: [demo, e2e]
-    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
+    image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug_noemeter
       KASA_FAKE_MODEL: HS103(US)
@@ -155,7 +157,7 @@ services:
 
   kasa_fake_hs300:
     profiles: [demo, e2e]
-    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
+    image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: strip
       KASA_FAKE_MODEL: HS300(US)
@@ -169,7 +171,7 @@ services:
   # e2e only: it exists to prove a device that discovery stops seeing keeps collecting.
   kasa_fake_deaf:
     profiles: [e2e]
-    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector-fake:${FAKE_TAG:-dev}
+    image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug
       KASA_FAKE_MODEL: KP115(US)
@@ -237,9 +239,11 @@ services:
       timeout: 3s
       retries: 30
 
+  # The runtime stage built from current source by `make test-e2e`, under the BARE
+  # verification name: never pushed, so the test needs no registry (`<repo>:test`).
   kasa-collector-e2e:
     profiles: [e2e]
-    image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
+    image: kasa-collector:test
     environment:
       # DISCOVERY, not explicit hosts. A Docker bridge is a Linux bridge and floods
       # broadcast, so 255.255.255.255 reaches every emulator on it -- verified. The

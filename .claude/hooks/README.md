@@ -30,21 +30,22 @@ The exception is `no-ai-attribution`, which must NOT mask: a commit message *is*
 
 ## What's here
 
-| hook                    | fires                        | effect                                                        |
-| ----------------------- | ---------------------------- | ------------------------------------------------------------- |
-| `no-agent-deferral`     | Edit/Write on a guard config | **deny** — deferrals/allowlists are the owner's call          |
-| `no-suppression`        | Edit/Write                   | **deny** — no `# noqa` / `# type: ignore`                     |
-| `no-golden-edit`        | Edit/Write on `*.golden`     | **deny** — use `make parity-update`                           |
-| `no-test-weakening`     | Edit/Write on a test         | **deny** — no skip/xfail to reach green                       |
-| `no-gate-bypass`        | Bash                         | **deny** — `--no-verify`, `--deselect`, `SKIP=`               |
-| `confirm-destructive`   | Bash                         | **deny** — `rm -rf`, `reset --hard`, force push, `DROP TABLE` |
-| `no-identity-override`  | Bash                         | **deny** — `git -c user.email=`                               |
-| `no-ai-attribution`     | Bash                         | **deny** — Co-Authored-By: Claude                             |
-| `no-silenced-staging`   | Bash                         | **deny** — `2>/dev/null` on mutating git                      |
-| `commit-leftover-check` | Bash (post)                  | advisory — partial-commit warning                             |
-| `luxpm-record-commit`   | Bash (post)                  | records the commit in the ledger                              |
-| `luxpm-clear-ledger`    | LuxPM log tools (post)       | clears the ledger                                             |
-| `luxpm-stop-guard`      | Stop                         | **blocks** — work not logged in LuxPM                         |
-| `unpushed-stop-guard`   | Stop                         | **blocks** — commits not pushed                               |
+| hook                         | fires                        | effect                                                        |
+| ---------------------------- | ---------------------------- | ------------------------------------------------------------- |
+| `no-agent-deferral`          | Edit/Write on a guard config | **deny** — deferrals/allowlists are the owner's call          |
+| `no-suppression`             | Edit/Write                   | **deny** — no `# noqa` / `# type: ignore`                     |
+| `no-golden-edit`             | Edit/Write on `*.golden`     | **deny** — use `make parity-update`                           |
+| `no-test-weakening`          | Edit/Write on a test         | **deny** — no skip/xfail to reach green                       |
+| `no-gate-bypass`             | Bash                         | **deny** — `--no-verify`, `--deselect`, `SKIP=`               |
+| `confirm-destructive`        | Bash                         | **deny** — `rm -rf`, `reset --hard`, force push, `DROP TABLE` |
+| `no-identity-override`       | Bash                         | **deny** — `git -c user.email=`                               |
+| `no-ai-attribution`          | Bash                         | **deny** — Co-Authored-By: Claude                             |
+| `no-silenced-staging`        | Bash                         | **deny** — `2>/dev/null` on mutating git                      |
+| `luxpm-search-before-create` | `luxpm_create_issue`         | **deny** — no LuxPM search since the last issue created       |
+| `commit-leftover-check`      | Bash (post)                  | advisory — partial-commit warning                             |
+| `luxpm-record-commit`        | Bash (post)                  | records the commit in the ledger                              |
+| `luxpm-clear-ledger`         | LuxPM log tools (post)       | clears the ledger                                             |
+| `luxpm-stop-guard`           | Stop                         | **blocks** — work not logged in LuxPM                         |
+| `unpushed-stop-guard`        | Stop                         | **blocks** — commits not pushed                               |
 
 Emergency override for the stop guards: delete `.claude/.luxpm-ledger.json`, or push.

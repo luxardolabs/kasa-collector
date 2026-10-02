@@ -15,20 +15,32 @@ COMMIT := $(shell git -c safe.directory=$(CURDIR) rev-parse --short HEAD 2>/dev/
 # The private-registry host is kept OUT of this public tree — set it in an untracked
 # Makefile.local (see Makefile.local.example). Included FIRST so its values win over the
 # empty defaults below. Without it, the local/e2e stacks still build; only the targets
-# that pull from the private registry (dev-build-push / release / prod / lint / arch / audit)
+# that pull from the private registry (dev-deploy / release / prod / lint / arch / audit)
 # need it. Lint/type/test are decoupled from :dev per FLEET-BUILD-DEPLOY-STANDARD — ruff AND
 # mypy are mount-only luxlint (the repo installs nothing), pytest is a lock-keyed image.
 -include Makefile.local
 
 # Registry / images. REGISTRY comes from Makefile.local or the CLI; empty by default so no
-# internal hostname is committed. `make dev-build-push REGISTRY=...` still overrides.
+# internal hostname is committed. `make dev-deploy REGISTRY=...` still overrides.
+#
+# The NAME declares what an image IS (luxarch --doc FLEET-BUILD-DEPLOY-STANDARD, image block):
+#   registry-qualified -> a DEPLOY artifact, built AND pushed by the same target
+#   bare               -> a LOCAL artifact, built from source, never pushed
+#   :$(VERSION) / :sha-<commit> -> IMMUTABLE, the only tags a stack may pin (TAG= in .env.<env>)
+#   :dev / :latest              -> moving ALIASES for a human; nothing pins them or builds FROM them
 REGISTRY ?=
 IMAGE_NAME := luxardolabs/kasa-collector
-DEV_IMAGE     := $(REGISTRY)/$(IMAGE_NAME):dev
-VERSION_IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(VERSION)
-IMAGE         := $(REGISTRY)/$(IMAGE_NAME):latest
-# Locally-built runtime image for the local stacks (up / dev / demo) — no registry needed.
-LOCAL_IMAGE   := kasa-collector:local
+# BASE — no tag; every tag composes from it. Comments sit ABOVE assignments: GNU make keeps
+# the whitespace before an inline `#`, which would make every composed tag an invalid reference.
+IMAGE         := $(REGISTRY)/$(IMAGE_NAME)
+VERSION_IMAGE := $(IMAGE):$(VERSION)
+SHA_IMAGE     := $(IMAGE):sha-$(COMMIT)
+DEV_ALIAS     := $(IMAGE):dev
+LATEST_ALIAS  := $(IMAGE):latest
+# LOCAL verification images for the hardware-free stacks — BARE on purpose, so they cannot be
+# pushed by accident or mistaken for a deployable, and a clean clone needs no registry.
+E2E_IMAGE  := kasa-collector:test
+FAKE_IMAGE := kasa-collector-fake:test
 # Public OSS image on GitHub Container Registry (the fleet's external registry,
 # not Docker Hub). EXTERNAL_REGISTRY overridable.
 EXTERNAL_REGISTRY ?= ghcr.io
@@ -37,19 +49,22 @@ PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.193.0
+LUXARCH_VERSION  := 0.249.2
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
 # same out-of-tree pattern as luxarch. Unset host → make lint/format skip gracefully.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  := 0.55.0
+LUXLINT_VERSION  := 0.60.1
 LUXLINT_IMAGE    ?= $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
+# The luxlint ref the emitted gitleaks block reads. Without the fleet registry it falls back
+# to a local guard build (`luxlint:local`), and the block then pulls the public gitleaks image.
+LUXLINT = $(if $(LUXLINT_REGISTRY),$(LUXLINT_IMAGE),luxlint:local)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; pulled via LUXAUDIT_REGISTRY (Makefile.local).
 # Scans poetry.lock against the live OSV+PyPA feed. Unset host → `make audit` skips gracefully.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  := 0.9.0
+LUXAUDIT_VERSION  := 0.12.1
 LUXAUDIT_IMAGE    ?= $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION)
 PLATFORMS ?= linux/amd64,linux/arm64
 
@@ -57,7 +72,7 @@ BUILD_ARGS := --build-arg BUILD_VERSION=$(VERSION) \
               --build-arg BUILD_TIMESTAMP=$(TIMESTAMP) \
               --build-arg BUILD_COMMIT=$(COMMIT)
 
-# Cache busting: `make dev-build-push NOCACHE=1`
+# Cache busting: `make dev-deploy NOCACHE=1`
 NOCACHE ?=
 NO_CACHE_FLAG := $(if $(NOCACHE),--no-cache,)
 
@@ -121,7 +136,7 @@ PROD_DIR  ?= /opt/kasa-collector
 PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
 
 .PHONY: help version \
-        dev-build-push build-local version-build-push release release-public gh-release buildx-setup \
+        guard-clean-tree dev-deploy dev-pin harness-build release release-public gh-release buildx-setup \
         docker-inspect docker-clean \
         up down restart logs ps shell \
         dev-up dev-down dev-clean dev-logs dev-ps dev-shell \
@@ -147,8 +162,8 @@ version: ## Show version / build info
 	@echo "Version:   $(VERSION)"
 	@echo "Commit:    $(COMMIT)"
 	@echo "Timestamp: $(TIMESTAMP)"
-	@echo "Dev:       $(DEV_IMAGE)"
-	@echo "Release:   $(VERSION_IMAGE)  +  $(IMAGE)"
+	@echo "Build:     $(SHA_IMAGE)  (alias $(DEV_ALIAS))"
+	@echo "Release:   $(VERSION_IMAGE)  +  $(SHA_IMAGE)  (alias $(LATEST_ALIAS))"
 	@echo "Public:    $(PUBLIC_IMAGE):$(VERSION)"
 
 ##@ Docker — Build & Registry
@@ -159,27 +174,21 @@ version: ## Show version / build info
 # also buys cross-project cache hits. The buildkitd GC policy is the required second half
 # (repo.buildx_builder_gc_capped) — a canonical name says nothing about whether it self-prunes.
 # See luxarch --doc FLEET-BUILD-DEPLOY-STANDARD ("One shared buildx builder").
+# The buildkitd GC policy is written here when absent (the emitted block assumes it exists);
+# the rest of the recipe is the emitted asset.
+# luxarch:buildx-setup asset v1 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit buildx-setup`.
 BUILDX_BUILDER ?= luxardo-builder
 BUILDKITD_CONFIG ?= $(HOME)/.docker/buildkitd.toml
-
 buildx-setup: ## Ensure the SHARED fleet buildx builder exists, GC-capped (multi-arch release builds)
 	@if [ ! -f "$(BUILDKITD_CONFIG)" ]; then \
 	  mkdir -p $$(dirname $(BUILDKITD_CONFIG)); \
 	  printf '[worker.oci]\n  gc = true\n  [[worker.oci.gcpolicy]]\n    keepBytes = "20GB"\n    all = true\n' > $(BUILDKITD_CONFIG); \
 	  echo "wrote default GC-capped buildkitd config -> $(BUILDKITD_CONFIG)"; \
 	fi
-	@docker buildx inspect $(BUILDX_BUILDER) >/dev/null 2>&1 \
-		|| docker buildx create --name $(BUILDX_BUILDER) --driver docker-container --use \
-		     --buildkitd-config $(BUILDKITD_CONFIG)
+	@docker buildx inspect $(BUILDX_BUILDER) >/dev/null 2>&1 || \
+	  docker buildx create --name $(BUILDX_BUILDER) --driver docker-container \
+	    --buildkitd-config $(BUILDKITD_CONFIG) --use
 	@docker buildx use $(BUILDX_BUILDER)
-	@# REFUSE to build alongside orphan per-project builders (repo.buildx_strays_refused).
-	@# `buildx create` only ever creates: migrating to the shared builder leaves the old
-	@# daemon running forever, each with its own ungoverned cache. Four such orphans on one
-	@# fleet host reached 100GB of build cache, filled the root filesystem and killed a
-	@# production Postgres with "No space left on device" -- while every file-based rule
-	@# stayed green, because the orphan lives on the HOST and luxarch is mount-only. So the
-	@# refusal goes where the daemon is reachable, and the rule checks that it is wired.
-	@# ALLOW_STRAY_BUILDERS=1 for a deliberate non-fleet builder.
 	@strays=$$(docker buildx ls 2>/dev/null | awk '$$2=="docker-container"{print $$1}' \
 	  | grep -v '^\\_' | sed 's/\*$$//' | grep -vxF "$(BUILDX_BUILDER)" | tr '\n' ' '); \
 	if [ -n "$$strays" ] && [ -z "$(ALLOW_STRAY_BUILDERS)" ]; then \
@@ -188,35 +197,67 @@ buildx-setup: ## Ensure the SHARED fleet buildx builder exists, GC-capped (multi
 	  exit 1; \
 	fi
 
-dev-build-push: ## Build + push :dev ONLY (tooling stage: dev deps + tests baked)
-	docker build $(NO_CACHE_FLAG) --target dev -f Dockerfile $(BUILD_ARGS) -t $(DEV_IMAGE) .
-	docker push $(DEV_IMAGE)
-	@echo "Pushed $(DEV_IMAGE)"
+# A `sha-<commit>` (or version) tag is immutable only if the bits ARE that commit: a build from a
+# dirty tree publishes HEAD's name over different contents, indistinguishable afterwards from a
+# truthful one. Untracked files count — they are in the build context. Commit first.
+guard-clean-tree:
+	@if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+	  echo "REFUSING: the working tree is dirty, so sha-$(COMMIT) would not describe these bits:"; \
+	  git status --short | sed 's/^/    /'; \
+	  echo "Commit first, then deploy what you pushed."; \
+	  exit 1; \
+	fi
 
-# The emulator is a TEST FIXTURE, never a released artifact: it is built locally and
-# never pushed. It carries the public name so the quickstart resolves it from the local
-# store with no registry and no pull -- which is what makes `make demo-up` work on a
-# clean clone.
-FAKE_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)-fake:dev
+# Every build of the runtime stage gets its permanent `:sha-<commit>` name; `:dev` is only a
+# label moved onto it afterwards. Single-arch (the dev node's); `release` is the multi-arch path.
+dev-deploy: guard-clean-tree ## Build + push THIS commit as :sha-<commit>, pin .env.dev to it, restart the dev stack
+	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(SHA_IMAGE) .
+	docker push $(SHA_IMAGE)
+	docker tag $(SHA_IMAGE) $(DEV_ALIAS) && docker push $(DEV_ALIAS)
+	@$(MAKE) --no-print-directory dev-pin TAG=sha-$(COMMIT)
 
+# The tag is PERSISTED into .env.<env> (compose reads ${TAG:?}), so the stack comes back after a
+# reboot. Exactly ONE line of that gitignored, secret-bearing file is rewritten; nothing else is
+# read, printed or reordered.
+TAG ?= sha-$(COMMIT)
+
+define pin_env_tag
+	f='$(1)'; t='$(2)'; \
+	[ -f "$$f" ] || { echo "$$f is missing — copy .env.example and fill it in first"; exit 1; }; \
+	tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
+	if grep -qE '^[[:space:]]*TAG=' "$$f"; then \
+	  awk -v t="$$t" '/^[[:space:]]*TAG=/ && !d {print "TAG=" t; d=1; next} {print}' "$$f" > "$$tmp"; \
+	else \
+	  cp "$$f" "$$tmp" && printf 'TAG=%s\n' "$$t" >> "$$tmp"; \
+	fi; \
+	[ -s "$$tmp" ] || { echo "refusing to write an empty $$f"; exit 1; }; \
+	o=$$(wc -l < "$$f"); n=$$(wc -l < "$$tmp"); \
+	[ "$$n" -ge "$$o" ] || { echo "refusing: rewriting $$f lost lines ($$o -> $$n)"; exit 1; }; \
+	cat "$$tmp" > "$$f"; \
+	echo "$$f: TAG=$$t"
+endef
+
+# The rollback path, and the only one that does not build: name a tag already published. The
+# registry is checked FIRST — a stack pinned to a name the registry never held fails only at the
+# next restart, when there is nothing to re-pull.
+dev-pin: ## Point the dev stack at an ALREADY-PUBLISHED tag and restart it (rollback path)
+	@docker manifest inspect $(IMAGE):$(TAG) >/dev/null 2>&1 || \
+	  { echo "$(IMAGE):$(TAG) is not in the registry — publish it before pinning a stack to it"; exit 1; }
+	@$(call pin_env_tag,.env.dev,$(TAG))
+	$(DEV_DC) up -d
+
+# The emulator is a TEST FIXTURE, never a released artifact: built locally under a BARE name and
+# never pushed, so the demo and e2e stacks resolve it from the local store with no registry.
 harness-build: ## Build the fake-device emulator image (compose never builds — it runs a tag)
 	docker build $(NO_CACHE_FLAG) -t $(FAKE_IMAGE) ./harness
 	@echo "built $(FAKE_IMAGE)"
 
-build-local: ## Build the runtime image from CURRENT source (tags :local, and :dev when REGISTRY is set)
-	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(LOCAL_IMAGE) .
-	@if [ -n "$(REGISTRY)" ]; then docker tag $(LOCAL_IMAGE) $(DEV_IMAGE); \
-	  echo "tagged $(DEV_IMAGE) (the tag the dev/demo stacks reference)"; fi
-
-version-build-push: ## Build + push :$(VERSION) ONLY (runtime base stage) to the private registry
-	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(VERSION_IMAGE) .
-	docker push $(VERSION_IMAGE)
-	@echo "Pushed $(VERSION_IMAGE)"
-
-release: buildx-setup ## Build + push :$(VERSION) AND :latest (multi-arch) to the private registry
+# The cut release: multi-arch, the immutable :$(VERSION) and :sha-<commit>, plus the :latest
+# alias the public GHCR promotion copies. prod pins :$(VERSION) in .env.prod.
+release: guard-clean-tree buildx-setup ## Build + push :$(VERSION) + :sha-<commit> (multi-arch, alias :latest) to the private registry
 	docker buildx build $(NO_CACHE_FLAG) --target base --platform $(PLATFORMS) -f Dockerfile $(BUILD_ARGS) \
-		-t $(VERSION_IMAGE) -t $(IMAGE) --push .
-	@echo "Pushed $(VERSION_IMAGE) + $(IMAGE)"
+		-t $(VERSION_IMAGE) -t $(SHA_IMAGE) -t $(LATEST_ALIAS) --push .
+	@echo "Pushed $(VERSION_IMAGE) + $(SHA_IMAGE) + $(LATEST_ALIAS)"
 
 release-public: ## Promote the released :$(VERSION) + :latest (multi-arch) to GHCR — run `make release` first
 	@docker buildx imagetools inspect $(VERSION_IMAGE) >/dev/null 2>&1 \
@@ -241,16 +282,16 @@ gh-release: ## Publish the GitHub Release for v$(VERSION) from its release notes
 	fi
 
 docker-inspect: ## Inspect release image metadata
-	@docker inspect $(IMAGE) --format='Version: {{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null || echo "Image not built"
-	@docker inspect $(IMAGE) --format='Built:   {{index .Config.Labels "org.opencontainers.image.created"}}' 2>/dev/null || true
-	@docker inspect $(IMAGE) --format='Commit:  {{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true
+	@docker inspect $(VERSION_IMAGE) --format='Version: {{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null || echo "Image not built"
+	@docker inspect $(VERSION_IMAGE) --format='Built:   {{index .Config.Labels "org.opencontainers.image.created"}}' 2>/dev/null || true
+	@docker inspect $(VERSION_IMAGE) --format='Commit:  {{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true
 
-docker-clean: ## Remove local image tags (:dev, :$(VERSION), :latest)
-	docker rmi $(DEV_IMAGE) $(VERSION_IMAGE) $(IMAGE) 2>/dev/null || true
+docker-clean: ## Remove local image tags (this commit's :sha, :$(VERSION), the aliases, the bare test images)
+	docker rmi $(SHA_IMAGE) $(VERSION_IMAGE) $(DEV_ALIAS) $(LATEST_ALIAS) $(E2E_IMAGE) $(FAKE_IMAGE) 2>/dev/null || true
 
 ##@ Collector-only — plug into your existing InfluxDB/Grafana (compose.yml, .env.prod)
 
-up: build-local ## Build locally + start the collector against YOUR external InfluxDB (edit .env.dev)
+up: ## Start the collector against YOUR external InfluxDB (runs the TAG pinned in .env.prod)
 	$(RUN_DC) up -d
 	@echo "kasa-collector $(VERSION) running (collector only, host network)"
 
@@ -271,7 +312,9 @@ shell: ## Shell into the collector container
 
 ##@ Dev — full LOCAL stack (your real devices + bundled InfluxDB + Grafana)
 
-dev-up: build-local ## Build locally + start the full dev stack (real devices; Grafana on the port set by GRAFANA_PORT in .env.dev)
+# Runs whatever .env.dev pins. To run new code: commit, then `make dev-deploy` (build + push
+# :sha-<commit>, pin, restart). `make dev-pin TAG=…` rolls back to an already-published tag.
+dev-up: ## Start the full dev stack at the TAG pinned in .env.dev (Grafana on GRAFANA_PORT)
 	$(DEV_DC) up -d
 	@echo "kasa-collector [dev] — Grafana on the port set by GRAFANA_PORT in .env.dev (admin/admin)"
 
@@ -290,9 +333,9 @@ dev-ps: ## Dev stack status
 dev-shell: ## Shell into the collector container
 	$(DEV_DC) exec kasa-collector /bin/bash
 
-##@ Prod — local stack (pulls :latest, .env.prod)
+##@ Prod — local stack (pulls the :$(VERSION) pinned in .env.prod)
 
-prod-up: ## Pull :latest + start prod stack
+prod-up: ## Pull the pinned release + start prod stack
 	$(PROD_DC) pull
 	$(PROD_DC) up -d
 
@@ -321,7 +364,7 @@ prod-sync: check-prod-node ## Push compose.yml + .env.prod to the node (repo is 
 	rsync -az --chown=1000:1000 compose.yml .env.prod $(PROD_USER)@$(PROD_NODE):$(PROD_DIR)/
 	@printf "✓ synced config to $(PROD_NODE):$(PROD_DIR)\n"
 
-prod-deploy: check-prod-node ## Pull :latest + recreate the collector on the node (run release first)
+prod-deploy: check-prod-node ## Pull the pinned release + recreate the collector on the node (run release first)
 	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) pull && $(PROD_DC) up -d'
 	@printf "✓ deployed to $(PROD_NODE)\n"
 
@@ -339,7 +382,7 @@ prod-rollback: check-prod-node ## List image tags cached on the node for rollbac
 
 ##@ Demo / quickstart (self-contained: collector + InfluxDB + Grafana)
 
-demo-up: build-local harness-build ## Bring up the demo stack — FAKE devices + auto-provisioned InfluxDB + Grafana
+demo-up: harness-build ## Bring up the demo stack — FAKE devices + auto-provisioned InfluxDB + Grafana
 	$(DEMO_DC) up -d
 	@echo "Grafana:  http://localhost:3000  (admin/admin)  — dashboards populate from fake devices"
 	@echo "InfluxDB: http://localhost:8086"
@@ -393,6 +436,9 @@ guard-version-check: ## FATAL: fail if any guard pin is behind :latest — pulls
 	( $(call _guard_check,luxaudit,$(LUXAUDIT_REGISTRY),$(LUXAUDIT_VERSION)) ) || rc=1; \
 	exit $$rc
 
+# Per-guard registry variables are this repo's edit to the emitted asset (the guard hosts live in
+# Makefile.local); the rest is the asset.
+# luxarch:guard-upgrade asset v1 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-upgrade`.
 guard-upgrade: ## Bump every guard pin to the published latest (prints what newly bites)
 	@for g in luxarch luxlint luxaudit; do \
 	  reg=$$(case $$g in luxarch) echo "$(LUXARCH_REGISTRY)";; luxlint) echo "$(LUXLINT_REGISTRY)";; luxaudit) echo "$(LUXAUDIT_REGISTRY)";; esac); \
@@ -403,10 +449,10 @@ guard-upgrade: ## Bump every guard pin to the published latest (prints what newl
 	  old=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
 	  if [ -z "$$old" ]; then echo "!! no $$var pin found in Makefile — NOT bumped"; continue; fi; \
 	  if [ -z "$$latest" ]; then echo "!! could not read $$g:latest — $$var left at $$old"; continue; fi; \
+	  checked=1; \
 	  sed -i -E "s|^($$var[[:space:]]*:=[[:space:]]*).*|\\1$$latest|" Makefile; \
 	  new=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
 	  if [ "$$new" != "$$latest" ]; then echo "!! $$var did NOT change (still $$new)"; exit 1; fi; \
-	  checked=1; \
 	  if [ "$$old" != "$$latest" ]; then echo "$$var $$old -> $$latest"; bumped=1; fi; \
 	  [ "$$g" = luxarch ] && [ "$$old" != "$$latest" ] && docker run --rm -v $(PWD):/repo $$reg/luxardolabs/luxarch:$$latest --new-rules --since $$old || true; \
 	done; \
@@ -484,16 +530,22 @@ arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml)
 # red repo still has a valid, committable status. `set -e` so a failed/empty stamp ABORTS
 # rather than printing a false "wrote". See luxarch --doc FLEET-STATUS.
 GUARD_RUN = docker run --rm -v $(PWD):/repo
-STAMP = python3 -c 'import json,sys,os; d=json.load(open(sys.argv[1])); d["commit"]=os.environ["SHA"]; d["generated_at"]=os.environ["TS"]; json.dump(d,open(sys.argv[2],"w"),indent=2)'
+# STAMP refuses a document that is not the expected guard's own (`"guard"` in every --json), so a
+# crossed or empty file can never be committed as this repo's record.
+STAMP = python3 -c 'import json,sys,os; d=json.load(open(sys.argv[1])); g=d.get("guard"); g==sys.argv[3] or sys.exit(f"status: {sys.argv[1]} holds {g!r} output, expected {sys.argv[3]!r}; refusing to stamp"); d["commit"]=os.environ["SHA"]; d["generated_at"]=os.environ["TS"]; json.dump(d,open(sys.argv[2],"w"),indent=2)'
 
+# `mktemp`: a per-run file, never a fixed /tmp path every repo and user on the host shares.
+# `-e LUXARCH_STATUS_WRITE=1` on the luxarch run ONLY: it tells repo.guard_status_current that this
+# run is replacing the files, so the snapshot does not record a verdict on its own predecessors.
 status: ## Regenerate the committed guard-status files (.lux*-status.json) — commit them
 	@if [ -z "$(LUXARCH_REGISTRY)" ] || [ -z "$(LUXLINT_REGISTRY)" ] || [ -z "$(LUXAUDIT_REGISTRY)" ]; then \
 	  echo "guard registry unset (see Makefile.local.example) — cannot generate status"; exit 1; \
 	fi
 	@set -e; export SHA=$$(git rev-parse HEAD) TS=$$(date -u +%FT%TZ); \
-	$(GUARD_RUN) $(LUXLINT_IMAGE)  --json > /tmp/lux.json || true; $(STAMP) /tmp/lux.json .luxlint-status.json; \
-	$(GUARD_RUN) $(LUXARCH_IMAGE)  --json > /tmp/lux.json || true; $(STAMP) /tmp/lux.json .luxarch-status.json; \
-	$(GUARD_RUN) $(LUXAUDIT_IMAGE) --json > /tmp/lux.json || true; $(STAMP) /tmp/lux.json .luxaudit-status.json; \
+	J=$$(mktemp); trap 'rm -f "$$J"' EXIT INT TERM; \
+	$(GUARD_RUN) $(LUXLINT_IMAGE)  --json > "$$J" || true; $(STAMP) "$$J" .luxlint-status.json luxlint; \
+	$(GUARD_RUN) -e LUXARCH_STATUS_WRITE=1 $(LUXARCH_IMAGE) --json > "$$J" || true; $(STAMP) "$$J" .luxarch-status.json luxarch; \
+	$(GUARD_RUN) $(LUXAUDIT_IMAGE) --json > "$$J" || true; $(STAMP) "$$J" .luxaudit-status.json luxaudit; \
 	echo "wrote .lux*-status.json at $$SHA — commit them"
 
 plan: ## The full red board — every arch red at once, phase-ordered + file-clustered
@@ -506,14 +558,12 @@ audit: ## Scan pinned deps against the live vulnerability feed (luxaudit)
 	  echo "luxaudit: LUXAUDIT_REGISTRY unset (see Makefile.local.example) — skipping"; \
 	else docker run --rm -v $(PWD):/repo $(LUXAUDIT_IMAGE); fi
 
-# The e2e stack runs the SAME pinned tag the dev stack does, built from current source
-# just above — compose never builds, it runs a tag (repo.compose_conventions).
-# Built and run under the PUBLIC name so a clean clone can run the hardware-free test
-# with no private registry and no pull — the image exists locally, compose runs the tag.
-E2E_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME):dev
+# The e2e stack runs the runtime stage built from CURRENT source, under the BARE verification
+# name `$(E2E_IMAGE)` — never pushed, so a clean clone runs the hardware-free test with no
+# registry and no pull. Compose never builds; it runs that tag (repo.compose_conventions).
 test-e2e: harness-build ## Hardware-free end-to-end test: fake Kasa devices -> collector -> InfluxDB
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(E2E_IMAGE) .
-	REGISTRY=$(EXTERNAL_REGISTRY) TAG=dev FAKE_TAG=dev ./scripts/e2e-test.sh
+	./scripts/e2e-test.sh
 
 # THE fleet gate — byte-identical composition across every app repo. Five different `check`
 # targets is five different answers to "is this repo green," and the drift hides holes: a gate
@@ -567,30 +617,95 @@ hooks: ## Install the committed git hooks (pre-commit + pre-push run the gitleak
 	git config core.hooksPath hooks
 	@printf "✓ core.hooksPath -> hooks (pre-commit + pre-push secret scan active)\n"
 
-# gitleaks uses the canonical fleet config (defaults + org denylist), EMITTED by luxlint
-# at scan time and mounted OUTSIDE the /repo scan root — never committed (a committed
-# config would carry the very denylist strings it forbids). Per luxlint --doc ONBOARDING §4a.
-gitleaks: ## Scan full history for secrets + org denylist (canonical luxlint config)
-	@set +e; \
-	if [ -z "$(LUXLINT_REGISTRY)" ]; then \
-	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; exit 0; \
-	fi; \
-	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --emit-config gitleaks > .luxlint.gitleaks.toml; \
-	docker run --rm -v $(PWD):/repo -w /repo -v $(PWD)/.luxlint.gitleaks.toml:/cfg/gitleaks.toml:ro \
-	  ghcr.io/gitleaks/gitleaks:latest detect --source /repo --config /cfg/gitleaks.toml --redact -v; gl=$$?; \
-	rm -f .luxlint.gitleaks.toml; \
-	exit $$gl
+# luxarch:gitleaks asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
+# ── The privacy gate: BOTH surfaces ─────────────────────────────────────────────────────────────
+# Emitted by `luxarch --emit gitleaks`. Drop in verbatim.
+#
+# `gitleaks` scans DIFF CONTENT. A commit's author/committer address lives in the commit object
+# HEADER and never appears in a patch, so no content rule can ever match it — it is a surface the
+# scanner does not read. A repo reported `no leaks found` over 963 commits while 29 of them carried a
+# personal address in both the author and committer fields, and it would have reported exactly the
+# same thing after the scrub: identical output, opposite truth. Measured across the fleet, EIGHT
+# repos carry a personal address in history and two of them are PUBLIC (LUXTASTE-339).
+#
+# FLEET-ONBOARDING-STANDARD §2 uses one of those very addresses as its worked example of a leak the
+# full-history scan exists to catch. The standard named the leak and the gate could not see it.
 
-gitleaks-staged: ## Pre-commit secret scan of staged changes (canonical luxlint config)
-	@set +e; \
-	if [ -z "$(LUXLINT_REGISTRY)" ]; then \
-	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; exit 0; \
-	fi; \
-	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --emit-config gitleaks > .luxlint.gitleaks.toml; \
-	docker run --rm -v $(PWD):/repo -w /repo -v $(PWD)/.luxlint.gitleaks.toml:/cfg/gitleaks.toml:ro \
-	  ghcr.io/gitleaks/gitleaks:latest protect --staged --source /repo --config /cfg/gitleaks.toml --redact -v; gl=$$?; \
-	rm -f .luxlint.gitleaks.toml; \
-	exit $$gl
+# Commit identities this repo accepts. The fleet account's `users.noreply.github.com` address, plus
+# GitHub's own web-UI committer. Widen ONLY for a real outside contributor, with a comment saying who.
+# NOT for the org account's real address: a role mailbox in commit metadata is published with every
+# clone exactly like a personal one (six fleet repos carried it, one PUBLIC; OPENCLAIM-359). Its
+# omission here is the policy, not an oversight: the answer is the scrub printed below, and the
+# repo's agent performs it once the OWNER approves the force-push.
+# Anchored on the CLOSING BRACKET, because the compared line is `Name <email>` — not a bare
+# address. The first cut allowed `^noreply@github.com$$`, which can NEVER match a
+# `Name <email>` line, so the GitHub web-UI identity was silently DENIED and the canonical
+# recipe would have refused on any repo carrying a web-UI commit. Measured across the fleet: it
+# denied 4 of 6 distinct identity lines instead of the 3 real offenders (LUXTRMNL-21).
+# It was missed because the only repo it was tested on has no web-UI commits, so the broken
+# branch never ran. The bracket also closes a substring hole: unanchored,
+# `<x@users.noreply.github.com.attacker.test>` would have been allowed.
+GIT_IDENTITY_OK ?= <[^>]*users\.noreply\.github\.com>$$|<noreply@github\.com>$$
+
+# The secret scanner, PINNED and MIRRORED in the fleet registry (LUXASIF-29). The fleet bans a moving tag
+# everywhere it can see one, and this used to ship `ghcr.io/gitleaks/gitleaks:latest` inside the asset every
+# repo adopts verbatim: the privacy gate could not run with ghcr unreachable or the local copy pruned, and
+# nothing recorded which scanner said "no leaks found". New detection rules still arrive, through the fleet's
+# own mechanism: luxarch bumps this pin in a release, and `repo.emitted_assets_current` tells you to re-emit.
+# v5: the HOST is never written here (LUXSTATS-115). v4 inlined the private registry, so dropping
+# this asset in "verbatim" put the host into a committed Makefile, and on a public repo the fleet's
+# own gitleaks disclosure tier refused the commit. The mirror lives beside the guards, so the ref is
+# derived from wherever this repo already pulls luxlint (`$(LUXLINT)`, which the scan below needs
+# anyway). It works whichever variable holds your guard registry (REGISTRY, LUXARCH_REGISTRY, …).
+# Recursive `=` so it resolves at use, whatever order LUXLINT is defined in.
+# v9: PINNED BY DIGEST, and buildable off-network. The digest is the scanner's identity; the registry is
+# only where it is fetched from. Beside a registry-qualified `$(LUXLINT)` it pulls the fleet mirror; with
+# a local guard build (`luxlint:local`, on a machine with no access to the fleet registry, such as the
+# GTM laptop) it pulls the public image. v8 derived `./gitleaks:…` there, an unpullable reference, so the
+# privacy gate could not run at all. The mirror and the public image share the digest, so both
+# resolve to the same bits, and a tampered or re-tagged copy fails the pull instead of scanning.
+GITLEAKS_IMAGE = $(if $(findstring /,$(LUXLINT)),$(dir $(LUXLINT)),zricethezav/)gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+
+gitleaks: ## secret scan over FULL HISTORY + the commit-identity pass (the hooks cover commit/push)
+	@set -e; C=$$(mktemp); trap 'rm -f "$$C"' EXIT INT TERM; \
+	docker run --rm -v $(PWD):/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
+	docker run --rm -v $(PWD):/repo -v "$$C":/gl.toml:ro -w /repo \
+	  $(GITLEAKS_IMAGE) git /repo -c /gl.toml --redact -v
+	@# The identity pass — the half gitleaks structurally cannot do. Cheap: one `git log`.
+	@# Walks what THIS repo publishes (branches, tags, HEAD), NOT `--all`: a remote-tracking ref caches the
+	@# remote's state, which during a scrub is by definition the un-rewritten history you are about to
+	@# force-push over — `--all` refused the verified fix, and any `git fetch` re-armed it (BOUTIQUE-577).
+	@bad=$$(git log --branches --tags HEAD --pretty='%an <%ae>%n%cn <%ce>' 2>/dev/null | sort -u \
+	  | grep -vE '$(GIT_IDENTITY_OK)' || true); \
+	if [ -n "$$bad" ]; then \
+	  echo "REFUSING: a non-fleet identity appears in commit METADATA (author/committer):"; \
+	  echo "$$bad" | sed 's/^/    /'; \
+	  echo "gitleaks cannot see this — it scans diffs, not commit headers, so it reported no leaks."; \
+	  echo "An address here is attached to every affected commit forever, not to one line of one file."; \
+	  echo "Scrub per FLEET-ONBOARDING-STANDARD §2: mirror backup -> git filter-repo -> re-verify with"; \
+	  echo "  git log --branches --tags HEAD --pretty='%an <%ae>%n%cn <%ce>' | sort -u"; \
+	  echo "-> ask the OWNER to approve the force-push, then do it yourself. Never force-push unapproved."; \
+	  exit 1; \
+	fi
+
+# v6: the STAGED scan the commit hook calls (`hooks/pre-commit` → `make gitleaks-staged`) is part of the
+# asset now. v5 shipped only the full-history half, so 9 of 10 adopting repos hand-wrote this target
+# and the tenth had none, leaving its pre-commit hook pointing at a missing recipe. If your Makefile
+# carries its own `gitleaks-staged`, delete it when you re-emit: this one replaces it.
+# v7: `-w /repo` is LOAD-BEARING. Without it git runs outside the repo, falls back to `git diff
+# --no-index`, rejects `--staged`, and gitleaks EXITS 0: v6 let a staged secret through while printing
+# a git error (measured on a planted GitHub token: v6 exit 0, v7 "leaks found: 1" exit 1).
+# v8: the denylist goes to a PER-RUN `mktemp` file, removed on exit (LUXHELIX-128). v7 wrote a fixed
+# `/tmp/gl.toml` that outlived the run: on a host where commit and push run as different users, the
+# next user's redirect was refused (`fs.protected_regular=1`, the Fedora default, blocks O_CREAT on
+# another user's file in sticky /tmp even for root), so the privacy gate failed every commit or push
+# after a user switch (2 of 2 measured). Two repos scanning at once also shared one file, so one could
+# scan with the other's carve-outs. The full-history scan now also passes `-w /repo`, like the staged one.
+gitleaks-staged: ## secret scan of the STAGED changes (run by hooks/pre-commit)
+	@set -e; C=$$(mktemp); trap 'rm -f "$$C"' EXIT INT TERM; \
+	docker run --rm -v $(PWD):/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
+	docker run --rm -v $(PWD):/repo -v "$$C":/gl.toml:ro -w /repo \
+	  $(GITLEAKS_IMAGE) protect --staged /repo -c /gl.toml --redact -v
 
 ##@ Utilities
 

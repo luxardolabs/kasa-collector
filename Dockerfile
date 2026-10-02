@@ -1,10 +1,10 @@
 # =============================================================================
 # kasa-collector — multi-stage image (fleet standard)
-#   --target base : runtime only (prod pulls :latest / :VERSION)
-#   --target dev  : base + dev deps + baked tests (dev stack pulls :dev; lint/test
-#                   images derive from it). See Makefile dev-build-push / release.
-# All dependency versions (runtime AND dev tooling) come from poetry.lock, so the
-# lint/type/test tooling is pinned and reproducible — never an ad-hoc pip install.
+#   --target base : the runtime — every deploy tag is built from it (:sha-<commit> by
+#                   `make dev-deploy`, :VERSION by `make release`, kasa-collector:test by
+#                   `make test-e2e`). pytest runs in Dockerfile.test, built from the lock.
+# Runtime dependency versions come from poetry.lock. The runtime carries ONLY the app's
+# venv: no Poetry, no pip, no build tools (luxaudit's image leg scans what ships).
 # =============================================================================
 
 # ---- Stage 1: builder — resolve + install runtime deps with Poetry ----------
@@ -14,7 +14,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     POETRY_VERSION=2.4.1 \
     POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_NO_INTERACTION=1
+    POETRY_NO_INTERACTION=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
@@ -22,33 +24,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Poetry with pip (pinned + wheel-hash-verified) rather than the piped
 # remote installer — no unpinned `curl … | python3 -` execution at build time.
-RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
+# Poetry goes into the builder's SYSTEM Python; the app's deps go into /opt/venv (the active
+# VIRTUAL_ENV, which Poetry installs into with virtualenvs.create=false). Only the venv is
+# copied to the runtime, so Poetry and its dependency tree never ship.
+RUN /usr/local/bin/python -m pip install --no-cache-dir "poetry==$POETRY_VERSION" \
+    && /usr/local/bin/python -m venv /opt/venv
 
 WORKDIR /app
 COPY pyproject.toml poetry.lock* ./
-RUN poetry install --no-root --only main
-
-# ---- Stage 1b: builder-dev — add the dev group (pytest + pytest-asyncio, pinned) ----
-FROM builder AS builder-dev
-RUN poetry install --no-root --with dev
+RUN /usr/local/bin/poetry install --no-root --only main \
+    && /opt/venv/bin/python -m pip uninstall -y pip
 
 # ---- Stage 2: base — lean runtime image (prod) ------------------------------
 FROM python:3.14-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
 
 # tzdata (+ tzdata-legacy): python-kasa resolves each device's timezone via
 # zoneinfo.ZoneInfo, which needs the system tz database (absent from python:*-slim).
 # TP-Link's timezone index uses legacy POSIX zone names (e.g. index 6 = PST8PDT,
 # plus EST5EDT/CST6CDT/MST7MDT) which Debian bookworm split into tzdata-legacy —
 # without it, update() raises ZoneInfoNotFoundError on most US devices.
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata tzdata-legacy \
-    && rm -rf /var/lib/apt/lists/*
+# `apt-get upgrade`: the base image lags Debian's security fixes (openssl, pcre2, …), and
+# only a rebuild from an upgraded layer clears them. The base image's own pip goes too:
+# nothing runs it, and it vendors urllib3/msgpack/setuptools that no upgrade reaches.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends tzdata tzdata-legacy \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip uninstall -y pip
 
-# Copy installed packages + console scripts from the builder (main deps only)
-COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
-COPY --from=builder /usr/local/bin/ /usr/local/bin/
+# The app's venv (main deps only) — the one thing the runtime takes from the builder.
+COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
 
@@ -88,18 +97,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD ["python3", "-m", "app.health.check"]
 
 CMD ["python3", "-m", "app.main"]
-
-# ---- Stage 3: dev — base + dev tooling + baked tests (dev stack / lint / test)
-FROM base AS dev
-
-USER root
-# Overlay the dev-group site-packages (pytest + pytest-asyncio, pinned by poetry.lock)
-# on top of the runtime deps. No ad-hoc pip install — versions match pyproject.
-COPY --from=builder-dev /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
-COPY --from=builder-dev /usr/local/bin/ /usr/local/bin/
-
-# Bake tests + current tool config so `make test` / `make lint` are self-contained.
-COPY --chown=appuser:appuser tests /app/tests
-COPY --chown=appuser:appuser pyproject.toml /app/pyproject.toml
-
-USER appuser

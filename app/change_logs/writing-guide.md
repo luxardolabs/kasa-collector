@@ -1,3 +1,5 @@
+<!-- luxarch:changelog-guide asset v1 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit changelog-guide`. -->
+
 # Change Log Writing Guide (INTERNAL)
 
 Canonical fleet guide — emitted by `luxarch --emit changelog-guide`. Drop it in at `<app>/change_logs/writing-guide.md`. This is the **internal, technical** change log. NOT for end users / staff — only the platform/dev team reads it. For the user-facing version see `<app>/release_notes/` (`luxarch --emit release-notes-guide`).

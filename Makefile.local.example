@@ -3,8 +3,8 @@
 #
 #   cp Makefile.local.example Makefile.local     # then edit the host below
 #
-# The private registry hosts the :dev tooling image and the released :VERSION/:latest
-# images (used by dev-build-push / release / prod), plus the luxarch (make arch) and
+# The private registry hosts the immutable :sha-<commit> and :VERSION images (pushed by
+# dev-deploy / release, pulled by the dev and prod stacks), plus the luxarch (make arch) and
 # luxlint (make lint / format) guard images. Without Makefile.local the local + e2e
 # stacks still build from source, and make arch / make lint skip gracefully.
 REGISTRY          ?= docker.your-registry.example:5000

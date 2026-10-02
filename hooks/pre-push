@@ -1,3 +1,9 @@
 #!/bin/sh
 # luxlint: REQUIRED fleet secret guard — last net before anything goes public.
-exec make -s gitleaks
+make -s gitleaks || exit 1
+# Guard pins: ADVISORY here (a stale pin is reversible; a leaked secret is not).
+if make -n guard-version-check >/dev/null 2>&1; then
+  make -s guard-version-check ||
+    printf '\n  ^ guard pins are BEHIND — not blocking this push; bump them.\n\n' >&2
+fi
+exit 0

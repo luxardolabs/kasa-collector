@@ -159,12 +159,12 @@ make prod-rollback     PROD_NODE=collector01.example.com   # list image tags cac
 The build is Makefile-driven and the `VERSION` file at the repo root is the source of truth. Dependencies are managed with Poetry, resolved and installed inside Docker — no host Python or Poetry required.
 
 ```bash
-make release          # multi-arch :VERSION + :latest -> the private registry (prod pulls :latest)
+make release          # multi-arch :VERSION + :sha-<commit> (+ :latest alias) -> the private registry
 make release-public   # promote the released :VERSION + :latest (same digest) -> GHCR,
                       # then publish the GitHub Release from the notes
 ```
 
-`make release` builds the runtime image for both architectures and pushes `:VERSION` and `:latest` to the private registry that `prod-deploy` pulls from. `make release-public` re-tags that exact digest onto `ghcr.io/luxardolabs/kasa-collector` for the public OSS image — run `make release` first. To roll out a new version to a node: `make release` → `make prod-deploy PROD_NODE=<host>`.
+`make release` refuses a dirty working tree, then builds the runtime image for both architectures and pushes the immutable `:VERSION` and `:sha-<commit>` tags (plus the moving `:latest` alias) to the private registry. `.env.prod` pins `TAG=<VERSION>`, which is what `prod-deploy` pulls — never `:latest`. `make release-public` re-tags that exact digest onto `ghcr.io/luxardolabs/kasa-collector` for the public OSS image — run `make release` first. To roll out a new version to a node: `make release` → `make prod-deploy PROD_NODE=<host>`.
 
 `release-public` then chains `make gh-release`, which publishes the GitHub Release for `v$(VERSION)` from `app/release_notes/$(VERSION).md`. **A git tag is not a Release** — without this step `github.com/luxardolabs/kasa-collector/releases` stays empty while the notes sit unused, which is what happened before and is now enforced by `repo.github_release_wired`. It is idempotent (an existing Release is left alone) and refuses to run if the notes file or the tag is missing, so it cannot publish a Release for a version nobody wrote notes for.
 

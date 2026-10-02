@@ -2,11 +2,38 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+<!-- luxarch:claude-pointer asset v4 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
+
+## How to work here (fleet conduct — read the standard, not just this block)
+
+**`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD` — read it in full before your first change.** It is the one home for *how* agents work in this fleet. This block is a pointer plus the handful of rules that get broken most; it is not a summary and does not replace reading it.
+
+**Report the result, not the mountain.** No "heavy", "multi-hour", "the big one", no narrating difficulty. Done + next in one line, with numbers.
+
+**Decide; do not hand back a menu.** Whether to ask the owner is decided by the **class of action**, never by how confident you feel:
+
+- **Ask** — deleting anything; changing scope; a deferral/allowlist/exemption; publishing outward (pushing another repo, a force-push, a history rewrite); a genuine product fork where the choice is taste, not correctness.
+- **Do it** — aligning code to a ratified standard or a guard red; anything you have evidence for that is reversible in one commit. The standard already decided; say what you did.
+
+When you do ask: **one decision per message**, the evidence that makes it answerable, your recommendation stated as one, and a question answerable in one word. **A recommendation that ends in a menu is not a recommendation** — if you rejected the alternatives, re-offering them asks the owner to redo your analysis.
+
+**Use the fleet skills; don't improvise the procedure.** `/wrap-up` before you call anything done (tests, every red in touched files, docs, gate, LuxPM closed out, all with evidence). `/pin-bump` to upgrade the guards. `/escalate` when a guard is wrong. `/release` to cut a release.
+
+**You touched it, you own it.** Edit a file for any reason and it has a mypy, ruff or luxarch red: fix every one in that file, not just yours. Never spend time proving a red predates you; fix it. Test what you changed first. **Before fixing any mypy red, read `luxlint --playbook mypy-sweep` in full.**
+
+**Align or escalate; never route around.** A guard red is fixed by changing the code, or escalated to the guard maintainer as genuinely wrong. Never by an exemption, a `# noqa`, a deferral, or a local config. Verification is not authorization: proving something is unreferenced does not license deleting it.
+
+**Escalations go in THIS repo's LuxPM project** — label `fleet-escalation`, title `[<guard> ESCALATION] …`, self-contained enough to forward whole. **Search LuxPM for an existing issue first** (and comment on it if found); filing a new one is pre-authorized. **Never a GitHub issue** — there is no fallback. The maintainer sweeps the label across every project and picks it up where you filed it.
+
+**A red stays RED while its escalation is open.** The fleet does not gate CI on red. A lit red is honest; a silenced one is a lie you will inherit.
+
+**Commit as `luxardolabs`** using the global git config, and never `git -c user.email=…`. No AI attribution in commit messages.
+
 ## Project Overview
 
 Kasa Collector is a Python-based data collection service for TP-Link Kasa smart plugs and power strips. It discovers devices on the network, collects energy consumption metrics, stores data in InfluxDB, and provides Grafana dashboards for visualization.
 
-**Version**: 2026.09.0 (CalVer `YYYY.0M.MICRO`; the VERSION file is the one version literal) **Python**: 3.14+ with modern Python features **Architecture**: Asynchronous event-driven with comprehensive resource management
+**Version**: see `VERSION` (CalVer `YYYY.0M.MICRO`; the VERSION file is the one version literal) **Python**: 3.14+ with modern Python features **Architecture**: Asynchronous event-driven with comprehensive resource management
 
 ## Common Development Commands
 
@@ -15,13 +42,15 @@ Kasa Collector is a Python-based data collection service for TP-Link Kasa smart 
 The build/deploy flow follows the Luxardo Labs fleet standard. `VERSION` (repo root) is the source of truth; the `Makefile` drives everything and compose never builds. Run `make help` for the grouped command list.
 
 ```bash
-# Build + push the :dev image (tooling stage: dev deps + tests baked) to the registry
-make dev-build-push
+# Commit first (both refuse a dirty tree). Build + push THIS commit as :sha-<commit>, pin
+# .env.dev to it, restart the dev stack. `make dev-pin TAG=sha-…` rolls back to a published tag.
+make dev-deploy
 
-# Bring the dev stack up (pulls :dev, uses .env.dev) — host networking
+# Bring the dev stack up at whatever .env.dev pins — host networking
 make dev-up          # make dev-logs / make dev-ps / make dev-down
 
-# Release: multi-arch :VERSION + :latest to the private registry (prod pulls :latest)
+# Release: multi-arch :VERSION + :sha-<commit> (+ :latest alias) to the private registry;
+# prod pins TAG=<VERSION> in .env.prod
 make release
 # Promote the released image to GHCR (ghcr.io/luxardolabs/kasa-collector) — run `make release` first
 make release-public
@@ -130,7 +159,7 @@ Each env file names its stack in `COMPOSE_PROFILES`: `.env.prod` → `collector`
 
 **Variables interpolate file-wide, regardless of profile.** `${ENV_FILE:?}` on the `collector` service is resolved even for an `--profile e2e` run, which is why `scripts/e2e-test.sh` exports `ENV_FILE` although nothing in the e2e profile reads it.
 
-Images: `make build-local` (runtime, tags `:local` and `:dev`), `make harness-build` (the fake-device emulator image — compose runs it by tag), `make dev-build-push` / `make release`. Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
+Images: the NAME declares provenance (`repo.image_name_declares_provenance`) and stacks pin only IMMUTABLE tags (`repo.deploy_tag_is_immutable`). `make dev-deploy` pushes `:sha-<commit>` (moving the `:dev` alias onto it) and `make release` pushes `:VERSION` + `:sha-<commit>`; both build the `base` stage. The hardware-free stacks run BARE local images that are never pushed: `make harness-build` → `kasa-collector-fake:test`, `make test-e2e` → `kasa-collector:test`. The runtime image ships only the app's venv — no Poetry, no pip (luxaudit's image leg scans it). Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 
 ## Naming Convention
 
