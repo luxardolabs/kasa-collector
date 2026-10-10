@@ -55,7 +55,7 @@ LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
 # same out-of-tree pattern as luxarch. Unset host → make lint/format skip gracefully.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  := 0.63.0
+LUXLINT_VERSION  := 0.63.1
 LUXLINT_IMAGE    ?= $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 # The luxlint ref the emitted gitleaks block reads. Without the fleet registry it falls back
 # to a local guard build (`luxlint:local`), and the block then pulls the public gitleaks image.

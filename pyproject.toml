@@ -9,7 +9,7 @@ requires-python = ">=3.14,<4.0"
 dependencies = [
     "aiofiles>=25.1.0,<26.0.0",
     "influxdb-client>=1.50.0,<2.0.0",
-    "python-kasa>=0.10.2,<0.11.0",
+    "python-kasa>=0.11.0.1,<0.12.0",
     # --- Transitive security floors (luxaudit) ---
     # These are pulled in by influxdb-client (async) and python-kasa, whose ranges are
     # unbounded above — so a plain re-lock resolves straight back to the vulnerable

@@ -25,7 +25,7 @@ import os
 import signal
 
 from app.collector.device_manager import DeviceManager
-from app.collector.kasa_compat import apply_patches, verify_still_needed
+from app.collector.kasa_compat import verify_still_needed
 from app.collector.poller import Poller
 from app.core.config import REQUIRED_ENV_VARS, Config, describe_settings
 from app.core.logging_config import configure_logging
@@ -66,9 +66,8 @@ class KasaCollector:
             SystemExit: If required configuration is missing or initialization fails.
         """
         self.logger = logging.getLogger(self.__class__.__name__)
-        # Local python-kasa patches must be installed BEFORE any device is built --
-        # get_protocol runs during discovery and connect. See app/collector/kasa_compat.
-        apply_patches()
+        # Says at startup whether the local python-kasa discovery fix is still needed
+        # (it announces when upstream has fixed it). See app/collector/kasa_compat.
         verify_still_needed()
         self.device_manager = DeviceManager(self.logger)
         self.tasks: set[asyncio.Task[None]] = set()  # Store task references

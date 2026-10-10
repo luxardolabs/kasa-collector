@@ -43,4 +43,4 @@ Per-outlet strips are fully emulated today — they are not future work. See [Te
 
 ## Compatibility reference
 
-The underlying library is python-kasa `^0.10.2`. For the authoritative and continually updated list of supported models and protocols, consult the [python-kasa supported devices documentation](https://github.com/python-kasa/python-kasa).
+The underlying library is python-kasa `0.11.x` (`>=0.11.0.1`). For the authoritative and continually updated list of supported models and protocols, consult the [python-kasa supported devices documentation](https://github.com/python-kasa/python-kasa).
