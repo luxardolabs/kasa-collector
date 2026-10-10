@@ -36,7 +36,7 @@ Then open **http://localhost:3000** (admin / admin) and watch the dashboards mov
 Same self-contained InfluxDB and Grafana as the demo, but the collector uses host networking and broadcast discovery to find **your real** Kasa devices. It runs the image `.env.dev` pins — the published release is the simplest choice:
 
 ```bash
-cp .env.example .env.dev    # set REGISTRY=ghcr.io and TAG=<a released version>, e.g. 2026.10.0
+cp .env.example .env.dev    # set REGISTRY=ghcr.io and TAG=<a released version>, e.g. 2026.10.1
 make dev-up
 ```
 

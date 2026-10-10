@@ -51,7 +51,10 @@ The build/deploy flow follows the Luxardo Labs fleet standard. `VERSION` (repo r
 
 ```bash
 # Commit first (both refuse a dirty tree). Build + push THIS commit as :sha-<commit>, pin
-# .env.dev to it, restart the dev stack. `make dev-pin TAG=sha-…` rolls back to a published tag.
+# .env.dev to it, restart the dev stack, then `make smoke`: the kasa-collector container must run
+# this commit and reach healthy by its own HEALTHCHECK, and app.main / app.health.check must import
+# in the production image (no HTTP surface, so SMOKE_URL stays empty). A FAIL fails the deploy.
+# `make dev-pin TAG=sha-…` rolls back to a published tag.
 make dev-deploy
 
 # Bring the dev stack up at whatever .env.dev pins — host networking

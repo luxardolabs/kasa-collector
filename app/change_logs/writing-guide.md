@@ -1,4 +1,4 @@
-<!-- luxarch:changelog-guide asset v2 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit changelog-guide`. -->
+<!-- luxarch:changelog-guide asset v3 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit changelog-guide`. -->
 
 # Change Log Writing Guide (INTERNAL)
 
@@ -57,3 +57,14 @@ Omit **Known reds** when `make check` is green. Include it only when the release
 
 - `{PREFIX}` — your LuxPM project's issue prefix (e.g. `SHOP`, `APP`).
 - `{version}` / `{date}` — the `VERSION` file's value (CalVer `YYYY.0M.MICRO` for apps) and the cut date.
+
+## This repo's own rules (the region at the end of this file)
+
+The region that closes this file belongs to the repo, and no guard compares it. `repo.emitted_assets_current` reads everything above it line for line, and `luxarch --emit changelog-guide --update <file>` carries it across a new version. Write the repo's rules **below** its comment line, never above it. The region may hold only two things:
+
+- **Audience, narrowed** — who reads this repo's change log beyond its own developers, if anyone (for example, an operator who deploys it).
+- **Per-repo parameters** — this repo's issue prefix, a jargon list tuned to its stack, and how it records work the format above has no section for (for example, guard upgrades as outcomes and counts, not a rule-by-rule replay).
+
+Everything above the region is the fleet's: the test, the format, the categories and the rules. Where the region disagrees with it, the fleet text wins. A fleet rule this repo needs changed is an escalation to the guard maintainer, not a region edit.
+
+<!-- --- EDIT THIS: this repo's own writing rules -->

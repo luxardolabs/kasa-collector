@@ -84,7 +84,7 @@ class TestDiscoveredDevicePath:
 
         monkeypatch.setattr(IotPlug, "update", plug_update)
         monkeypatch.setattr(IotStrip, "update", strip_update)
-        discovered = IotPlug("10.10.7.90")
+        discovered = IotPlug("10.0.0.90")
 
         ready = await KasaAPI.authenticate_discovered_device(discovered)
 
@@ -97,5 +97,5 @@ class TestDiscoveredDevicePath:
 
         monkeypatch.setattr(IotPlug, "update", refused)
         assert (
-            await KasaAPI.authenticate_discovered_device(IotPlug("10.10.7.72")) is None
+            await KasaAPI.authenticate_discovered_device(IotPlug("10.0.0.72")) is None
         )

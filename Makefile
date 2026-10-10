@@ -49,7 +49,7 @@ PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/$(IMAGE_NAME)
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.277.0
+LUXARCH_VERSION  := 0.278.0
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
@@ -135,7 +135,7 @@ PROD_DIR  ?= /opt/kasa-collector
 PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
 
 .PHONY: help version \
-        guard-clean-tree dev-deploy dev-pin harness-build release release-public gh-release buildx-setup \
+        guard-clean-tree dev-deploy dev-pin harness-build release release-public gh-release buildx-setup smoke \
         docker-inspect docker-clean \
         up down restart logs ps shell \
         dev-up dev-down dev-clean dev-logs dev-ps dev-shell \
@@ -219,6 +219,7 @@ dev-deploy: guard-clean-tree ## Build, SCAN, push THIS commit as :sha-<commit>, 
 	docker push $(SHA_IMAGE)
 	docker tag $(SHA_IMAGE) $(DEV_ALIAS) && docker push $(DEV_ALIAS)
 	@$(MAKE) --no-print-directory dev-pin TAG=sha-$(COMMIT)
+	@$(MAKE) --no-print-directory smoke
 
 # The tag is PERSISTED into .env.<env> (compose reads ${TAG:?}), so the stack comes back after a
 # reboot. Exactly ONE line of that gitignored, secret-bearing file is rewritten; nothing else is
@@ -250,6 +251,128 @@ dev-pin: ## Point the dev stack at an ALREADY-PUBLISHED tag and restart it (roll
 	  { echo "$(IMAGE):$(TAG) is not in the registry — publish it before pinning a stack to it"; exit 1; }
 	@$(call pin_env_tag,.env.dev,$(TAG))
 	$(DEV_DC) up -d
+
+# Smoke settings: this collector serves no HTTP, so the deployed stack is probed through its
+# container (it must run this commit and reach healthy by its own HEALTHCHECK) and its two real
+# entry points are imported in the production image. SMOKE_URL stays empty on purpose.
+SMOKE_CONTAINERS := kasa-collector
+SMOKE_ENTRY_MODULES := app.main app.health.check
+
+# luxarch:smoke asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit smoke`.
+# ── Smoke: probe the DEPLOYED stack from outside, after every dev deploy ──────────────────────────
+# Emitted by `luxarch --emit smoke`; paste below the image block. `make test` runs the app in-process
+# against its test stack, so it cannot see the proxy, the server, the production image or an entry
+# point other than the app's. One repo shipped four bugs under a green `make check` that only a probe
+# of the deployed stack found: a rate limiter that took the host down, a proxy serving an unstyled UI,
+# a standalone script that crashed on a circular import in the production image, and a Host-header
+# defence no test exercised. Each probe below is aimed at one of them. `make dev-deploy` runs it
+# (`repo.stack_smoke_wired`); a FAIL fails the deploy, and a probe that cannot run says NOT RUN and
+# why, never a silent pass.
+#
+# Settings are `?=` defaults: override them above this block (or in Makefile.local for a host name).
+
+# Setting: where the dev stack is reachable from the build host (e.g. https://dev.example.com) ---
+SMOKE_URL ?=
+# Setting: the deployed containers to probe on the docker host the deploy restarted. Each must run
+# THIS build (its image's org.opencontainers.image.revision label names the commit) and reach
+# `healthy` by its own HEALTHCHECK. For a stack that serves no HTTP (a collector, a poller) this is
+# the probe, and SMOKE_URL stays empty; an HTTP stack may list its containers too (v5) ----------
+SMOKE_CONTAINERS ?=
+# Setting: how many seconds a container may stay `starting` before its health probe FAILs (v5) --
+SMOKE_HEALTH_WAIT ?= 180
+# Setting: the health path; its response must name the build's commit (any field name) -------
+SMOKE_HEALTH_PATH ?= /health
+# Setting: a static asset the image serves (empty only if the app serves no static files) -----
+SMOKE_STATIC_PATH ?= /static/css/app.css
+# Setting: a path that needs authentication; the token comes from the SMOKE_AUTH_TOKEN env var -
+SMOKE_AUTH_PATH ?=
+# Setting: the package directory of standalone entry points, and the image's import root -------
+SMOKE_SCRIPTS_DIR ?= app/scripts
+SMOKE_IMPORT_ROOT ?= .
+# Setting: entry-point MODULES outside that directory. The default is every `*_main` module at the
+# app package's root, where the layout standard (fw.module_homes) puts a service's entry points
+# (`app.portal_main`); list them yourself for any other place (v3) ---------------------------
+SMOKE_ENTRY_MODULES ?= $(basename $(subst /,.,$(patsubst $(SMOKE_IMPORT_ROOT)/%,%,$(wildcard $(SMOKE_IMPORT_ROOT)/app/*_main.py))))
+# Setting: the env file the dev stack runs with; each entry point is imported with it, because a
+# module that builds the app's settings needs the config the deployed container has (v2) ---------
+SMOKE_ENV_FILE ?= .env.dev
+# Setting: extra `docker run` options for the entry-point imports (e.g. -e NAME=value) ----------
+SMOKE_RUN_OPTS ?=
+# Setting: extra curl options (e.g. --cacert <file> for a private CA) -------------------------
+SMOKE_CURL_OPTS ?=
+
+# v5: a stack with no HTTP surface has nothing for the HTTP probes to ask, and v4 refused to run at all
+# without SMOKE_URL. It is probed through its containers instead (SMOKE_CONTAINERS): the build each
+# runs and the verdict of its own HEALTHCHECK, beside the entry-point imports.
+# v4: a 502/503/504 on the forged-Host probe is the PROXY answering for an app that did not, not a refusal.
+# v3 printed "PASS  forged Host refused (502)" while the stack was still starting, beside two FAILs that
+# said the same thing; the probe can only pass on an answer from the app itself.
+smoke: ## Probe the deployed dev stack: build commit, static asset, forged Host refused, auth, containers healthy, standalone entry points
+	@set -u; fail=0; \
+	[ -n "$(strip $(SMOKE_URL)$(SMOKE_CONTAINERS))" ] || { echo "REFUSING: set SMOKE_URL to the dev stack's address (Makefile.local), or SMOKE_CONTAINERS to its containers when it serves no HTTP"; exit 2; }; \
+	probe() { curl -sS --max-time 15 $(SMOKE_CURL_OPTS) -o "$$B" -w '%{http_code} %{content_type}' "$$@" 2>/dev/null || echo "000 -"; }; \
+	B=$$(mktemp); trap 'rm -f "$$B"' EXIT INT TERM; \
+	sha=$$(git rev-parse --short=7 HEAD 2>/dev/null || true); \
+	if [ -z "$$sha" ]; then echo "FAIL  cannot read this checkout's commit (git rev-parse failed), so the deployed build cannot be checked"; fail=1; fi; \
+	if [ -z "$(SMOKE_URL)" ]; then echo "NOT RUN  HTTP probes (health, static asset, forged Host, auth): SMOKE_URL is empty, so the stack is probed only through SMOKE_CONTAINERS (right only for a stack that serves no HTTP)"; \
+	else \
+	r=$$(probe "$(SMOKE_URL)$(SMOKE_HEALTH_PATH)"); \
+	if [ -z "$$sha" ]; then :; \
+	elif [ "$${r%% *}" = 200 ] && grep -q "$$sha" "$$B"; then echo "PASS  health names this commit ($$sha)"; \
+	else echo "FAIL  $(SMOKE_HEALTH_PATH): $$r, and the response does not name $$sha: the stack is not running this build"; fail=1; fi; \
+	if [ -n "$(SMOKE_STATIC_PATH)" ]; then \
+	  r=$$(probe "$(SMOKE_URL)$(SMOKE_STATIC_PATH)"); ctype=$${r#* }; \
+	  case "$(SMOKE_STATIC_PATH)" in *.css) want=text/css;; *.js|*.mjs) want=javascript;; *) want=;; esac; \
+	  if [ "$${r%% *}" = 200 ] && [ -s "$$B" ] && ! grep -qi '<html' "$$B" && { [ -z "$$want" ] || case "$$ctype" in *"$$want"*) true;; *) false;; esac; }; then echo "PASS  static asset served ($(SMOKE_STATIC_PATH), $$ctype)"; \
+	  else echo "FAIL  $(SMOKE_STATIC_PATH): $$r: the proxy or image does not serve the built asset as $${want:-a file} (a browser refuses a stylesheet or script with the wrong type)"; fail=1; fi; \
+	else echo "NOT RUN  static asset: SMOKE_STATIC_PATH is empty (only right for an app that serves no static files)"; fi; \
+	r=$$(probe -H "Host: smoke-forged.invalid" "$(SMOKE_URL)$(SMOKE_HEALTH_PATH)"); \
+	case "$${r%% *}" in 2??|3??) echo "FAIL  a forged Host header was answered ($$r): the trusted-host defence is not on in the real stack"; fail=1;; \
+	  000) echo "PASS  forged Host refused (connection rejected)";; \
+	  502|503|504) echo "FAIL  the forged-Host probe got $${r%% *} from the proxy: the app did not answer, so whether it refuses a forged Host is unknown"; fail=1;; \
+	  *) echo "PASS  forged Host refused ($${r%% *})";; esac; \
+	if [ -n "$(SMOKE_AUTH_PATH)" ]; then \
+	  r=$$(probe "$(SMOKE_URL)$(SMOKE_AUTH_PATH)"); \
+	  case "$${r%% *}" in 401|403) echo "PASS  $(SMOKE_AUTH_PATH) refuses a request with no credentials ($${r%% *})";; \
+	    *) echo "FAIL  $(SMOKE_AUTH_PATH) answered a request with NO credentials ($$r): it is not protected"; fail=1;; esac; \
+	  if [ -z "$${SMOKE_AUTH_TOKEN:-}" ]; then echo "FAIL  SMOKE_AUTH_PATH is set but SMOKE_AUTH_TOKEN is not in the environment"; fail=1; \
+	  else r=$$(probe -H "Authorization: Bearer $${SMOKE_AUTH_TOKEN}" "$(SMOKE_URL)$(SMOKE_AUTH_PATH)"); \
+	    if [ "$${r%% *}" = 200 ]; then echo "PASS  authenticated request ($(SMOKE_AUTH_PATH))"; \
+	    else echo "FAIL  authenticated $(SMOKE_AUTH_PATH): $$r"; fail=1; fi; fi; \
+	else echo "NOT RUN  authenticated request: SMOKE_AUTH_PATH is empty"; fi; \
+	fi; \
+	for c in $(SMOKE_CONTAINERS); do \
+	  if ! rev=$$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$$c" 2>/dev/null); then echo "FAIL  container $$c is not on this docker host: the deploy did not bring it up"; fail=1; continue; fi; \
+	  if [ -n "$$sha" ]; then case "$$rev" in *"$$sha"*) echo "PASS  $$c runs this commit ($$sha)";; \
+	    *) echo "FAIL  $$c runs revision '$$rev', not $$sha: the stack is not running this build (an image with no org.opencontainers.image.revision label cannot say which build it is)"; fail=1;; esac; fi; \
+	  t=0; while :; do \
+	    st=$$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$$c" 2>/dev/null || echo "gone -"); \
+	    case "$$st" in "running starting"|restarting*) [ "$$t" -lt $(SMOKE_HEALTH_WAIT) ] || break; sleep 5; t=$$((t + 5));; *) break;; esac; \
+	  done; \
+	  case "$$st" in "running healthy") echo "PASS  $$c is healthy by its own HEALTHCHECK";; \
+	    "running none") echo "FAIL  $$c declares no HEALTHCHECK, so nothing shows its process works: declare one in its Dockerfile or compose service"; fail=1;; \
+	    "running starting") echo "FAIL  $$c is still starting after $(SMOKE_HEALTH_WAIT)s: its HEALTHCHECK never passed"; fail=1;; \
+	    "running unhealthy") why=$$(docker inspect -f '{{range .State.Health.Log}}{{.Output}}{{end}}' "$$c" 2>/dev/null | grep -v '^[[:space:]]*$$' | tail -n 1); echo "FAIL  $$c is unhealthy by its own HEALTHCHECK: $$why"; fail=1;; \
+	    *) echo "FAIL  $$c is not running ($$st): the deployed process stopped or is crash-looping"; fail=1;; esac; \
+	done; \
+	n=0; mods=; \
+	if [ -d "$(SMOKE_SCRIPTS_DIR)" ]; then for f in $$(find "$(SMOKE_SCRIPTS_DIR)" -name '*.py' ! -name '__init__.py' | sort); do \
+	  rel=$$(realpath --relative-to="$(SMOKE_IMPORT_ROOT)" "$$f"); mods="$$mods $$(printf '%s' "$${rel%.py}" | tr / .)"; done; fi; \
+	mods=$$(printf '%s\n' $$mods $(SMOKE_ENTRY_MODULES) | sort -u); \
+	if [ -n "$$mods" ]; then \
+	  envf=; [ -n "$(SMOKE_ENV_FILE)" ] && [ -f "$(SMOKE_ENV_FILE)" ] && envf="--env-file=$(SMOKE_ENV_FILE)"; \
+	  if ! docker image inspect "$(SHA_IMAGE)" >/dev/null 2>&1 && ! docker pull -q "$(SHA_IMAGE)" >/dev/null 2>&1; then \
+	    echo "FAIL  entry points: $(SHA_IMAGE) is neither built here nor pullable, so no module could be imported (deploy this commit first)"; fail=1; n=-1; \
+	  else for mod in $$mods; do \
+	    n=$$((n + 1)); \
+	    if err=$$(docker run --rm $$envf $(SMOKE_RUN_OPTS) --entrypoint python "$(SHA_IMAGE)" -c "import $$mod" 2>&1 >/dev/null); then echo "PASS  $$mod imports on its own in the production image"; \
+	    else fail=1; why=$$(printf '%s\n' "$$err" | grep -E '^[A-Za-z_][A-Za-z0-9_.]*(Error|Exception|Exit)\b' | tail -n 1); why=$${why:-$$(printf '%s\n' "$$err" | grep -v '^[[:space:]]*$$' | tail -n 1)}; \
+	      case "$$err" in *ImportError*|*ModuleNotFoundError*|*"circular import"*) echo "FAIL  $$mod does not import on its own in $(SHA_IMAGE) (a circular or missing import the app's own import order hides): $$why";; \
+	        *) echo "FAIL  $$mod raised at import in $(SHA_IMAGE): $$why"; [ -n "$$envf" ] || echo "      no env file was passed ($(SMOKE_ENV_FILE) not found): set SMOKE_ENV_FILE to the file the stack runs with";; esac; fi; \
+	  done; fi; \
+	fi; \
+	[ "$$n" -ne 0 ] || echo "NOT RUN  entry points: no module under $(SMOKE_SCRIPTS_DIR) and no SMOKE_ENTRY_MODULES"; \
+	exit $$fail
 
 # The emulator is a TEST FIXTURE, never a released artifact: built locally under a BARE name and
 # never pushed, so the demo and e2e stacks resolve it from the local store with no registry.

@@ -1,4 +1,4 @@
-<!-- luxarch:release-notes-guide asset v1 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit release-notes-guide`. -->
+<!-- luxarch:release-notes-guide asset v2 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit release-notes-guide`. -->
 
 # Release Notes Writing Guide
 
@@ -71,21 +71,22 @@ One sentence per item, two max. No sub-bullets.
 
 ### Product surface badges
 
-Every line gets a badge after the bold title naming the **surface** it ships on. A change that ships on more than one surface wears **both** badges — never a merged one. **Badges are a closed set wired in code** — a bare `` `Whatever` `` you invent renders unstyled. A badge is styled only if it's registered in **two** places:
+Every line gets a badge after the bold title naming the **surface** it ships on. A change that ships on more than one surface wears **both** badges — never a merged one. In an app that renders these notes on a releases page, **badges are a closed set wired in code** — a bare `` `Whatever` `` you invent renders unstyled. A badge is styled only if it's registered in **two** places:
 
 1. `app/core/templates.py` → the `render_markdown` surface-badge transform (maps `` `Name` `` → `<code class="badge-name">`).
 1. `app/templates/web/pages/releases/index.html` → a `.badge-<name>` CSS rule (colour + the `::before/::after { content: "" }` reset that strips the code-span backticks).
 
 To add a surface, update BOTH places — not just this note.
 
-### Headless repos (a collector/poller with NO web UI)
+### Apps with no releases page (headless, or a web app that has not added one yet)
 
-A headless repo has no `templates.py` and no releases page, so there is **no badge registry to register against** — and that is fine. The two-place wiring above is a **web-app** requirement (it exists because a web app *renders* these notes and needs the badge styled). A headless repo's `release_notes/{version}.md` is a plain Markdown file nobody renders through that transform, so:
+The two-place wiring above exists because a releases page *renders* these notes and needs the badge styled. An app with no releases page has **no badge registry to register against** — a headless collector/poller (no `templates.py` at all), or a web app that has not built its releases page yet — and that is fine. Its `release_notes/{version}.md` is a plain Markdown file nobody renders through that transform, so:
 
-- Use plain-text **operator-surface** labels for the surfaces an operator actually experiences — e.g. `` `Collector` ``, `` `Dashboards` `` — and say in the file that these are the repo's surfaces. There is **no** code registration to do; do not invent a `templates.py`/CSS entry a headless repo doesn't have.
-- **Do not back-tick a non-surface token.** A backticked word (`` `GRAFANA_PORT` ``, a config var, a metric name) reads as a badge to the web transform — on a repo that later grows a UI, or to a human skimming, it becomes a bogus badge. Leave config values, ports, and identifiers un-backticked (or in prose), and reserve backticks for the surface labels.
+- Use plain-text **surface** labels for the surfaces a user or operator actually experiences — e.g. `` `Collector` ``, `` `Dashboards` ``, `` `Site` ``, `` `Docs` `` — and say in the file that these are the repo's surfaces. There is **no** code registration to do; do not invent a `templates.py`/CSS entry for a page that does not exist.
+- **Do not back-tick a non-surface token.** A backticked word (`` `GRAFANA_PORT` ``, a config var, a metric name) reads as a badge to the web transform — on a repo that later adds a releases page, or to a human skimming, it becomes a bogus badge. Leave config values, ports, and identifiers un-backticked (or in prose), and reserve backticks for the surface labels.
+- When the app adds a releases page, register exactly the labels its notes already use, in both places above.
 
-(A collector still writes both documents per FLEET-RELEASE-PROCESS — the change log and these notes; the badge machinery is the only web-only part, and this is how it degrades for headless.)
+(Such an app still writes both documents per FLEET-RELEASE-PROCESS — the change log and these notes; the badge registry is the only part that needs a releases page, and this is how it degrades without one.)
 
 ## Per-repo parameters
 
@@ -93,3 +94,14 @@ A headless repo has no `templates.py` and no releases page, so there is **no bad
 - `{version}` / `{date}` — the `VERSION` file's value and the cut date.
 
 One file per version: `<app>/release_notes/{version}.md` (named to match `VERSION` exactly).
+
+## This repo's own rules (the region at the end of this file)
+
+The region that closes this file belongs to the repo, and no guard compares it. `repo.emitted_assets_current` reads everything above it line for line, and `luxarch --emit release-notes-guide --update <file>` carries it across a new version. Write the repo's rules **below** its comment line, never above it. The region may hold only two things:
+
+- **Audience, narrowed** — who this repo's users are, and the surfaces that are NOT user surfaces here (for example, an admin only staff see behind a public site).
+- **Per-repo parameters** — this repo's products and surface labels, a jargon list tuned to its stack, and worked YES/NO examples in its own words.
+
+Everything above the region is the fleet's: the test, the format, the categories and the rules. Where the region disagrees with it, the fleet text wins. A fleet rule this repo needs changed is an escalation to the guard maintainer, not a region edit.
+
+<!-- --- EDIT THIS: this repo's own writing rules -->
