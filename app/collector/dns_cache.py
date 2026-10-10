@@ -18,16 +18,16 @@ especially important when polling many devices at short intervals.
 """
 
 import asyncio
+import logging
 import socket
 import time
 
 from app.core.config import Config
-from app.utils.logging import setup_logger
 
 type CacheEntry = tuple[str, float]  # (hostname, timestamp)
 type CacheStats = dict[str, int | float]
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class DNSCache:

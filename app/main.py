@@ -28,10 +28,9 @@ from app.collector.device_manager import DeviceManager
 from app.collector.kasa_compat import apply_patches, verify_still_needed
 from app.collector.poller import Poller
 from app.core.config import REQUIRED_ENV_VARS, Config, describe_settings
-from app.utils.logging import setup_logger
+from app.core.logging_config import configure_logging
 
-# Configure the orchestrator logger via the fleet logging util (structured or colored).
-logger = setup_logger("KasaCollector", Config.KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR)
+logger = logging.getLogger("KasaCollector")
 
 # Settings whose values are masked in the startup config dump.
 _SENSITIVE = ("PASSWORD", "TOKEN", "USERNAME")
@@ -281,7 +280,29 @@ async def main() -> None:
         await collector.shutdown()
 
 
+def configure_app_logging() -> None:
+    """Install the fleet's one logging setup (luxarch --emit logging) for this process.
+
+    JSON lines on stdout, or a readable line with LOG_FORMAT=text. The per-component
+    KASA_COLLECTOR_LOG_LEVEL_* settings are the code's defaults; LOG_MODULE_LEVELS overrides
+    any logger at runtime. python-kasa stays at WARNING, as it was when only the app's own
+    loggers had a handler.
+    """
+    configure_logging(
+        service="kasa-collector",
+        version=os.getenv("KASA_COLLECTOR_VERSION", "unknown"),
+        levels={
+            "KasaCollector": Config.KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR,
+            "KasaAPI": Config.KASA_COLLECTOR_LOG_LEVEL_KASA_API,
+            "KasaCompat": Config.KASA_COLLECTOR_LOG_LEVEL_KASA_API,
+            "InfluxDBStorage": Config.KASA_COLLECTOR_LOG_LEVEL_INFLUXDB_STORAGE,
+            "kasa": "WARNING",
+        },
+    )
+
+
 if __name__ == "__main__":
+    configure_app_logging()
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

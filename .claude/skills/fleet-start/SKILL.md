@@ -3,7 +3,7 @@ name: fleet-start
 description: Start (or resume after a compact) a working session the fleet way — read this repo's CLAUDE.md and the conduct standard, rehydrate from LuxPM leanly (focus + this repo's open issues, keys and titles only), and restate the six session rules. Run at the start of every session and after every compact.
 ---
 
-<!-- luxarch:fleet-start-skill asset v3 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit fleet-start-skill`. -->
+<!-- luxarch:fleet-start-skill asset v4 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit fleet-start-skill`. -->
 
 # Fleet start
 
@@ -35,13 +35,13 @@ LuxPM is the state. The conversation is not a second copy of it: rehydrate from 
 1. **Evidence over memory.** Cite the file and line, the command output, the issue. "Done" is a check you ran this turn.
 1. **Reds stay red.** Align the code or escalate the guard (`/escalate`). Never an exemption, a suppression comment, a deferral or a local config.
 
-## 4. Compaction (the owner runs it)
+## 4. Compaction
 
-The owner runs `/compact`; agents never prompt for it. Your part is to keep decisions persisted to LuxPM as they are made. The standard focus text, for the owner to copy:
+Agents never prompt for a compact. The owner runs `/compact`, and Claude Code also compacts on its own when the context fills. Nothing can run before a compact, so your part is to keep decisions persisted to LuxPM as they are made. The standard focus text, for the owner to copy:
 
 > Keep: current task and where we are, open hypotheses, decisions not yet in LuxPM, files in play, unresolved failures. Drop: raw tool/LuxPM output, resolved errors, file contents and anything retrievable from LuxPM or the repo.
 
-After a compact, run `/fleet-start` again.
+After a compact, run `/fleet-start` again. The emitted `fleet-start-after-compact` hook (`luxarch --emit hooks`) says so in the context the compact leaves.
 
 ## 5. The other fleet skills
 

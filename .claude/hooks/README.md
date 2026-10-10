@@ -47,5 +47,6 @@ The exception is `no-ai-attribution`, which must NOT mask: a commit message *is*
 | `luxpm-clear-ledger`         | LuxPM log tools (post)       | clears the ledger                                             |
 | `luxpm-stop-guard`           | Stop                         | **blocks** — work not logged in LuxPM                         |
 | `unpushed-stop-guard`        | Stop                         | **blocks** — commits not pushed                               |
+| `fleet-start-after-compact`  | SessionStart (`compact`)     | context — tells the agent to run `/fleet-start`               |
 
 Emergency override for the stop guards: delete `.claude/.luxpm-ledger.json`, or push.

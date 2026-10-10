@@ -16,6 +16,7 @@ clear abstractions.
 """
 
 import asyncio
+import logging
 from collections.abc import Callable, Coroutine
 from functools import wraps
 from types import TracebackType
@@ -25,13 +26,12 @@ from kasa import Device
 
 from app.collector.dns_cache import get_hostname_cached
 from app.core.config import Config
-from app.utils.logging import setup_logger
 
 # Modern Python 3.13 type hints
 P = ParamSpec("P")
 T = TypeVar("T")
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def get_device_name(device: Device) -> str:

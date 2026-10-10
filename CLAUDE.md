@@ -268,5 +268,6 @@ Secret scanning is fleet-owned too: there is no local `.gitleaks.toml` (luxlint'
 - `app/collector/utils.py` - Shared utilities (retry decorator, device helpers)
 - `app/collector/dns_cache.py` - DNS caching implementation
 - `app/storage/influxdb.py` - InfluxDB time-series persistence
+- `app/core/logging_config.py` - the fleet's one logging setup (`luxarch --emit logging`, never hand-edited): JSON lines on stdout, `LOG_FORMAT=text` for local runs; `app/main.py`'s `configure_app_logging()` installs it with the per-component `KASA_COLLECTOR_LOG_LEVEL_*` levels
 - `app/health/check.py` - Docker health check script
 - `Makefile` / `VERSION` / `pyproject.toml` - Fleet build, versioning, deps + tooling

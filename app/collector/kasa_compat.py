@@ -41,6 +41,7 @@ Bug 2 — device built as IotPlug, so no child sockets and no per-outlet emeter
 """
 
 import inspect
+import logging
 import sys
 from typing import Any
 
@@ -52,14 +53,11 @@ from kasa.protocols import IotProtocol
 from kasa.protocols.iotprotocol import IotProtocol as _IotProtocolCls
 from kasa.transports import KlapTransport, KlapTransportV2
 
-from app.core.config import Config
-from app.utils.logging import setup_logger
-
-# Routed through the app's logger rather than a bare getLogger(__name__): this module's
-# whole value is announcing itself -- both that the patch is ACTIVE and, via
+# A named logger whose level the entrypoint sets (KASA_COLLECTOR_LOG_LEVEL_KASA_API): this
+# module's whole value is announcing itself -- both that the patch is ACTIVE and, via
 # verify_still_needed(), that it has become DEAD and should be deleted. A shim whose
 # announcements are filtered out by the default level is a shim nobody knows is there.
-logger = setup_logger("KasaCompat", Config.KASA_COLLECTOR_LOG_LEVEL_KASA_API)
+logger = logging.getLogger("KasaCompat")
 
 _orig_get_protocol = _device_factory.get_protocol
 _orig_connect = _device_factory._connect

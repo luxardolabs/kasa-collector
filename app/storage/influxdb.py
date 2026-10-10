@@ -34,11 +34,8 @@ from influxdb_client.client.write_api_async import WriteApiAsync
 
 from app.collector.utils import sanitize_tag
 from app.core.config import Config
-from app.utils.logging import setup_logger
 
-logger = setup_logger(
-    "InfluxDBStorage", Config.KASA_COLLECTOR_LOG_LEVEL_INFLUXDB_STORAGE
-)
+logger = logging.getLogger("InfluxDBStorage")
 
 
 class InfluxDBStorage:

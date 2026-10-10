@@ -74,12 +74,16 @@ Credentials are masked in the startup configuration log.
 
 ## Logging
 
-| Variable                                    | Default | Description                                                                              |
-| ------------------------------------------- | ------- | ---------------------------------------------------------------------------------------- |
-| `KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR`   | `INFO`  | Level for the main orchestrator. One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
-| `KASA_COLLECTOR_LOG_LEVEL_KASA_API`         | `INFO`  | Level for device communication. Set `DEBUG` to trace per-device protocol activity.       |
-| `KASA_COLLECTOR_LOG_LEVEL_INFLUXDB_STORAGE` | `INFO`  | Level for InfluxDB writes. Set `DEBUG` to trace storage operations.                      |
-| `KASA_COLLECTOR_STRUCTURED_LOGS`            | `False` | Emit logs as structured JSON for log aggregators instead of colored console output.      |
+| Variable                                    | Default | Description                                                                                                             |
+| ------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR`   | `INFO`  | Level for the main orchestrator. One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.                                |
+| `KASA_COLLECTOR_LOG_LEVEL_KASA_API`         | `INFO`  | Level for device communication. Set `DEBUG` to trace per-device protocol activity.                                      |
+| `KASA_COLLECTOR_LOG_LEVEL_INFLUXDB_STORAGE` | `INFO`  | Level for InfluxDB writes. Set `DEBUG` to trace storage operations.                                                     |
+| `LOG_FORMAT`                                | `json`  | `json`: one JSON object per line on stdout (the fleet log contract). `text`: a readable line for local runs.            |
+| `LOG_LEVEL`                                 | `INFO`  | Root level, for every logger the three settings above do not name (e.g. `python-kasa` stays at `WARNING`).              |
+| `LOG_MODULE_LEVELS`                         | —       | JSON object of per-logger levels applied on top, e.g. `{"KasaAPI": "DEBUG"}`, to turn one logger up without a redeploy. |
+
+Each JSON line carries `timestamp`, `level`, `logger`, `message`, `service` (`kasa-collector`), `version`, the code location, and any `extra=` fields under `attributes`. `KASA_COLLECTOR_STRUCTURED_LOGS` is gone: JSON is always on.
 
 ## Output
 

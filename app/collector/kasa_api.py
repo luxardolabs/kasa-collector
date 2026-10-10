@@ -24,6 +24,7 @@ providing a unified interface for the rest of the application.
 """
 
 import asyncio
+import logging
 import socket
 from typing import Any
 
@@ -31,9 +32,8 @@ from kasa import Credentials, Device, DeviceConfig, Discover
 
 from app.collector.kasa_compat import reclass_strip_if_needed
 from app.core.config import Config
-from app.utils.logging import setup_logger
 
-logger = setup_logger("KasaAPI", Config.KASA_COLLECTOR_LOG_LEVEL_KASA_API)
+logger = logging.getLogger("KasaAPI")
 
 
 class KasaAPI:

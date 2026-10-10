@@ -269,10 +269,8 @@ class Config:
     )
     """Log level for main Kasa Collector orchestrator."""
 
-    KASA_COLLECTOR_STRUCTURED_LOGS: bool = _get_bool_config(
-        "KASA_COLLECTOR_STRUCTURED_LOGS", default=False
-    )
-    """Emit logs as structured JSON (for log aggregation) instead of colored console."""
+    # Output FORMAT is the fleet logging module's (app/core/logging_config.py): JSON lines by
+    # default, LOG_FORMAT=text for a readable local line. There is no collector setting for it.
 
     # Device configuration
     KASA_COLLECTOR_DEVICE_HOSTS: str | None = os.getenv(
@@ -409,5 +407,4 @@ def describe_settings() -> dict[str, str]:
         "KASA_COLLECTOR_LOG_LEVEL_INFLUXDB_STORAGE": (
             Config.KASA_COLLECTOR_LOG_LEVEL_INFLUXDB_STORAGE
         ),
-        "KASA_COLLECTOR_STRUCTURED_LOGS": str(Config.KASA_COLLECTOR_STRUCTURED_LOGS),
     }
