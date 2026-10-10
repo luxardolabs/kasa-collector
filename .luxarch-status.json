@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.277.0",
+  "guard_version": "0.278.0",
   "repo": "/repo",
   "targets": [
     {
@@ -648,13 +648,13 @@
       },
       {
         "rule": "repo.stack_smoke_wired",
-        "status": "FAIL",
+        "status": "PASS",
         "since": "0.268.0",
-        "violations": 1,
+        "violations": 0,
         "deferred": false,
         "inert": false,
         "inert_reason": "",
-        "fix": "Paste `luxarch --emit smoke` below the image block, set SMOKE_URL (and the probe paths) for this app, and let `make dev-deploy` end with `$(MAKE) smoke`, unguarded, so a FAIL fails the deploy. See --doc FLEET-VERIFICATION-STANDARD.",
+        "fix": "",
         "example": ""
       },
       {
@@ -802,20 +802,20 @@
       }
     ],
     "summary": {
-      "PASS": 58,
-      "FAIL": 1,
+      "PASS": 59,
+      "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
       "INERT": 5
     }
   },
   "summary": {
-    "PASS": 64,
-    "FAIL": 1,
+    "PASS": 65,
+    "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
     "INERT": 6
   },
-  "commit": "3f63594aa05fdf4295824b4c9b7333de10e67fcf",
-  "generated_at": "2026-10-10T20:28:03Z"
+  "commit": "d110d231110d0435c16845af3dd181d772205a31",
+  "generated_at": "2026-10-10T23:10:45Z"
 }
