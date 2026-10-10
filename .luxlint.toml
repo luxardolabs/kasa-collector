@@ -35,6 +35,6 @@ evidence = "Standalone device-emulator server started as a container CMD; the on
 target = "py314"
 
 # The coverage floor `make test` (luxarch's test block) ratchets against: branch coverage, whole
-# percent, raised to 53% on 2026-10-10. Raise it as coverage rises; never lower it.
+# percent, raised to 54% on 2026-10-10. Raise it as coverage rises; never lower it.
 [test]
-coverage_min = 53
+coverage_min = 54

@@ -357,13 +357,15 @@ class DeviceManager:
         """
         # First try to use the discovered device directly
         if discovered_device:
-            success = await KasaAPI.authenticate_discovered_device(
+            # The RETURNED device is the one to keep: a discovered KLAP strip comes back
+            # re-classed as IotStrip (python-kasa#1748), the object passed in does not.
+            ready = await KasaAPI.authenticate_discovered_device(
                 discovered_device, self.tplink_username, self.tplink_password
             )
-            if success:
-                self.devices[ip] = discovered_device
-                self._check_and_add_emeter_device(ip, discovered_device)
-                device_name = get_device_name(discovered_device)
+            if ready is not None:
+                self.devices[ip] = ready
+                self._check_and_add_emeter_device(ip, ready)
+                device_name = get_device_name(ready)
                 hostname = await get_hostname_cached(ip)
                 # Show details on first run at INFO level
                 if not self.first_discovery_complete:

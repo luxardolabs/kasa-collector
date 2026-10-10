@@ -118,7 +118,7 @@ class KasaAPI:
     @staticmethod
     async def authenticate_discovered_device(
         device: Device, username: str | None = None, password: str | None = None
-    ) -> bool:
+    ) -> Device | None:
         """Verify and authenticate a discovered device.
 
         Args:
@@ -127,7 +127,10 @@ class KasaAPI:
             password: Optional TP-Link account password.
 
         Returns:
-            True if device is ready for use, False otherwise.
+            The device ready for use, or None if it is not. Store the RETURNED object:
+            a multi-outlet IOT device that discovery built as IotPlug comes back rebuilt
+            as IotStrip (python-kasa#1748 -- discovery still classes by family), which
+            is the only way its per-outlet emeter is collected.
 
         Different device types require different handling:
         - IOT devices: Already authenticated during discovery
@@ -155,7 +158,7 @@ class KasaAPI:
                 # Just update to ensure it's working
                 await device.update()
                 logger.debug("IOT device ready: %s (IP: %s)", device.alias, device.host)
-                return True
+                return await reclass_strip_if_needed(device)
 
             # SmartDevice needs special handling - it might need HTTP/HTTPS
             elif protocol == "SmartDevice":
@@ -167,20 +170,20 @@ class KasaAPI:
                 # Try to update anyway
                 try:
                     await device.update()
-                    return True
+                    return device
                 # swallowed-exceptions: HANDLED -- this is a capability PROBE, not an
-                # operation. The bool return IS the handling: False means "this device does
+                # operation. The None return IS the handling: it means "this device does
                 # not speak the protocol we just tried", which the caller branches on. An
                 # exception here is the expected negative result, not a failure to report.
                 except Exception as smart_error:
                     logger.debug("SmartDevice update failed: %s", smart_error)
-                    return False
+                    return None
 
             # Unknown device type
             else:
                 logger.warning("Unknown device protocol: %s", protocol)
                 await device.update()
-                return True
+                return device
 
         except Exception as e:
             error_type = type(e).__name__
@@ -198,7 +201,7 @@ class KasaAPI:
                     "It may be on a different VLAN or have firewall rules.",
                     device.host,
                 )
-            return False
+            return None
 
     @staticmethod
     async def get_device(

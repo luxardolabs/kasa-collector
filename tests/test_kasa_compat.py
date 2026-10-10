@@ -5,6 +5,7 @@ from kasa import Discover
 from kasa.iot import IotPlug, IotStrip
 
 from app.collector import kasa_compat
+from app.collector.kasa_api import KasaAPI
 
 
 def _updated_plug(sys_info: dict) -> IotPlug:
@@ -58,3 +59,43 @@ class TestVerifyStillNeeded:
         monkeypatch.setattr(Discover, "_get_device_instance", staticmethod(fixed))
         assert kasa_compat.verify_still_needed() is False
         assert "#1748 looks FIXED upstream" in caplog.text
+
+
+@pytest.mark.unit
+class TestDiscoveredDevicePath:
+    """The DISCOVERY path must re-class too: it is the one python-kasa 0.11 left broken.
+
+    On 0.10.2 update() raised for a discovered strip built as IotPlug, so the collector fell
+    back to the connect path, which re-classed it. On 0.11 that update() succeeds, so the
+    discovered object itself is kept, and it must already be the strip.
+    """
+
+    async def test_discovered_strip_built_as_plug_comes_back_as_strip(
+        self, monkeypatch
+    ):
+        sys_info = {"model": "HS300(US)", "children": [{"id": "00"}, {"id": "01"}]}
+
+        async def plug_update(self, update_children=False):
+            self._last_update = {"system": {"get_sysinfo": sys_info}}
+            self._set_sys_info(sys_info)
+
+        async def strip_update(self, update_children=True):
+            self._last_update = {"system": {"get_sysinfo": sys_info}}
+
+        monkeypatch.setattr(IotPlug, "update", plug_update)
+        monkeypatch.setattr(IotStrip, "update", strip_update)
+        discovered = IotPlug("10.10.7.90")
+
+        ready = await KasaAPI.authenticate_discovered_device(discovered)
+
+        assert isinstance(ready, IotStrip)
+        assert ready.protocol is discovered.protocol
+
+    async def test_unreachable_discovered_device_is_none(self, monkeypatch):
+        async def refused(self, update_children=False):
+            raise OSError("Connect call failed")
+
+        monkeypatch.setattr(IotPlug, "update", refused)
+        assert (
+            await KasaAPI.authenticate_discovered_device(IotPlug("10.10.7.72")) is None
+        )
