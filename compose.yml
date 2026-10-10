@@ -20,6 +20,7 @@ name: kasa-collector
 #   bundled     kasa_influxdb + kasa_grafana                         .env.dev
 #   demo        the same bundled pair + fakes + kasa-collector-demo  .env.demo
 #   e2e         throwaway InfluxDB + fakes + kasa-collector-e2e      make test-e2e
+#   test        a throwaway InfluxDB the pytest suite writes to       make test
 #
 # WHY THREE COLLECTOR SERVICES RATHER THAN ONE. `network_mode` cannot vary by profile —
 # it is a property of a service. The real collector needs HOST networking to reach real
@@ -82,6 +83,9 @@ services:
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
     volumes:
       - kasa_influxdb_data:/var/lib/influxdb2
+      # The image DECLARES /etc/influxdb2 too (the CLI config setup mode writes). Unmapped,
+      # every `up` minted an anonymous volume and every `down` abandoned it.
+      - kasa_influxdb_config:/etc/influxdb2
       - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
     ports:
       - "${INFLUX_PORT:-8086}:8086"
@@ -239,6 +243,29 @@ services:
       timeout: 3s
       retries: 30
 
+  # ── profile: test ──────────────────────────────────────────────────────────
+  # The real InfluxDB `make test` starts (TEST_SERVICES), one isolated compose project per
+  # run. No container_name, no ports, no bind mounts: the test block's isolation contract.
+  # tmpfs for both declared VOLUMEs, so a run leaves nothing behind.
+  kasa_test_influxdb:
+    profiles: [test]
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: kasa
+      DOCKER_INFLUXDB_INIT_PASSWORD: kasa-test-password
+      DOCKER_INFLUXDB_INIT_ORG: kasa
+      DOCKER_INFLUXDB_INIT_BUCKET: kasa
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: kasa-test-token
+    tmpfs:
+      - /var/lib/influxdb2
+      - /etc/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
   # The runtime stage built from current source by `make test-e2e`, under the BARE
   # verification name: never pushed, so the test needs no registry (`<repo>:test`).
   kasa-collector-e2e:
@@ -279,4 +306,5 @@ services:
 
 volumes:
   kasa_influxdb_data:
+  kasa_influxdb_config:
   kasa_grafana_data:

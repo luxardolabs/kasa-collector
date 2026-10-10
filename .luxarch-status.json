@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.249.3",
+  "guard_version": "0.276.0",
   "repo": "/repo",
   "targets": [
     {
@@ -14,7 +14,9 @@
           "violations": 0,
           "deferred": false,
           "inert": false,
-          "inert_reason": ""
+          "inert_reason": "",
+          "fix": "",
+          "example": ""
         },
         {
           "rule": "collector.influx_async_client_only",
@@ -23,7 +25,9 @@
           "violations": 0,
           "deferred": false,
           "inert": false,
-          "inert_reason": ""
+          "inert_reason": "",
+          "fix": "",
+          "example": ""
         },
         {
           "rule": "collector.no_bare_except",
@@ -32,16 +36,20 @@
           "violations": 0,
           "deferred": false,
           "inert": false,
-          "inert_reason": ""
+          "inert_reason": "",
+          "fix": "",
+          "example": ""
         },
         {
           "rule": "collector.client_lifecycle",
-          "status": "PASS",
+          "status": "INERT",
           "since": "0.1.0",
           "violations": 0,
           "deferred": false,
-          "inert": false,
-          "inert_reason": ""
+          "inert": true,
+          "inert_reason": "1 library client(s) verified; app/collector/device_manager.py hold(s) no httpx/aiohttp/InfluxDB client, so its lifecycle cannot be judged by type (a vendor SDK object) \u2014 N/A, not checked, not a \u2713",
+          "fix": "",
+          "example": ""
         },
         {
           "rule": "collector.file_size",
@@ -50,7 +58,9 @@
           "violations": 0,
           "deferred": false,
           "inert": false,
-          "inert_reason": ""
+          "inert_reason": "",
+          "fix": "",
+          "example": ""
         },
         {
           "rule": "collector.no_per_request_http",
@@ -59,7 +69,9 @@
           "violations": 0,
           "deferred": false,
           "inert": false,
-          "inert_reason": ""
+          "inert_reason": "",
+          "fix": "",
+          "example": ""
         },
         {
           "rule": "collector.graceful_shutdown",
@@ -68,15 +80,17 @@
           "violations": 0,
           "deferred": false,
           "inert": false,
-          "inert_reason": ""
+          "inert_reason": "",
+          "fix": "",
+          "example": ""
         }
       ],
       "summary": {
-        "PASS": 7,
+        "PASS": 6,
         "FAIL": 0,
         "XFAIL": 0,
         "XPASS": 0,
-        "INERT": 0
+        "INERT": 1
       }
     }
   ],
@@ -89,7 +103,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.guards_wired",
@@ -98,7 +114,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.no_public_ci",
@@ -107,7 +125,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.oci_image_labels",
@@ -116,7 +136,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.components_declared",
@@ -125,7 +147,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.no_piped_installer",
@@ -134,7 +158,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.makefile_canonical",
@@ -143,7 +169,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.guard_owned_tools_undeclared",
@@ -152,7 +180,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.dev_tools_not_in_production",
@@ -161,7 +191,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.fleet_skills_present",
@@ -170,7 +202,31 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.logging_canonical",
+        "status": "FAIL",
+        "since": "0.254.0",
+        "violations": 3,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "`luxarch --emit logging > <app>/core/logging_config.py` (unedited), call `configure_logging(service=..., version=...)` once in the target's entrypoint (`main.py` / `__main__.py`), and delete every other setup this names. Existing `logger.info(..., extra={...})` calls keep working, and colliding keys no longer crash. See --playbook logging.",
+        "example": ""
+      },
+      {
+        "rule": "repo.log_fields_explicit",
+        "status": "PASS",
+        "since": "0.269.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.makefile_no_command_substitution",
@@ -179,7 +235,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.makefile_no_fixed_tmp",
@@ -188,7 +246,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.guard_pins_not_overridable",
@@ -197,7 +257,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.guard_upgrade_verifies_write",
@@ -206,7 +268,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.db_verify_image_is_current",
@@ -215,7 +279,9 @@
         "violations": 0,
         "deferred": false,
         "inert": true,
-        "inert_reason": "no `db-verify` target in a committed makefile \u2014 there is no migration-chain run to judge"
+        "inert_reason": "no `db-verify` target in a committed makefile \u2014 there is no migration-chain run to judge",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.image_name_declares_provenance",
@@ -224,7 +290,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.deploy_tag_is_immutable",
@@ -233,7 +301,20 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.release_scans_candidate",
+        "status": "PASS",
+        "since": "0.250.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.makefile_image_ref_well_formed",
@@ -242,7 +323,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.alembic_env_honors_caller_url",
@@ -251,7 +334,9 @@
         "violations": 0,
         "deferred": false,
         "inert": true,
-        "inert_reason": "no alembic env.py found (nothing carrying `context.configure`) \u2014 there is no migration runner here whose URL could be overridden, so the invariant was never evaluated. NOT a clearance: a repo that DOES migrate and whose env.py this scan missed is carrying the defect unexamined, and that is worth an escalation"
+        "inert_reason": "no alembic env.py found (nothing carrying `context.configure`) \u2014 there is no migration runner here whose URL could be overridden, so the invariant was never evaluated. NOT a clearance: a repo that DOES migrate and whose env.py this scan missed is carrying the defect unexamined, and that is worth an escalation",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.emitted_assets_current",
@@ -260,7 +345,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.luxpm_receipt_current",
@@ -269,7 +356,20 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.luxpm_backlog_triaged",
+        "status": "FAIL",
+        "since": "0.252.0",
+        "violations": 1,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "run `/luxpm-audit` (`luxarch --emit luxpm-audit-skill > .claude/skills/luxpm-audit/SKILL.md`): verify each open issue against the code and close it with evidence, park it `on_hold` with `waiting_on`, merge it into its duplicate, or comment what remains; backfill a summary on each unexplained close; then re-issue the receipt. Never close live work to move the count, and leave escalations to the guard maintainer.",
+        "example": ""
       },
       {
         "rule": "repo.guard_status_current",
@@ -278,7 +378,9 @@
         "violations": 0,
         "deferred": false,
         "inert": true,
-        "inert_reason": "this run is WRITING the status files (`make status`), so the files on disk are the ones it is replacing \u2014 judging them would record a red about themselves in the committed snapshot. The next `make check` judges what was written"
+        "inert_reason": "this run is WRITING the status files (`make status`), so the files on disk are the ones it is replacing \u2014 judging them would record a red about themselves in the committed snapshot. The next `make check` judges what was written",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.claude_pointer_present",
@@ -287,7 +389,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.gitleaks_scans_identity",
@@ -296,7 +400,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.makefile_test_db_harness",
@@ -305,7 +411,9 @@
         "violations": 0,
         "deferred": false,
         "inert": true,
-        "inert_reason": "no relational data layer (no SQLAlchemy/SQLModel/Alembic/psycopg/asyncpg dependency, no alembic.ini, no app/db|app/models dir) \u2014 there is no throwaway DB to protect and no dev DB a suite could hit, so the test-DB harness does not apply (a collector/poller that writes only to InfluxDB; KASACOLLEC-51). Standing up an unused Postgres to turn this green would be a hollow green \u2014 don't."
+        "inert_reason": "no relational data layer (no SQLAlchemy/SQLModel/Alembic/psycopg/asyncpg dependency, no alembic.ini, no app/db|app/models dir) \u2014 there is no throwaway DB to protect and no dev DB a suite could hit, so the test-DB harness does not apply (a collector/poller that writes only to InfluxDB). Standing up an unused Postgres to turn this green would be a hollow green \u2014 don't.",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.migrations_build_schema",
@@ -314,7 +422,9 @@
         "violations": 0,
         "deferred": false,
         "inert": true,
-        "inert_reason": "no alembic migration chain (no alembic.ini, no versions/ dir) \u2014 there is no chain to build-verify; a create_all-only or non-relational repo has nothing here to check. Standing up alembic just to satisfy this would be a hollow green \u2014 don't."
+        "inert_reason": "no alembic migration chain (no alembic.ini, no versions/ dir) \u2014 there is no chain to build-verify; a create_all-only or non-relational repo has nothing here to check. Standing up alembic just to satisfy this would be a hollow green \u2014 don't.",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.release_docs_present",
@@ -323,7 +433,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.release_docs_current",
@@ -332,7 +444,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.github_release_wired",
@@ -341,7 +455,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.release_tag_hygiene",
@@ -350,7 +466,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.hooks_wired",
@@ -359,7 +477,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.hooks_current",
@@ -368,7 +488,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.allowlist_wellformed",
@@ -377,7 +499,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.python_version_consistent",
@@ -386,7 +510,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.fleet_dep_floor",
@@ -395,7 +521,20 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.otel_instrumentors_effective",
+        "status": "PASS",
+        "since": "0.275.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.schema_from_migrations",
@@ -404,7 +543,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.metadata_naming_convention",
@@ -413,7 +554,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.compose_conventions",
@@ -422,7 +565,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.compose_command_no_orphan_flags",
@@ -431,7 +576,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.shared_buildx_builder",
@@ -440,7 +587,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.compose_project_name",
@@ -449,7 +598,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.compose_db_ephemeral_volume",
@@ -458,7 +609,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.makefile_db_ephemeral_volume",
@@ -467,7 +620,64 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.compose_up_selects_services",
+        "status": "PASS",
+        "since": "0.264.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.test_stack_parity",
+        "status": "PASS",
+        "since": "0.268.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.stack_smoke_wired",
+        "status": "FAIL",
+        "since": "0.268.0",
+        "violations": 1,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "Paste `luxarch --emit smoke` below the image block, set SMOKE_URL (and the probe paths) for this app, and let `make dev-deploy` end with `$(MAKE) smoke`, unguarded, so a FAIL fails the deploy. See --doc FLEET-VERIFICATION-STANDARD.",
+        "example": ""
+      },
+      {
+        "rule": "repo.test_block_wired",
+        "status": "PASS",
+        "since": "0.271.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.poetry_version_consistent",
+        "status": "PASS",
+        "since": "0.268.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.alembic_path_separator",
@@ -476,7 +686,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.alembic_autogen_comparisons",
@@ -485,7 +697,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.migration_notnull_safe",
@@ -494,7 +708,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.buildx_builder_gc_capped",
@@ -503,7 +719,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.buildx_strays_refused",
@@ -512,7 +730,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.version_single_source",
@@ -521,7 +741,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.hatchling_build_backend",
@@ -530,7 +752,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.hatch_version_source_buildable",
@@ -539,7 +763,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.app_version_calver",
@@ -548,7 +774,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.dockerfile_provenance_args",
@@ -557,7 +785,9 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       },
       {
         "rule": "repo.entrypoint_execs",
@@ -566,24 +796,26 @@
         "violations": 0,
         "deferred": false,
         "inert": false,
-        "inert_reason": ""
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
       }
     ],
     "summary": {
-      "PASS": 49,
-      "FAIL": 0,
+      "PASS": 56,
+      "FAIL": 3,
       "XFAIL": 0,
       "XPASS": 0,
       "INERT": 5
     }
   },
   "summary": {
-    "PASS": 56,
-    "FAIL": 0,
+    "PASS": 62,
+    "FAIL": 3,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 5
+    "INERT": 6
   },
-  "commit": "957770173f441c5553982e7d602e4c6b46779f57",
-  "generated_at": "2026-10-02T14:51:09Z"
+  "commit": "906160556138950332d8245a8e9da2abd97772fa",
+  "generated_at": "2026-10-10T19:03:06Z"
 }

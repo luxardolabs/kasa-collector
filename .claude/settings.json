@@ -15,10 +15,6 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/no-golden-edit.py\""
-          },
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/no-test-weakening.py\""
           }
         ]
       },
@@ -61,6 +57,10 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/no-suppression.py\""
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/no-test-weakening.py\""
           }
         ]
       },
@@ -89,7 +89,16 @@
         ]
       },
       {
-        "matcher": "mcp__luxpm__luxpm_create_activity|mcp__luxpm__luxpm_log_work|mcp__luxpm__luxpm_add_comment|mcp__luxpm__luxpm_update_issue|mcp__luxpm__luxpm_link_commits|mcp__luxpm__luxpm_link_commit",
+        "matcher": "mcp__luxpm__luxpm_semantic_search|mcp__luxpm__luxpm_list_issues|mcp__luxpm__luxpm_create_issue",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/luxpm-search-mark.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__luxpm__luxpm_log_activity|mcp__luxpm__luxpm_create_activity|mcp__luxpm__luxpm_log_work|mcp__luxpm__luxpm_add_comment|mcp__luxpm__luxpm_update_issue|mcp__luxpm__luxpm_link_commits|mcp__luxpm__luxpm_link_commit",
         "hooks": [
           {
             "type": "command",

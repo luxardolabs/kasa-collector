@@ -9,6 +9,7 @@ import logging
 
 import pytest
 
+from app.core.config import Config
 from app.storage.influxdb import InfluxDBStorage
 
 
@@ -230,3 +231,26 @@ class TestProcessSysinfo:
             set(p._fields.keys()) for p in s.captured if p._name == "sysinfo_child"
         ]
         assert all("id" not in fields for fields in child_fields)
+
+
+@pytest.mark.unit
+class TestFileSink:
+    """The .jsonl side-channel honours KASA_COLLECTOR_WRITE_TO_FILE (off by default)."""
+
+    _DATA = {"10.0.0.5": {"emeter": {"power_mw": 1000}, "alias": "Plug"}}
+
+    async def test_writes_nothing_when_disabled(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(Config, "KASA_COLLECTOR_WRITE_TO_FILE", False)
+        monkeypatch.setattr(Config, "KASA_COLLECTOR_OUTPUT_DIR", str(tmp_path / "out"))
+        s = object.__new__(InfluxDBStorage)
+        s.logger = logging.getLogger("test")
+        await s._append_to_file(self._DATA)
+        assert not (tmp_path / "out").exists()
+
+    async def test_appends_jsonl_when_enabled(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(Config, "KASA_COLLECTOR_WRITE_TO_FILE", True)
+        monkeypatch.setattr(Config, "KASA_COLLECTOR_OUTPUT_DIR", str(tmp_path))
+        s = object.__new__(InfluxDBStorage)
+        s.logger = logging.getLogger("test")
+        await s._append_to_file(self._DATA)
+        assert (tmp_path / "emeter_Plug.jsonl").read_text().count("\n") == 1

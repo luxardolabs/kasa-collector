@@ -1,5 +1,14 @@
 #!/bin/sh
 # luxlint: REQUIRED fleet secret guard — last net before anything goes public.
+# No Docker (an iOS app's Mac): the luxios checkout's native push gate, the same fleet config.
+if ! docker info >/dev/null 2>&1; then  # no Docker CLI, or no daemon it can reach
+  lx=$(git config --get luxios.path || true)
+  if [ -n "$lx" ] && [ -f "$lx/scripts/privacy.py" ]; then
+    pushed=$(cat)
+    printf '%s' "$pushed" | python3 "$lx/scripts/privacy.py" pre-push "$1" "$2" || exit 1
+    exit 0
+  fi
+fi
 make -s gitleaks || exit 1
 # Guard pins: ADVISORY here (a stale pin is reversible; a leaked secret is not).
 if make -n guard-version-check >/dev/null 2>&1; then

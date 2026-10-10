@@ -568,6 +568,8 @@ class InfluxDBStorage:
 
         Files are appended to, not overwritten, creating a historical log.
         """
+        if not Config.KASA_COLLECTOR_WRITE_TO_FILE:
+            return
         try:
             output_dir = Config.KASA_COLLECTOR_OUTPUT_DIR
             os.makedirs(output_dir, exist_ok=True)

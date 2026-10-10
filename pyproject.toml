@@ -44,8 +44,8 @@ packages = ["app"]
 [tool.poetry]
 package-mode = false
 
-# The dev group exists for ONE consumer: the pytest suite (Dockerfile.test installs
-# `--with dev`). ruff, mypy and the types-* stubs are deliberately NOT here — since the
+# The dev group exists for ONE consumer: the pytest suite (the Dockerfile's `test` stage
+# installs `--with dev`; `coverage` is what `make test` measures branch coverage with). ruff, mypy and the types-* stubs are deliberately NOT here — since the
 # mount-only migration, luxlint runs ruff and mypy inside its own pinned image against the
 # mounted repo, so a copy in this group is never invoked by any make target and is invisible
 # to `make mypy` (that run resolves only against luxlint's baked typed-dependency union).
@@ -55,6 +55,7 @@ package-mode = false
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.1.1"
 pytest-asyncio = "^1.4.0"
+coverage = "^7.10"
 
 [build-system]
 requires = ["hatchling"]
@@ -68,6 +69,6 @@ build-backend = "hatchling.build"
 
 # The pytest configuration is likewise owned by luxlint (test.no_local_pytest_config)
 # and is NOT kept here — a repo-local pytest config is exactly the drift that check
-# flags. The canonical config runs as an in-repo tail (like mypy): `make test` does
-# `luxlint --emit-config pytest` then `pytest -c <it>`. See .luxlint.toml / test-suite
+# flags. `make test` (luxarch's test block) emits it per run (`luxlint --emit-config
+# pytest`) into a throwaway directory and runs `pytest -c <it>`. See .luxlint.toml / test-suite
 # playbook (`luxlint --playbook test-suite`).

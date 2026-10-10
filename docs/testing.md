@@ -4,10 +4,12 @@ Everything runs in containers — no host Python, Poetry, or dependencies requir
 
 ## Unit tests + lint
 
-Lint and test are decoupled from the `:dev` deploy image (per the fleet Build & Deploy Standard — a check built `FROM :dev` inherits a stale artifact and goes quietly false). Each ingredient stays fresh on its own: ruff and mypy run mount-only in the pinned luxlint image (which bakes the fleet's typed dependencies), and pytest in a lean image built from `poetry.lock` (`Dockerfile.test`, rebuilt only when the lock changes) with the working tree over-mounted — so tests always run against current source, never a bake.
+Lint and test are decoupled from the `:dev` deploy image (per the fleet Build & Deploy Standard — a check built `FROM :dev` inherits a stale artifact and goes quietly false). Each ingredient stays fresh on its own: ruff and mypy run mount-only in the pinned luxlint image (which bakes the fleet's typed dependencies), and pytest runs in the Dockerfile's `test` stage (production's `base` plus the dev group), rebuilt from source on every `make test` with the working tree mounted read-only — so tests run on the interpreter, tzdata and venv production ships, against current source.
+
+`make test` is luxarch's emitted test block. It starts a **real InfluxDB** (`kasa_test_influxdb`, compose profile `test`) in a compose project of its own per run — no published ports, tmpfs storage, torn down pass or fail — and points `KASA_COLLECTOR_INFLUXDB_*` at it, so `tests/test_influx_integration.py` writes through the collector's own async client and reads the points back. Branch coverage is measured with coverage.py and ratcheted against `[test].coverage_min` in `.luxlint.toml`: raise the floor as coverage rises, never lower it.
 
 ```bash
-make test    # pytest (lock-keyed image, source over-mounted)
+make test    # pytest in the `test` stage, real InfluxDB, coverage ratchet
 make lint    # luxlint ruff/format (mount-only)
 make mypy    # luxlint --mypy (mount-only)
 make check   # the fleet gate: pins, lint, mypy, test, arch, audit, secret scan

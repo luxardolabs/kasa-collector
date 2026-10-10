@@ -2,11 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-<!-- luxarch:claude-pointer asset v4 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
+<!-- luxarch:claude-pointer asset v7 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
 
 ## How to work here (fleet conduct — read the standard, not just this block)
 
 **`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD` — read it in full before your first change.** It is the one home for *how* agents work in this fleet. This block is a pointer plus the handful of rules that get broken most; it is not a summary and does not replace reading it.
+
+**Run `/fleet-start` at the start of every session and after every compact.** It rehydrates from LuxPM and restates the session rules.
 
 **Report the result, not the mountain.** No "heavy", "multi-hour", "the big one", no narrating difficulty. Done + next in one line, with numbers.
 
@@ -15,9 +17,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Ask** — deleting anything; changing scope; a deferral/allowlist/exemption; publishing outward (pushing another repo, a force-push, a history rewrite); a genuine product fork where the choice is taste, not correctness.
 - **Do it** — aligning code to a ratified standard or a guard red; anything you have evidence for that is reversible in one commit. The standard already decided; say what you did.
 
+**Work the guard reds in `luxarch --plan` order. Never ask which family or sweep is next.** The order is decided. An escalation covers ONE site: its family keeps going.
+
+**An owner hold is exactly as wide as the owner said.** "Hold off on X" excludes X and nothing else. It is not permission to pause, ask, or check in about anything outside X. Skip the held family, say so in one line, and keep burning down the rest.
+
+**End every turn that worked guard reds with `reds: N (was M)`**, plus the held families by name. A turn that ends on a question while N > 0, outside an ask-class, is the failure this block exists to stop.
+
 When you do ask: **one decision per message**, the evidence that makes it answerable, your recommendation stated as one, and a question answerable in one word. **A recommendation that ends in a menu is not a recommendation** — if you rejected the alternatives, re-offering them asks the owner to redo your analysis.
 
-**Use the fleet skills; don't improvise the procedure.** `/wrap-up` before you call anything done (tests, every red in touched files, docs, gate, LuxPM closed out, all with evidence). `/pin-bump` to upgrade the guards. `/escalate` when a guard is wrong. `/release` to cut a release.
+**Use the fleet skills; don't improvise the procedure.** `/fleet-start` to open a session. `/wrap-up` before you call anything done (tests you saw fail before the fix, every red in touched files, docs, gate, LuxPM closed out, all with evidence). `/adversarial` to have an independent agent attack a change touching auth, tenancy, data, money, secrets or deploys. `/pin-bump` to upgrade the guards. `/escalate` when a guard is wrong. `/release` to cut a release.
 
 **You touched it, you own it.** Edit a file for any reason and it has a mypy, ruff or luxarch red: fix every one in that file, not just yours. Never spend time proving a red predates you; fix it. Test what you changed first. **Before fixing any mypy red, read `luxlint --playbook mypy-sweep` in full.**
 
@@ -49,9 +57,11 @@ make dev-deploy
 # Bring the dev stack up at whatever .env.dev pins — host networking
 make dev-up          # make dev-logs / make dev-ps / make dev-down
 
-# Release: scans the candidate first (release-scan: luxaudit --image-archive refuses the push
-# on any fixable HIGH/CRITICAL), then multi-arch :VERSION + :sha-<commit> (+ :latest alias) to
-# the private registry; prod pins TAG=<VERSION> in .env.prod. dev-deploy scans before it pushes too.
+# Release: refuses an already-released VERSION, pushes the multi-arch build ONCE as an unpinned
+# :candidate-<commit>, pulls + scans it (luxaudit --image-archive refuses on any fixable
+# HIGH/CRITICAL), then `imagetools create`s :VERSION + :sha-<commit> (+ :latest alias) FROM it —
+# the tags name exactly the scanned bits. prod pins TAG=<VERSION> in .env.prod. dev-deploy scans
+# before it pushes too.
 # `make audit`'s image leg is a MONITOR of what the registry already holds — it clears by releasing.
 make release
 # Promote the released image to GHCR (ghcr.io/luxardolabs/kasa-collector) — run `make release` first
@@ -82,8 +92,10 @@ make test-e2e          # builds the images, runs by tag, pass/fail, self-tears-d
 # Compose never builds — `make` builds each image and compose runs it by pinned tag.
 
 # Unit tests + lint. All decoupled from :dev (FLEET-BUILD-DEPLOY-STANDARD): ruff AND mypy
-# are mount-only luxlint (the repo installs nothing), pytest runs in a lean image built
-# from poetry.lock (Dockerfile.test), rebuilt only when the lock changes.
+# are mount-only luxlint (the repo installs nothing). `make test` is luxarch's emitted test
+# block: the Dockerfile's `test` stage (production `base` + dev group) built from source, a
+# REAL InfluxDB in an isolated per-run compose project (profile `test`), branch coverage
+# ratcheted against [test].coverage_min in .luxlint.toml.
 make test              # pytest    make lint   # ruff    make mypy   # types
 ```
 
@@ -137,7 +149,7 @@ All configuration is done through environment variables. Key settings include:
 - The application requires host networking for device discovery
 - Data is stored both in InfluxDB and optionally as `.jsonl` files in `/app/output` (bind-mounted)
 - Docker health check included for container orchestration (no web server required)
-- Tests: pytest suite under `tests/`; `make test` runs it in a lean image built from `poetry.lock` (`Dockerfile.test`) with the source over-mounted — never `FROM :dev`
+- Tests: pytest suite under `tests/`; `make test` (luxarch's test block) runs it in the Dockerfile's `test` stage — production's `base` plus the dev group, rebuilt from source every run, never `FROM :dev` — with the source mounted read-only, against a real throwaway InfluxDB (`kasa_test_influxdb`, compose profile `test`) started in its own per-run compose project and torn down pass or fail. Branch coverage is ratcheted against `[test].coverage_min` in `.luxlint.toml`
 - Multi-platform builds support amd64 and arm64 architectures (`make release`), on the ONE shared fleet buildx builder (`luxardo-builder`, GC-capped) — never a per-project builder, which holds an un-deduplicated cache plus an idle buildkit daemon
 - Build backend is **hatchling**, versioned dynamically from `VERSION`; Poetry stays the dependency manager in non-package mode (`poetry install --no-root` in both Dockerfiles, so the backend is never exercised at image-build time)
 - Grafana dashboards are pre-configured in the `/grafana` directory

@@ -1,4 +1,4 @@
-<!-- luxarch:changelog-guide asset v1 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit changelog-guide`. -->
+<!-- luxarch:changelog-guide asset v2 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit changelog-guide`. -->
 
 # Change Log Writing Guide (INTERNAL)
 
@@ -55,5 +55,5 @@ Omit **Known reds** when `make check` is green. Include it only when the release
 
 ## Per-repo parameters
 
-- `{PREFIX}` — your LuxPM project's issue prefix (e.g. `BOUTIQUE`, `LUXWX`).
+- `{PREFIX}` — your LuxPM project's issue prefix (e.g. `SHOP`, `APP`).
 - `{version}` / `{date}` — the `VERSION` file's value (CalVer `YYYY.0M.MICRO` for apps) and the cut date.

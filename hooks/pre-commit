@@ -3,14 +3,27 @@
 # 1) Commit identity. Commits must match this repo's declared identity
 #    ([repo].commit_identity; default = the luxardolabs fleet account). A `-c user.email=…`
 #    override or a wrong repo-local email UNLINKS the commit from the account — block it here.
-author=$(git var GIT_AUTHOR_IDENT 2>/dev/null)
-case "$author" in
-  *"214140984+luxardolabs@users.noreply.github.com"*) ;;
-  *)
-    echo "commit BLOCKED — author is: $author" >&2
-    echo "Commit as luxardolabs (your GLOBAL git config)." >&2
-    echo "Do NOT override with -c user.email or a repo-local email — set your GLOBAL git config." >&2
-    exit 1 ;;
-esac
-# 2) fleet secret guard.
+#    Author AND committer, by the EMAIL alone: matching a substring of the whole ident let a name
+#    spelled like the address, or a fleet --author over a personal committer, through.
+for who in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
+  ident=$(git var "$who" 2>/dev/null)
+  email=${ident##*<}; email=${email%%>*}
+  case "$email" in
+    "214140984+luxardolabs@users.noreply.github.com") ;;
+    *)
+      echo "commit BLOCKED — $who is: $ident" >&2
+      echo "Commit as luxardolabs (your GLOBAL git config)." >&2
+      echo "Do NOT override with -c user.email or a repo-local email — set your GLOBAL git config." >&2
+      exit 1 ;;
+  esac
+done
+# 2) fleet secret guard: `make gitleaks-staged`, in Docker. A machine with no Docker (the Mac an
+#    iOS app nested in this repo is built on) runs it natively instead, through the luxios
+#    checkout that app pins (git config luxios.path): native gitleaks, the same fleet config.
+if ! docker info >/dev/null 2>&1; then  # no Docker CLI, or no daemon it can reach
+  lx=$(git config --get luxios.path || true)
+  if [ -n "$lx" ] && [ -f "$lx/scripts/privacy.py" ]; then
+    exec python3 "$lx/scripts/privacy.py" pre-commit
+  fi
+fi
 exec make -s gitleaks-staged

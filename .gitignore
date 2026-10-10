@@ -48,9 +48,7 @@ Makefile.local
 # --- luxlint local artifacts (canonical config emitted for the editor; transient tail cfg) ---
 .ruff.local.toml
 .luxlint.mypy.ini
-.luxlint.pytest.ini
 .luxlint.gitleaks.toml
-.test-image.stamp
 
 # --- Claude local settings (settings.json IS committed; local is not) ---
 .claude/settings.local.json
@@ -61,3 +59,6 @@ Makefile.local
 .claude/.luxpm-ledger.json
 .claude/settings.json.bak
 .claude/.push-hold
+
+# Claude Code hook session state (luxarch --emit hooks)
+.claude/.luxpm-searched.json

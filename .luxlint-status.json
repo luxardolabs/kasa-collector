@@ -1,6 +1,6 @@
 {
   "guard": "luxlint",
-  "guard_version": "0.60.1",
+  "guard_version": "0.63.0",
   "repo": "/repo",
   "source": [
     "app",
@@ -138,6 +138,14 @@
       "inert_reason": "no relational data layer \u2014 there is no test database to isolate and no dev/prod database a suite could accidentally reach, so the invariant was never evaluated."
     },
     {
+      "rule": "test.coverage_floor_set",
+      "status": "PASS",
+      "since": "0.62.0",
+      "violations": 0,
+      "sites": [],
+      "deferred": false
+    },
+    {
       "rule": "test.no_handrolled_cleanup",
       "status": "INERT",
       "since": "0.36.0",
@@ -180,13 +188,13 @@
     }
   ],
   "summary": {
-    "PASS": 18,
+    "PASS": 19,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
     "INERT": 3
   },
   "mypy": "separate: `luxlint --mypy` ([mypy].baseline ratchet)",
-  "commit": "957770173f441c5553982e7d602e4c6b46779f57",
-  "generated_at": "2026-10-02T14:51:09Z"
+  "commit": "906160556138950332d8245a8e9da2abd97772fa",
+  "generated_at": "2026-10-10T19:03:06Z"
 }

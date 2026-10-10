@@ -33,3 +33,8 @@ evidence = "Standalone device-emulator server started as a container CMD; the on
 # (PEP 695 type aliases, etc.) is understood, not rejected against the fleet floor.
 [python]
 target = "py314"
+
+# The coverage floor `make test` (luxarch's test block) ratchets against: branch coverage, whole
+# percent, measured at 49% when set (2026-10-10). Raise it as coverage rises; never lower it.
+[test]
+coverage_min = 49
