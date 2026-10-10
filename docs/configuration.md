@@ -83,7 +83,7 @@ Credentials are masked in the startup configuration log.
 | `LOG_LEVEL`                                 | `INFO`  | Root level, for every logger the three settings above do not name (e.g. `python-kasa` stays at `WARNING`).              |
 | `LOG_MODULE_LEVELS`                         | —       | JSON object of per-logger levels applied on top, e.g. `{"KasaAPI": "DEBUG"}`, to turn one logger up without a redeploy. |
 
-Each JSON line carries `timestamp`, `level`, `logger`, `message`, `service` (`kasa-collector`), `version`, the code location, and any `extra=` fields under `attributes`. `KASA_COLLECTOR_STRUCTURED_LOGS` is gone: JSON is always on.
+Each JSON line carries `timestamp`, `level`, `logger`, `message`, `service` (`kasa-collector`), `version`, the code location, and any `extra=` fields under `attributes`. `KASA_COLLECTOR_STRUCTURED_LOGS` is gone: JSON is always on once the collector starts. A warning about an invalid setting is raised while settings load, before logging is configured, so it prints as a plain line.
 
 ## Output
 

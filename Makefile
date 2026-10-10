@@ -209,7 +209,7 @@ guard-clean-tree:
 define scan_candidate
 	@set -e; T=$$(mktemp); trap 'rm -f "$$T"' EXIT INT TERM; \
 	docker save $(1) -o "$$T"; chmod 644 "$$T"; \
-	docker run --rm -v $(PWD):/repo -v luxaudit-cache:/root/.cache/trivy -v "$$T":/candidate.tar:ro \
+	docker run --rm -v $(CURDIR):/repo -v luxaudit-cache:/root/.cache/trivy -v "$$T":/candidate.tar:ro \
 	  $(LUXAUDIT_IMAGE) --image-archive /candidate.tar --image-label $(2)
 endef
 
@@ -245,6 +245,7 @@ endef
 # registry is checked FIRST — a stack pinned to a name the registry never held fails only at the
 # next restart, when there is nothing to re-pull.
 dev-pin: ## Point the dev stack at an ALREADY-PUBLISHED tag and restart it (rollback path)
+	@case "$(TAG)" in candidate-*) echo "REFUSING: $(TAG) is a release candidate, not a published build (it may have failed its scan)"; exit 1;; esac
 	@docker manifest inspect $(IMAGE):$(TAG) >/dev/null 2>&1 || \
 	  { echo "$(IMAGE):$(TAG) is not in the registry — publish it before pinning a stack to it"; exit 1; }
 	@$(call pin_env_tag,.env.dev,$(TAG))
@@ -262,6 +263,14 @@ harness-build: ## Build the fake-device emulator image (compose never builds —
 # the release tags created FROM it with `imagetools create`, so they name exactly the scanned bits.
 # A released version is never re-pushed, not even from its own commit (prod pins it): bump VERSION.
 CANDIDATE_IMAGE := $(IMAGE):candidate-$(COMMIT)
+comma := ,
+# One pull + scan per platform: a plain `docker pull` of the manifest list fetches the host's
+# architecture only, so the other half of the release would ship unscanned.
+define scan_platform
+	docker pull --platform $(1) $(CANDIDATE_IMAGE)
+	$(call scan_candidate,$(CANDIDATE_IMAGE),$(VERSION_IMAGE)@$(1))
+
+endef
 
 release: guard-clean-tree buildx-setup ## Build + scan + push :$(VERSION) + :sha-<commit> (multi-arch, alias :latest) to the private registry
 	@if docker manifest inspect $(VERSION_IMAGE) >/dev/null 2>&1; then \
@@ -280,10 +289,14 @@ release: guard-clean-tree buildx-setup ## Build + scan + push :$(VERSION) + :sha
 	fi
 	docker buildx build $(NO_CACHE_FLAG) --target base --platform $(PLATFORMS) -f Dockerfile $(BUILD_ARGS) \
 		-t $(CANDIDATE_IMAGE) --push .
-	docker pull $(CANDIDATE_IMAGE)
-	$(call scan_candidate,$(CANDIDATE_IMAGE),$(VERSION_IMAGE))
-	docker buildx imagetools create -t $(VERSION_IMAGE) -t $(SHA_IMAGE) -t $(LATEST_ALIAS) $(CANDIDATE_IMAGE)
-	@echo "Pushed $(VERSION_IMAGE) + $(SHA_IMAGE) + $(LATEST_ALIAS) (from the scanned $(CANDIDATE_IMAGE))"
+	$(foreach p,$(subst $(comma), ,$(PLATFORMS)),$(call scan_platform,$(p)))
+	docker buildx imagetools create -t $(VERSION_IMAGE) -t $(LATEST_ALIAS) $(CANDIDATE_IMAGE)
+	@# :sha-<commit> is immutable too: `make dev-deploy` may already have published it for this
+	@# commit (and .env.dev pins it), so it is created only when the registry does not hold it.
+	@if docker manifest inspect $(SHA_IMAGE) >/dev/null 2>&1; then \
+	  echo "$(SHA_IMAGE) already published; left as is"; \
+	else docker buildx imagetools create -t $(SHA_IMAGE) $(CANDIDATE_IMAGE); fi
+	@echo "Pushed $(VERSION_IMAGE) + $(LATEST_ALIAS) (+ $(SHA_IMAGE) if new), from the scanned $(CANDIDATE_IMAGE)"
 
 # The public promotion copies the released manifest list by digest, so it ships the bits `release`
 # scanned. It refuses a version GHCR already holds: a re-run would overwrite what users pulled.
@@ -298,6 +311,14 @@ release-public: guard-clean-tree ## Promote the released :$(VERSION) + :latest (
 	esac
 	@docker buildx imagetools inspect $(VERSION_IMAGE) >/dev/null 2>&1 \
 		|| { echo "$(VERSION_IMAGE) not found — run 'make release' before 'make release-public'"; exit 1; }
+	@# Everything gh-release needs, checked BEFORE the public push: once GHCR holds the version a
+	@# re-run refuses, so a missing note or tag found afterwards could not be recovered by re-running.
+	@test -f app/release_notes/$(VERSION).md \
+	  || { echo "REFUSING: app/release_notes/$(VERSION).md missing — write it before publishing"; exit 1; }
+	@git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null \
+	  || { echo "REFUSING: tag v$(VERSION) does not exist — tag before publishing"; exit 1; }
+	@command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 \
+	  || { echo "REFUSING: gh is not installed or not authenticated (gh auth login)"; exit 1; }
 	docker buildx imagetools create \
 		-t $(PUBLIC_IMAGE):$(VERSION) -t $(PUBLIC_IMAGE):latest \
 		$(VERSION_IMAGE)

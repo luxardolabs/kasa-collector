@@ -58,10 +58,11 @@ make dev-deploy
 make dev-up          # make dev-logs / make dev-ps / make dev-down
 
 # Release: refuses an already-released VERSION, pushes the multi-arch build ONCE as an unpinned
-# :candidate-<commit>, pulls + scans it (luxaudit --image-archive refuses on any fixable
-# HIGH/CRITICAL), then `imagetools create`s :VERSION + :sha-<commit> (+ :latest alias) FROM it —
-# the tags name exactly the scanned bits. prod pins TAG=<VERSION> in .env.prod. dev-deploy scans
-# before it pushes too.
+# :candidate-<commit>, pulls + scans it ONCE PER PLATFORM (luxaudit --image-archive refuses on any
+# fixable HIGH/CRITICAL), then `imagetools create`s :VERSION (+ :latest alias, + :sha-<commit>
+# unless dev-deploy already published it) FROM it — the tags name exactly the scanned bits. prod
+# pins TAG=<VERSION> in .env.prod. dev-deploy scans before it pushes too; dev-pin refuses a
+# candidate-* tag (it may have failed its scan).
 # `make audit`'s image leg is a MONITOR of what the registry already holds — it clears by releasing.
 make release
 # Promote the released image to GHCR (ghcr.io/luxardolabs/kasa-collector) — run `make release` first

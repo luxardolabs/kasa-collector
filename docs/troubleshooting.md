@@ -162,6 +162,10 @@ If hostnames appear wrong or stale, drop the TTL or disable caching temporarily 
 
 ## Docker and health
 
+### `influx` CLI inside the bundled InfluxDB asks for an org or token
+
+In releases after 2026.10.0 the bundled `kasa_influxdb` keeps `/etc/influxdb2` (the CLI's stored config) on the named volume `kasa_influxdb_config`. On a stack that existed before, the first start mounts it empty: your data is untouched, but `docker exec kasa_influxdb influx …` no longer finds the token and org that setup stored. Pass them explicitly (`--org "$INFLUX_ORG" --token "$INFLUX_TOKEN"`), or recreate the CLI config once with `influx config create`.
+
 ### Container shows unhealthy
 
 The health check (`python -m app.health.check`) reports healthy when data is flowing. Its behavior depends on file output:
