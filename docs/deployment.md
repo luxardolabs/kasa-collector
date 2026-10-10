@@ -37,10 +37,10 @@ cp .env.example .env.prod   # then edit with your real values
 ```bash
 docker pull ghcr.io/luxardolabs/kasa-collector:latest
 # or pin a release
-docker pull ghcr.io/luxardolabs/kasa-collector:2026.10.1
+docker pull ghcr.io/luxardolabs/kasa-collector:2026.10.2
 ```
 
-`:latest` tracks the newest release; pin the version tag (`:2026.10.1`) for reproducible deploys.
+`:latest` tracks the newest release; pin the version tag (`:2026.10.2`) for reproducible deploys.
 
 ## Collector-only deployment
 
@@ -68,7 +68,7 @@ services:
 
 ```sh
 REGISTRY=ghcr.io             # or your private registry
-TAG=2026.10.1                # the released version — pinned, never :latest
+TAG=2026.10.2                # the released version — pinned, never :latest
 ENV_FILE=.env.prod
 COMPOSE_PROFILES=collector   # the collector alone; required, an unset value starts nothing
 ```
