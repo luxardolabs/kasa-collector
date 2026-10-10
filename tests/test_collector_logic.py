@@ -154,8 +154,8 @@ class TestPollEvidenceOutranksDiscovery:
     same segment replied -- while continuing to serve every poll. The collector deleted
     them anyway. One lost its last reading THREE SECONDS before being removed:
 
-        10.10.7.68  last successful data point  04:59:10Z
-        10.10.7.68  deleted as "missing"        04:59:13Z
+        192.0.2.68  last successful data point  04:59:10Z
+        192.0.2.68  deleted as "missing"        04:59:13Z
 
     Discovery absence is an inference; a successful poll is direct evidence. The
     threshold work in KASACOLLEC-65 could not help -- it only sets how many rounds to
@@ -683,16 +683,20 @@ class TestManualHostKeyedByResolvedAddress:
         async def fake_get_device(entry, user, pw):
             # get_device resolves the name up front and connects on the address,
             # so device.host is the resolved IPv4 on every path.
-            return SimpleNamespace(alias="Fridge", host="10.50.0.100", has_emeter=False)
+            return SimpleNamespace(
+                alias="Fridge", host="198.51.100.100", has_emeter=False
+            )
 
         monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
         dm = self._dm(monkeypatch, tmp_path)
         dm.device_hosts = ["kasa-backroom-fridge.example.com"]
 
         await dm.reconcile_manual_devices()
-        assert "10.50.0.100" in dm.devices  # keyed by address
+        assert "198.51.100.100" in dm.devices  # keyed by address
         assert "kasa-backroom-fridge.example.com" not in dm.devices
-        assert dm.manual_addresses["kasa-backroom-fridge.example.com"] == "10.50.0.100"
+        assert (
+            dm.manual_addresses["kasa-backroom-fridge.example.com"] == "198.51.100.100"
+        )
 
     async def test_resolved_manual_host_is_not_reattempted(self, monkeypatch, tmp_path):
         # reconcile must recognise the host as registered via the mapping, or it
@@ -703,7 +707,9 @@ class TestManualHostKeyedByResolvedAddress:
 
         async def fake_get_device(entry, user, pw):
             attempts.append(entry)
-            return SimpleNamespace(alias="Fridge", host="10.50.0.100", has_emeter=False)
+            return SimpleNamespace(
+                alias="Fridge", host="198.51.100.100", has_emeter=False
+            )
 
         monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
         dm = self._dm(monkeypatch, tmp_path)
@@ -725,8 +731,10 @@ class TestManualHostKeyedByResolvedAddress:
         monkeypatch.setattr(config.Config, "KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD", 1)
         dm = self._dm(monkeypatch, tmp_path)
         dm.device_hosts = ["kasa-backroom-fridge.example.com"]
-        dm.manual_addresses = {"kasa-backroom-fridge.example.com": "10.50.0.100"}
-        dm.devices = {"10.50.0.100": SimpleNamespace(alias="F", host="10.50.0.100")}
+        dm.manual_addresses = {"kasa-backroom-fridge.example.com": "198.51.100.100"}
+        dm.devices = {
+            "198.51.100.100": SimpleNamespace(alias="F", host="198.51.100.100")
+        }
 
         await dm.remove_missing_devices({})  # never appears in a broadcast
-        assert "10.50.0.100" in dm.devices  # protected
+        assert "198.51.100.100" in dm.devices  # protected

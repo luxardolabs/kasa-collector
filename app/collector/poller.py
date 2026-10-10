@@ -29,6 +29,7 @@ from kasa.iot import IotStrip
 from app.collector.dns_cache import get_hostname_cached
 from app.collector.utils import DeviceContext, async_retry
 from app.core.config import Config
+from app.health import heartbeat
 from app.storage.influxdb import InfluxDBStorage
 
 
@@ -178,6 +179,9 @@ class Poller:
                 write_failed=outcome["write_failed"],
                 duration=elapsed,
             )
+            # The container HEALTHCHECK's only signal: this run stored data this cycle.
+            if outcome["ok"] > 0:
+                heartbeat.beat()
 
             # Log a summary of the fetch cycle
             if (

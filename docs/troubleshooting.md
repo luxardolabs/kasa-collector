@@ -168,10 +168,9 @@ Since 2026.10.1 the bundled `kasa_influxdb` keeps `/etc/influxdb2` (the CLI's st
 
 ### Container shows unhealthy
 
-The health check (`python -m app.health.check`) reports healthy when data is flowing. Its behavior depends on file output:
+The health check (`python -m app.health.check`) reports healthy only while **this run** of the collector is storing data. After every energy-poll cycle that stores at least one device's reading, the collector writes a heartbeat inside the container (`/tmp/kasa-collector.heartbeat`). The check needs that heartbeat to be younger than `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` (default 120s) and written by the container's current process, so a restarted container can't inherit its predecessor's verdict. File output on or off makes no difference.
 
-- **`KASA_COLLECTOR_WRITE_TO_FILE=true`** — it checks that the newest `emeter_*.jsonl` in the output dir is non-empty and fresher than `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` (default 120s). This is the reliable signal.
-- **File output disabled** — it falls back to a process-liveness check.
+Through 2026.10.1 the check trusted the newest `.jsonl` in the output directory (a persistent mount, so a file left by the previous build counted), and with file output off it was always healthy.
 
 Inspect and tune:
 
@@ -180,7 +179,7 @@ docker inspect kasa-collector | jq '.[0].State.Health'
 KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE=180   # default 120 seconds
 ```
 
-If it's unhealthy with file output on, the collector isn't producing data — check the log for discovery/auth/InfluxDB errors.
+If it's unhealthy, no device's reading has been stored for that long: check the log for discovery, authentication or InfluxDB errors. The health output says which case it is: no heartbeat yet, a stale one, or one left by a previous run.
 
 ### Timezone crash on device update ("ZoneInfoNotFoundError")
 

@@ -29,6 +29,12 @@ htmlcov/
 # Runtime output (bind-mounted at runtime, never baked)
 output/
 
+# Release documents: repo history, not runtime. The runtime COPYs `app/` whole, so without
+# these lines every published image carried every change log, including any detail a later
+# scrub removed from the repo.
+app/change_logs/
+app/release_notes/
+
 # Docs / dashboards (not needed in the runtime image)
 docs/
 grafana/

@@ -1,158 +1,76 @@
 #!/usr/bin/env python3
 """Docker health check script for Kasa Collector.
 
-This standalone script verifies the Kasa Collector container is healthy
-by checking if data collection is occurring properly. It's designed to be
-used as a Docker HEALTHCHECK command.
+This standalone script is the container's HEALTHCHECK (`python -m app.health.check`). It is
+healthy only when THIS run of the collector is storing data: the poller writes a heartbeat
+(`app.health.heartbeat`) after every emeter cycle that stored data, and the check requires
+that heartbeat to be fresh and written by the current PID 1.
 
-Health check strategies:
-    - When file writing is enabled: Checks data file freshness
-    - When file writing is disabled: Verifies process is alive
-
-The script provides detailed status messages to help diagnose issues
-and includes version information for debugging.
+It used to check something weaker. With file output off it reported healthy unconditionally,
+and with it on it trusted the newest `.jsonl` in the output directory, which is a persistent
+bind mount, so a file the previous build wrote made a new build "healthy" before it collected
+anything. `make smoke` passed a container that collected nothing that way.
 
 Exit codes:
-    0 - Healthy: Application is running and collecting data
-    1 - Unhealthy: Data is stale or process has issues
+    0 - Healthy: this process stored data within KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE
+    1 - Unhealthy: no heartbeat, a stale one, or one left by a previous run
 
 Configuration:
-    KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE: Maximum age for data files (default: 120s)
-    KASA_COLLECTOR_WRITE_TO_FILE: Whether file writing is enabled
-    KASA_COLLECTOR_OUTPUT_DIR: Directory containing data files
+    KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE: Maximum heartbeat age in seconds (default: 120)
+    KASA_COLLECTOR_HEARTBEAT_FILE: Heartbeat path (default: /tmp/kasa-collector.heartbeat)
 """
 
-import asyncio
+import json
 import os
 import sys
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
+import time
 
-# Health check configuration
-MAX_AGE_SECONDS = int(
-    os.getenv("KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE", "120")
-)  # 2 minutes default
-OUTPUT_DIR = os.getenv("KASA_COLLECTOR_OUTPUT_DIR", "output")
+from app.health import heartbeat
+
+MAX_AGE_SECONDS = int(os.getenv("KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE", "120"))
+# A beat's recorded start may trail PID 1's by the import time; it may never precede it by
+# more than the clock-tick rounding of /proc. Anything earlier is a previous run's file.
+_START_TOLERANCE_SECONDS = 1.0
 
 
-def check_recent_data_files() -> tuple[bool, str]:
-    """Verify data collection by checking file freshness.
-
-    Returns:
-        Tuple of (is_healthy, status_message).
-
-    Checks:
-    1. Output directory exists
-    2. Emeter data files are present
-    3. Most recent file is within MAX_AGE_SECONDS
-    4. File is non-empty
-
-    This method is used when KASA_COLLECTOR_WRITE_TO_FILE is enabled,
-    as it provides a reliable way to verify data collection is active.
-    """
-    output_path = Path(OUTPUT_DIR)
-
-    if not output_path.exists():
-        return False, f"Output directory {OUTPUT_DIR} does not exist"
-
-    # Find most recent emeter data file
-    emeter_files = list(output_path.glob("emeter_*.jsonl"))
-
-    if not emeter_files:
-        return False, "No emeter data files found"
-
-    # Get the most recently modified file
-    most_recent_file = max(emeter_files, key=lambda f: f.stat().st_mtime)
-
-    # Check file age
-    # Both sides must be aware, and both in the same zone. Naive `fromtimestamp()` reads a
-    # stored epoch as PROCESS-local and naive `now()` is process-local too, so the freshness
-    # window was only ever correct while the container's TZ matched whatever wrote the file.
-    file_age = datetime.now(UTC) - datetime.fromtimestamp(
-        most_recent_file.stat().st_mtime, UTC
-    )
-
-    if file_age > timedelta(seconds=MAX_AGE_SECONDS):
+def check_heartbeat() -> tuple[bool, str]:
+    """Return (is_healthy, status_message) for the collector's heartbeat."""
+    path = heartbeat.HEARTBEAT_FILE
+    try:
+        age = time.time() - os.stat(path).st_mtime
+        with open(path, encoding="utf-8") as f:
+            started_at = float(json.load(f)["started_at"])
+    except FileNotFoundError:
         return (
             False,
-            f"Most recent data file is {file_age.total_seconds():.0f}s old "
-            f"(max allowed: {MAX_AGE_SECONDS}s)",
+            "no heartbeat yet: no collection cycle has stored data in this run",
+        )
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        return False, f"heartbeat {path} is unreadable: {e}"
+
+    if age > MAX_AGE_SECONDS:
+        return (
+            False,
+            f"last stored data {age:.0f}s ago (max allowed: {MAX_AGE_SECONDS}s)",
         )
 
-    # The file is an append-log of one JSON object per collection cycle, so it is
-    # not a single JSON document — freshness (mtime, checked above) is the real
-    # signal that data is flowing. Just confirm the file isn't empty.
-    if most_recent_file.stat().st_size == 0:
-        return False, f"Data file {most_recent_file.name} is empty"
+    pid1_start = heartbeat.pid1_started_at()
+    if pid1_start is not None and started_at < pid1_start - _START_TOLERANCE_SECONDS:
+        return False, "heartbeat was written by a previous run, not this process"
 
-    return True, f"Healthy - last data update {file_age.total_seconds():.0f}s ago"
-
-
-def check_process_alive() -> tuple[bool, str]:
-    """Basic process liveness check.
-
-    Returns:
-        Tuple of (is_healthy, status_message).
-
-    Attempts to verify the Python process is responsive. This is a
-    fallback method when file writing is disabled. It's less reliable
-    than checking data files but ensures the container doesn't get
-    marked unhealthy when file writing is disabled.
-
-    Note:
-        This is a simplified check. In a containerized environment,
-        if this script runs, the process is generally healthy.
-    """
-    # Check if the asyncio event loop is available (indicates the main app is running).
-    try:
-        asyncio.get_running_loop()
-        return True, "Process healthy - event loop active"
-    except RuntimeError:
-        # No running loop — the main app may not have started yet; healthy during startup.
-        return True, "Process starting - no event loop yet"
+    return True, f"Healthy - last stored data {age:.0f}s ago"
 
 
 def main() -> None:
-    """Execute health check and exit with appropriate code.
-
-    Runs different health checks based on configuration:
-    - If file writing is enabled: Checks data file freshness
-    - If file writing is disabled: Performs basic process check
-
-    Prints detailed status information including:
-    - Overall health status (HEALTHY/UNHEALTHY)
-    - Version and build information
-    - Individual check results
-
-    Exits with code 0 for healthy, 1 for unhealthy.
-    """
-    checks = []
-    all_healthy = True
-
-    # Only check data files if writing to file is enabled
-    if os.getenv("KASA_COLLECTOR_WRITE_TO_FILE", "False").lower() == "true":
-        is_healthy, message = check_recent_data_files()
-        checks.append(f"Data freshness: {message}")
-        all_healthy &= is_healthy
-    else:
-        # If not writing to files, check if process is alive
-        is_healthy, message = check_process_alive()
-        checks.append(f"Process check: {message}")
-        all_healthy &= is_healthy
-
-    # Get version information
+    """Print the verdict with version information and exit 0 (healthy) or 1."""
+    is_healthy, message = check_heartbeat()
     version = os.getenv("KASA_COLLECTOR_VERSION", "unknown")
     build_timestamp = os.getenv("KASA_COLLECTOR_BUILD_TIMESTAMP", "unknown")
 
-    # Print status
-    status = "HEALTHY" if all_healthy else "UNHEALTHY"
-    print(f"Health check: {status}")
+    print(f"Health check: {'HEALTHY' if is_healthy else 'UNHEALTHY'}")
     print(f"Version: {version} (Built: {build_timestamp})")
-    for check in checks:
-        print(f"  - {check}")
-
-    # Exit with appropriate code
-    sys.exit(0 if all_healthy else 1)
+    print(f"  - Collection: {message}")
+    sys.exit(0 if is_healthy else 1)
 
 
 if __name__ == "__main__":

@@ -94,11 +94,12 @@ Each JSON line carries `timestamp`, `level`, `logger`, `message`, `service` (`ka
 
 ## Health check
 
-| Variable                              | Default | Description                                                                                                  |
-| ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
-| `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` | `120`   | Seconds since the last successful collection before the Docker health check reports unhealthy (minimum `1`). |
+| Variable                              | Default                         | Description                                                                                                                             |
+| ------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` | `120`                           | Seconds since the last successful collection before the Docker health check reports unhealthy (minimum `1`).                            |
+| `KASA_COLLECTOR_HEARTBEAT_FILE`       | `/tmp/kasa-collector.heartbeat` | Where the collector records each cycle that stored data, for the health check. Keep it inside the container, never on the output mount. |
 
-The health check runs as `python -m app.health.check` and needs no web server.
+The health check runs as `python -m app.health.check` and needs no web server. It is healthy only on a fresh heartbeat written by the container's current process, whether or not file output is on.
 
 ## Timezone
 

@@ -14,7 +14,7 @@ The application is a small set of cooperating components, each with a single job
 - **Poller** (`app/collector/poller.py`) — the data-collection engine. It runs two independent loops (energy and system info) at different cadences, collecting from all devices concurrently and handing points to storage.
 - **InfluxDB storage** (`app/storage/influxdb.py`) — the persistence layer. It shapes device readings into InfluxDB points with the right measurements and tags and writes them asynchronously.
 - **DNS cache** (`app/collector/dns_cache.py`) — a shared, TTL-based cache for reverse hostname lookups, so frequent polling doesn't repeatedly resolve the same IPs.
-- **Health check** (`app/health/check.py`) — a standalone script (`python -m app.health.check`) used as the Docker `HEALTHCHECK`; it verifies data is actually flowing rather than merely that the process exists.
+- **Health check** (`app/health/check.py`) — a standalone script (`python -m app.health.check`) used as the Docker `HEALTHCHECK`; it is healthy only on a fresh heartbeat that this run writes after each energy-poll cycle that stored data, so it reflects collection, not just a live process.
 
 ## Device discovery
 
