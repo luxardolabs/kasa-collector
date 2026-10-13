@@ -38,7 +38,7 @@ cp .env.example .env.prod   # then edit with your real values
 docker pull ghcr.io/luxardolabs/kasa-collector:2026.10.2
 ```
 
-Every release is published under its version tag only. There is no moving `:latest`: a deployable does not roll, so you always know which bits you run and can roll back to them. (A `:latest` tag published before 2026.10.3 still exists on GHCR but no longer moves; switch to a version tag.)
+Pin a version tag for anything you deploy: a deployable does not roll, so you always know which bits you run and can roll back to them. `:latest` exists for a quick try-out, but for now it stays at 2026.10.2. The release flow does not move it yet; it will track each release again once that lands.
 
 ## Collector-only deployment
 
@@ -230,7 +230,7 @@ spec:
       hostNetwork: true # required for device discovery
       containers:
         - name: kasa-collector
-          image: ghcr.io/luxardolabs/kasa-collector:2026.10.2 # pin a release; there is no moving :latest
+          image: ghcr.io/luxardolabs/kasa-collector:2026.10.2 # pin a release
           envFrom:
             - configMapRef:
                 name: kasa-collector-config
