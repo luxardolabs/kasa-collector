@@ -23,6 +23,59 @@ done
 if ! docker info >/dev/null 2>&1; then  # no Docker CLI, or no daemon it can reach
   lx=$(git config --get luxios.path || true)
   if [ -n "$lx" ] && [ -f "$lx/scripts/privacy.py" ]; then
+  have=$(tr -d '[:space:]' < "$lx/VERSION" 2>/dev/null || true)
+  lux_pinned() {
+    pat='^ *((export|override|private)[[:space:]]+)*LUXIOS_VERSION[[:space:]]*[?:+!]*='
+    ipat='^ *-?s?include[[:space:]]+'
+    lp_t=$1
+    set -- ':/Makefile' ':/*/Makefile' ':/makefile' ':/*/makefile' ':/GNUmakefile' ':/*/GNUmakefile' ':/*.mk'
+    lp_n=0
+    while :; do
+      if [ "$lp_t" = --cached ]; then lp_inc=$(git grep --cached -E "$ipat" -- "$@"); rc=$?
+      else lp_inc=$(git grep -E "$ipat" "$lp_t" -- "$@"); rc=$?; fi
+      [ "$rc" -le 1 ] || { echo "REFUSING: git grep failed, so the luxios pin cannot be read. Never --no-verify." >&2; return 1; }
+      lp_more=0
+      set -f
+      while IFS= read -r l; do
+        [ -n "$l" ] || continue
+        [ "$lp_t" = --cached ] || l=${l#"$lp_t:"}
+        f=${l%%:*}; d=${f%/*}; [ "$d" != "$f" ] || d=.
+        for w in $(printf '%s\n' "${l#*:}" | sed -E -e "s/$ipat//" -e 's/#.*//'); do
+          case $w in *'$'*|/*) continue ;; esac
+          for c in "$w" "$d/$w"; do
+            c=$(printf '%s\n' "$c" | sed -E -e 's#(^|/)(\./)+#\1#g' -e ':a' -e 's#(^|/)[^/]*[^/.][^/]*/\.\./#\1#' -e 'ta')
+            case $c in ../*) continue ;; esac
+            case " $* " in *" :/$c "*) ;; *) set -- "$@" ":/$c"; lp_more=1 ;; esac
+          done
+        done
+      done <<INCS
+$lp_inc
+INCS
+      set +f
+      lp_n=$((lp_n + 1))
+      [ "$lp_more" = 1 ] && [ "$lp_n" -lt 8 ] || break
+    done
+    if [ "$lp_t" = --cached ]; then found=$(git grep --cached -h -E "$pat" -- "$@"); rc=$?
+    else found=$(git grep -h -E "$pat" "$lp_t" -- "$@"); rc=$?; fi
+    [ "$rc" -le 1 ] || { echo "REFUSING: git grep failed, so the luxios pin cannot be read. Never --no-verify." >&2; return 1; }
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      want=$(printf '%s\n' "$line" | sed -n -E 's/^ *((export|override)[[:space:]]+)*LUXIOS_VERSION[[:space:]]*(\?=|:{0,3}=)[[:space:]]*([0-9][0-9A-Za-z.+-]*)[[:space:]]*(#.*)?$/\4/p')
+      if [ -z "$want" ]; then
+        echo "REFUSING: LUXIOS_VERSION is assigned in a form this hook cannot read ($line): write it as LUXIOS_VERSION := X.Y.Z. Never --no-verify." >&2
+        return 1
+      fi
+      if [ "$want" != "$have" ]; then
+        echo "REFUSING: this repo pins luxios $want, but the luxios checkout at $lx is ${have:-unversioned}: not the gate the repo pinned." >&2
+        echo "  Run: git -C \"$lx\" checkout v$want, or move the pin with /pin-bump. Never --no-verify." >&2
+        return 1
+      fi
+    done <<PINS
+$found
+PINS
+    return 0
+  }
+  lux_pinned --cached || exit 1
     exec python3 "$lx/scripts/privacy.py" pre-commit
   fi
 fi
