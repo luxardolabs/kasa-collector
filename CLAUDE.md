@@ -54,14 +54,16 @@ The build/deploy flow follows the Luxardo Labs fleet standard. `VERSION` (repo r
 # .env.dev to it, restart the dev stack, then `make smoke`: the kasa-collector container must run
 # this commit and reach healthy by its own HEALTHCHECK, and app.main / app.health.check must import
 # in the production image (no HTTP surface, so SMOKE_URL stays empty). A FAIL fails the deploy.
-# `make dev-pin TAG=sha-…` rolls back to a published tag.
+# `make dev-pin TAG=sha-…` rolls back to a published tag. Pin only `sha-*` or a version: dev-pin
+# does not yet refuse `candidate-*`, `dev` or `latest` (KASACOLLEC-84).
 make dev-deploy
 
 # Bring the dev stack up at whatever .env.dev pins — host networking
 make dev-up          # make dev-logs / make dev-ps / make dev-down
 
-# Release (luxarch's image block): refuses a dirty tree, an already-released VERSION, and a HEAD
-# not tagged v<VERSION> on origin; pushes the multi-arch build ONCE as an unpinned
+# Release (luxarch's image block): refuses a dirty tree, an already-released VERSION, a local
+# v<VERSION> tag not at HEAD, and a v<VERSION> missing from origin (it does not yet check WHERE
+# origin's tag points: KASACOLLEC-84 — push the tag you built from); pushes the multi-arch build ONCE as an unpinned
 # :candidate-<commit>, scans each platform BY DIGEST (luxaudit --image-archive refuses on any
 # fixable HIGH/CRITICAL), then `imagetools create`s :VERSION from that digest and publishes the
 # GitHub Release. prod pins TAG=<VERSION> in .env.prod. dev-deploy (publish-sha) scans before it

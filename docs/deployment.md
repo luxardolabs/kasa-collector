@@ -230,7 +230,7 @@ spec:
       hostNetwork: true # required for device discovery
       containers:
         - name: kasa-collector
-          image: ghcr.io/luxardolabs/kasa-collector:latest
+          image: ghcr.io/luxardolabs/kasa-collector:2026.10.2 # pin a release; there is no moving :latest
           envFrom:
             - configMapRef:
                 name: kasa-collector-config
@@ -291,7 +291,7 @@ For a debug run, start the collector in the foreground with verbose logging:
 ```bash
 docker run -it --rm --network host --env-file .env.prod \
   -e KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR=DEBUG \
-  ghcr.io/luxardolabs/kasa-collector:latest
+  ghcr.io/luxardolabs/kasa-collector:2026.10.2
 ```
 
 ## See also

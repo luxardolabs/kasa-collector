@@ -6,9 +6,10 @@
 .git
 .gitignore
 
-# Python / caches
-__pycache__
-*.py[cod]
+# Python / caches. `**/`: a bare pattern matches only at the context ROOT, so the host's
+# app/**/__pycache__ (and app/.DS_Store) shipped in every image until this was anchored.
+**/__pycache__
+**/*.py[cod]
 *.so
 .Python
 .venv
@@ -21,13 +22,14 @@ ENV/
 .coverage
 htmlcov/
 
-# Secrets / env — must NEVER enter the image (only .env.example is harmless)
-.env
-.env.*
+# Secrets / env — must NEVER enter the image (only .env.example is harmless), at any depth:
+# `COPY app` takes app/ whole, and the clean-tree gate never sees a gitignored file.
+**/.env
+**/.env.*
 !.env.example
 
 # Runtime output (bind-mounted at runtime, never baked)
-output/
+**/output/
 
 # Release documents: repo history, not runtime. The runtime COPYs `app/` whole, so without
 # these lines every published image carried every change log, including any detail a later
@@ -47,9 +49,9 @@ Dockerfile*
 Makefile
 
 # OS / editor
-.DS_Store
-Thumbs.db
-*.swp
+**/.DS_Store
+**/Thumbs.db
+**/*.swp
 .vscode/
 .idea/
 

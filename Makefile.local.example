@@ -7,7 +7,11 @@
 # dev-deploy / release, pulled by the dev and prod stacks), plus the luxarch (make arch) and
 # luxlint (make lint / format) guard images. Without Makefile.local the local + e2e
 # stacks still build from source, and make arch / make lint skip gracefully.
-REGISTRY          ?= docker.your-registry.example:5000
-LUXARCH_REGISTRY  ?= docker.your-registry.example:5000
-LUXLINT_REGISTRY  ?= docker.your-registry.example:5000
-LUXAUDIT_REGISTRY ?= docker.your-registry.example:5000
+#
+# `:=`, not `?=`: an exported REGISTRY in the shell (sourcing an .env file that sets
+# REGISTRY=ghcr.io, say) would otherwise win, and publish-sha/release would push an unscanned
+# candidate to that registry. A command-line `make … REGISTRY=…` still overrides `:=`.
+REGISTRY           := docker.your-registry.example:5000
+LUXARCH_REGISTRY   := docker.your-registry.example:5000
+LUXLINT_REGISTRY   := docker.your-registry.example:5000
+LUXAUDIT_REGISTRY  := docker.your-registry.example:5000
