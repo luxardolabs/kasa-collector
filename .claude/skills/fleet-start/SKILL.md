@@ -3,7 +3,7 @@ name: fleet-start
 description: Start (or resume after a compact) a working session the fleet way — read this repo's CLAUDE.md and the conduct standard, rehydrate from LuxPM leanly (focus + this repo's open issues, keys and titles only), and restate the six session rules. Run at the start of every session and after every compact.
 ---
 
-<!-- luxarch:fleet-start-skill asset v4 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit fleet-start-skill`. -->
+<!-- luxarch:fleet-start-skill asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit fleet-start-skill`. -->
 
 # Fleet start
 
@@ -21,7 +21,7 @@ LuxPM is the state. The conversation is not a second copy of it: rehydrate from 
 ## 2. Rehydrate from LuxPM, lean
 
 - `luxpm_get_focus`.
-- This repo's open issues: `luxpm_list_issues` with this project's `project_id` and `state` (`in_progress` first, then `todo`), a small `limit`. Keep **keys and titles** in mind; do not quote the payload back.
+- This repo's open issues: `luxpm_list_issues` with `project` set to this repo's project code and `state` (`in_progress` first, then `todo`), a small `limit`. Keep **keys and titles** in mind; do not quote the payload back.
 - `luxpm_get_context` **only** for the issue you are about to work. Nothing else until it is needed.
 
 **Evidence:** one line: what is in progress, and what you are picking up.

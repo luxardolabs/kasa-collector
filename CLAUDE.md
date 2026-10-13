@@ -60,15 +60,15 @@ make dev-deploy
 # Bring the dev stack up at whatever .env.dev pins — host networking
 make dev-up          # make dev-logs / make dev-ps / make dev-down
 
-# Release: refuses an already-released VERSION, pushes the multi-arch build ONCE as an unpinned
-# :candidate-<commit>, pulls + scans it ONCE PER PLATFORM (luxaudit --image-archive refuses on any
-# fixable HIGH/CRITICAL), then `imagetools create`s :VERSION (+ :latest alias, + :sha-<commit>
-# unless dev-deploy already published it) FROM it — the tags name exactly the scanned bits. prod
-# pins TAG=<VERSION> in .env.prod. dev-deploy scans before it pushes too; dev-pin refuses a
-# candidate-* tag (it may have failed its scan).
+# Release (luxarch's image block): refuses a dirty tree, an already-released VERSION, and a HEAD
+# not tagged v<VERSION> on origin; pushes the multi-arch build ONCE as an unpinned
+# :candidate-<commit>, scans each platform BY DIGEST (luxaudit --image-archive refuses on any
+# fixable HIGH/CRITICAL), then `imagetools create`s :VERSION from that digest and publishes the
+# GitHub Release. prod pins TAG=<VERSION> in .env.prod. dev-deploy (publish-sha) scans before it
+# pushes too, and publishes a commit's :sha-<commit> once, never rebuilt.
 # `make audit`'s image leg is a MONITOR of what the registry already holds — it clears by releasing.
 make release
-# Promote the released image to GHCR (ghcr.io/luxardolabs/kasa-collector) — run `make release` first
+# Copy the released :VERSION to GHCR (ghcr.io/luxardolabs/kasa-collector) by digest, rescanned
 make release-public
 
 # Remote prod deploy (set the collector host explicitly — no fleet default)
@@ -97,7 +97,7 @@ make test-e2e          # builds the images, runs by tag, pass/fail, self-tears-d
 
 # Unit tests + lint. All decoupled from :dev (FLEET-BUILD-DEPLOY-STANDARD): ruff AND mypy
 # are mount-only luxlint (the repo installs nothing). `make test` is luxarch's emitted test
-# block: the Dockerfile's `test` stage (production `base` + dev group) built from source, a
+# block: the Dockerfile's `test` stage (`production` + dev group) built from source, a
 # REAL InfluxDB in an isolated per-run compose project (profile `test`), branch coverage
 # ratcheted against [test].coverage_min in .luxlint.toml.
 make test              # pytest    make lint   # ruff    make mypy   # types
@@ -153,7 +153,7 @@ All configuration is done through environment variables. Key settings include:
 - The application requires host networking for device discovery
 - Data is stored both in InfluxDB and optionally as `.jsonl` files in `/app/output` (bind-mounted)
 - Docker health check included for container orchestration (no web server required)
-- Tests: pytest suite under `tests/`; `make test` (luxarch's test block) runs it in the Dockerfile's `test` stage — production's `base` plus the dev group, rebuilt from source every run, never `FROM :dev` — with the source mounted read-only, against a real throwaway InfluxDB (`kasa_test_influxdb`, compose profile `test`) started in its own per-run compose project and torn down pass or fail. Branch coverage is ratcheted against `[test].coverage_min` in `.luxlint.toml`
+- Tests: pytest suite under `tests/`; `make test` (luxarch's test block) runs it in the Dockerfile's `test` stage — the `production` stage plus the dev group, rebuilt from source every run, never `FROM :dev` — with the source mounted read-only, against a real throwaway InfluxDB (`kasa_test_influxdb`, compose profile `test`) started in its own per-run compose project and torn down pass or fail. Branch coverage is ratcheted against `[test].coverage_min` in `.luxlint.toml`
 - Multi-platform builds support amd64 and arm64 architectures (`make release`), on the ONE shared fleet buildx builder (`luxardo-builder`, GC-capped) — never a per-project builder, which holds an un-deduplicated cache plus an idle buildkit daemon
 - Build backend is **hatchling**, versioned dynamically from `VERSION`; Poetry stays the dependency manager in non-package mode (`poetry install --no-root` in both Dockerfiles, so the backend is never exercised at image-build time)
 - Grafana dashboards are pre-configured in the `/grafana` directory
@@ -177,7 +177,7 @@ Each env file names its stack in `COMPOSE_PROFILES`: `.env.prod` → `collector`
 
 **Variables interpolate file-wide, regardless of profile.** `${ENV_FILE:?}` on the `collector` service is resolved even for an `--profile e2e` run, which is why `scripts/e2e-test.sh` exports `ENV_FILE` although nothing in the e2e profile reads it.
 
-Images: the NAME declares provenance (`repo.image_name_declares_provenance`) and stacks pin only IMMUTABLE tags (`repo.deploy_tag_is_immutable`). `make dev-deploy` pushes `:sha-<commit>` (moving the `:dev` alias onto it) and `make release` pushes `:VERSION` + `:sha-<commit>`; both build the `base` stage. The hardware-free stacks run BARE local images that are never pushed: `make harness-build` → `kasa-collector-fake:test`, `make test-e2e` → `kasa-collector:test`. The runtime image ships only the app's venv — no Poetry, no pip (luxaudit's image leg scans it). Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
+Images: the NAME declares provenance (`repo.image_name_declares_provenance`) and stacks pin only IMMUTABLE tags (`repo.deploy_tag_is_immutable`). `make dev-deploy` (→ `publish-sha`) pushes `:sha-<commit>` once (moving the `:dev` alias onto it) and `make release` pushes `:VERSION` only; both build the `production` stage through luxarch's emitted image block (`repo.image_block_wired`) — never a hand-written publish flow. GHCR gets version tags only (`make release-public`); there is no moving `:latest`. The hardware-free stacks run BARE local images that are never pushed: `make harness-build` → `kasa-collector-fake:test`, `make test-e2e` → `kasa-collector:test` (the production stage, under the image block's TEST_IMAGE name — the only bare app name `repo.compose_conventions` accepts; `make test` and `make test-e2e` each rebuild it from source right before use). The runtime image ships only the app's venv — no Poetry, no pip (luxaudit's image leg scans it). Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 
 ## Naming Convention
 

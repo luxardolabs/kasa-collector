@@ -35,12 +35,10 @@ cp .env.example .env.prod   # then edit with your real values
 ## Pulling the image
 
 ```bash
-docker pull ghcr.io/luxardolabs/kasa-collector:latest
-# or pin a release
 docker pull ghcr.io/luxardolabs/kasa-collector:2026.10.2
 ```
 
-`:latest` tracks the newest release; pin the version tag (`:2026.10.2`) for reproducible deploys.
+Every release is published under its version tag only. There is no moving `:latest`: a deployable does not roll, so you always know which bits you run and can roll back to them. (A `:latest` tag published before 2026.10.3 still exists on GHCR but no longer moves; switch to a version tag.)
 
 ## Collector-only deployment
 
@@ -89,7 +87,7 @@ If you deploy the public image on your own host without the repo, a self-contain
 ```yaml
 services:
   kasa-collector:
-    image: ghcr.io/luxardolabs/kasa-collector:latest
+    image: ghcr.io/luxardolabs/kasa-collector:2026.10.2
     container_name: kasa-collector
     network_mode: host
     restart: unless-stopped
@@ -115,7 +113,7 @@ docker run -d \
   --network host \
   --restart unless-stopped \
   --env-file .env.prod \
-  ghcr.io/luxardolabs/kasa-collector:latest
+  ghcr.io/luxardolabs/kasa-collector:2026.10.2
 ```
 
 To persist raw readings as `.jsonl`, set `KASA_COLLECTOR_WRITE_TO_FILE=True` and bind-mount `/app/output`:
@@ -128,7 +126,7 @@ docker run -d \
   --env-file .env.prod \
   -e KASA_COLLECTOR_WRITE_TO_FILE=True \
   -v /path/to/output:/app/output \
-  ghcr.io/luxardolabs/kasa-collector:latest
+  ghcr.io/luxardolabs/kasa-collector:2026.10.2
 ```
 
 ## Remote production deploy (Makefile)
@@ -142,7 +140,7 @@ make prod-init   PROD_NODE=collector01.example.com
 # Push compose.yml + .env.prod to the node (the repo is the source of truth)
 make prod-sync   PROD_NODE=collector01.example.com
 
-# Pull :latest + recreate the collector on the node (run `make release` first)
+# Pull the TAG pinned in .env.prod + recreate the collector on the node (run `make release` first)
 make prod-deploy PROD_NODE=collector01.example.com
 
 # Operate
@@ -159,14 +157,14 @@ make prod-rollback     PROD_NODE=collector01.example.com   # list image tags cac
 The build is Makefile-driven and the `VERSION` file at the repo root is the source of truth. Dependencies are managed with Poetry, resolved and installed inside Docker — no host Python or Poetry required.
 
 ```bash
-make release          # multi-arch :VERSION + :sha-<commit> (+ :latest alias) -> the private registry
-make release-public   # promote the released :VERSION + :latest (same digest) -> GHCR,
-                      # then publish the GitHub Release from the notes
+git tag -a v$VERSION -m v$VERSION && git push origin v$VERSION   # release refuses an untagged HEAD
+make release          # multi-arch :VERSION -> the private registry, then the GitHub Release
+make release-public   # rescan the released :VERSION and copy that digest -> GHCR
 ```
 
-`make release` refuses a dirty working tree, and an already-released `VERSION` (in the registry, or tagged at another commit), then builds the runtime image for both architectures and pushes it once as `:candidate-<commit>`, a tag nothing pins. It pulls that candidate back once per platform and scans each (`luxaudit --image-archive`) — any fixable HIGH/CRITICAL stops the release there. Only then does it create the immutable `:VERSION` tag (plus the moving `:latest` alias, and `:sha-<commit>` unless `make dev-deploy` already published it) from the candidate with `docker buildx imagetools create`, so they name exactly the scanned bits. A candidate tag is never a deploy target: `make dev-pin` refuses one. `.env.prod` pins `TAG=<VERSION>`, which is what `prod-deploy` pulls — never `:latest`. `make release-public` re-tags that exact digest onto `ghcr.io/luxardolabs/kasa-collector` for the public OSS image — run `make release` first; it refuses a dirty tree and a version GHCR already holds, and checks the release notes, the `v<VERSION>` tag and `gh` authentication before anything goes public. To roll out a new version to a node: `make release` → `make prod-deploy PROD_NODE=<host>`.
+The publish targets are luxarch's emitted image block (`luxarch --emit image-block`, enforced by `repo.image_block_wired`), never a hand-written flow. `make release` refuses a dirty working tree (and a failed `git status`), an already-released `VERSION`, a `v<VERSION>` tag at another commit or missing from HEAD, and a missing release-notes file or `gh` login, all before anything is pushed. It then builds the runtime (`production` stage) for every platform in `PLATFORMS` once, pushes it as `:candidate-<commit>`, a tag nothing pins, pulls and scans each platform BY DIGEST (`luxaudit --image-archive`; any fixable HIGH/CRITICAL stops the release), and only then creates the immutable `:VERSION` from that scanned digest with `docker buildx imagetools create`. Last, it publishes the GitHub Release for `v$(VERSION)` from `app/release_notes/$(VERSION).md` (`make gh-release` re-runs just that step; it is idempotent). **A git tag is not a Release** — `repo.github_release_wired` enforces it. `.env.prod` pins `TAG=<VERSION>`; nothing pins a moving tag.
 
-`release-public` then chains `make gh-release`, which publishes the GitHub Release for `v$(VERSION)` from `app/release_notes/$(VERSION).md`. **A git tag is not a Release** — without this step `github.com/luxardolabs/kasa-collector/releases` stays empty while the notes sit unused, which is what happened before and is now enforced by `repo.github_release_wired`. It is idempotent (an existing Release is left alone) and refuses to run if the notes file or the tag is missing, so it cannot publish a Release for a version nobody wrote notes for.
+`make release-public` copies the RELEASED `:VERSION` to `ghcr.io/luxardolabs/kasa-collector` by digest after rescanning every platform (a CVE published since the release stops it), so the public image is bit-identical to the one released. It refuses a version GHCR already holds. Every commit's dev build is `make dev-deploy`: `:sha-<commit>` (published once, never rebuilt) plus the `:dev` alias, then `dev-pin` and `smoke`.
 
 ## Health checks
 

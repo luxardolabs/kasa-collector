@@ -23,7 +23,8 @@ Ready to plug into your own InfluxDB and Grafana? Point a single container at yo
 ```yaml
 services:
   kasa-collector:
-    image: ghcr.io/luxardolabs/kasa-collector:latest
+    # Pin a release (see the Releases page); there is no moving :latest tag.
+    image: ghcr.io/luxardolabs/kasa-collector:2026.10.2
     container_name: kasa-collector
     network_mode: host
     restart: unless-stopped

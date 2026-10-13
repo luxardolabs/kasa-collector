@@ -1,0 +1,19 @@
+#!/bin/sh
+# luxlint: REQUIRED fleet secret guard for the commit MESSAGE (do not delete).
+# gitleaks reads file content and pre-commit runs before the message exists, so the message is
+# scanned here, with the same config: `make gitleaks-commit-msg` (luxarch gitleaks asset v13+).
+# No Docker (an iOS app's Mac): the luxios checkout's native message gate.
+if ! docker info >/dev/null 2>&1; then  # no Docker CLI, or no daemon it can reach
+  lx=$(git config --get luxios.path || true)
+  if [ -n "$lx" ] && [ -f "$lx/scripts/privacy.py" ]; then
+    exec python3 "$lx/scripts/privacy.py" commit-msg "$1"
+  fi
+fi
+if ! make -n gitleaks-commit-msg >/dev/null 2>&1; then
+  echo "commit BLOCKED — no \`gitleaks-commit-msg\` target, so this message cannot be scanned." >&2
+  echo "Re-emit the privacy gate (luxarch --emit gitleaks, asset v13 or later). Never --no-verify." >&2
+  exit 1
+fi
+GITLEAKS_COMMIT_MSG="$1"
+export GITLEAKS_COMMIT_MSG
+exec make -s gitleaks-commit-msg

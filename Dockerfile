@@ -1,9 +1,9 @@
 # =============================================================================
 # kasa-collector — multi-stage image (fleet standard)
-#   --target base : the runtime — every deploy tag is built from it (:sha-<commit> by
-#                   `make dev-deploy`, :VERSION by `make release`, kasa-collector:test by
-#                   `make test-e2e`).
-#   --target test : base + the dev group; `make test` runs the suite in it (never pushed).
+#   --target production : the runtime — every deploy tag is built from it (:sha-<commit> by
+#                         `make dev-deploy`, :VERSION by `make release`, kasa-collector:test by
+#                         `make test-e2e`).
+#   --target test       : production + the dev group; `make test` runs the suite in it (never pushed).
 # Runtime dependency versions come from poetry.lock. The runtime carries ONLY the app's
 # venv: no Poetry, no pip, no build tools (luxaudit's image leg scans what ships).
 # =============================================================================
@@ -36,8 +36,8 @@ COPY pyproject.toml poetry.lock* ./
 RUN /usr/local/bin/poetry install --no-root --only main \
     && /opt/venv/bin/python -m pip uninstall -y pip
 
-# ---- Stage 2: base — lean runtime image (prod) ------------------------------
-FROM python:3.14-slim AS base
+# ---- Stage 2: production — lean runtime image --------------------------------
+FROM python:3.14-slim AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -100,11 +100,11 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 CMD ["python3", "-m", "app.main"]
 
 # ---- Stage 3: test — the runtime above plus the dev group (`make test-build`) ----
-# FROM base, so the suite runs on exactly the interpreter, tzdata and venv production ships.
+# FROM production, so the suite runs on exactly the interpreter, tzdata and venv production ships.
 # Production stripped pip; it is put back here only to install Poetry, which installs the dev
 # group into the same /opt/venv. Never pushed: `make test` runs it under the bare name
-# kasa-collector-test, with the source mounted read-only over /repo.
-FROM base AS test
+# kasa-collector:test, with the source mounted read-only over /repo.
+FROM production AS test
 USER root
 ARG POETRY_VERSION=2.4.1
 RUN python -m ensurepip \

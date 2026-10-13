@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.278.1",
+  "guard_version": "0.289.3",
   "repo": "/repo",
   "targets": [
     {
@@ -83,6 +83,17 @@
           "inert_reason": "",
           "fix": "",
           "example": ""
+        },
+        {
+          "rule": "fw.trusted_host_enforced",
+          "status": "INERT",
+          "since": "0.280.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": true,
+          "inert_reason": "no HTTP surface: this collector target builds no FastAPI/Starlette app that a launch surface serves, so there is no Host header to refuse",
+          "fix": "",
+          "example": ""
         }
       ],
       "summary": {
@@ -90,7 +101,7 @@
         "FAIL": 0,
         "XFAIL": 0,
         "XPASS": 0,
-        "INERT": 1
+        "INERT": 2
       }
     }
   ],
@@ -394,6 +405,17 @@
         "example": ""
       },
       {
+        "rule": "repo.agent_instructions_resolve",
+        "status": "PASS",
+        "since": "0.280.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
         "rule": "repo.gitleaks_scans_identity",
         "status": "PASS",
         "since": "0.204.0",
@@ -518,6 +540,17 @@
         "rule": "repo.fleet_dep_floor",
         "status": "PASS",
         "since": "0.219.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.images_on_fleet_line",
+        "status": "PASS",
+        "since": "0.282.0",
         "violations": 0,
         "deferred": false,
         "inert": false,
@@ -669,6 +702,17 @@
         "example": ""
       },
       {
+        "rule": "repo.image_block_wired",
+        "status": "PASS",
+        "since": "0.280.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
         "rule": "repo.poetry_version_consistent",
         "status": "PASS",
         "since": "0.268.0",
@@ -802,7 +846,7 @@
       }
     ],
     "summary": {
-      "PASS": 59,
+      "PASS": 62,
       "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
@@ -810,12 +854,12 @@
     }
   },
   "summary": {
-    "PASS": 65,
+    "PASS": 68,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 6
+    "INERT": 7
   },
-  "commit": "3952c630b7a862d0fcd24e4b41ebe9612518afef",
-  "generated_at": "2026-10-11T00:20:55Z"
+  "commit": "315fbfdfaf4dff5a82cd370a03d71511193f114c",
+  "generated_at": "2026-10-13T02:39:50Z"
 }
