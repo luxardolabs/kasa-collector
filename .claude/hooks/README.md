@@ -30,29 +30,30 @@ The exception is `no-ai-attribution`, which must NOT mask: a commit message *is*
 
 ## What's here
 
-| hook                         | fires                        | effect                                                                                                                                  |
-| ---------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `no-agent-deferral`          | Edit/Write on a guard config | **deny** — deferrals/allowlists are the owner's call                                                                                    |
-| `no-suppression`             | Edit/Write                   | **deny** — no `# noqa` / `# type: ignore`                                                                                               |
-| `no-golden-edit`             | Edit/Write on `*.golden`     | **deny** — use `make parity-update`                                                                                                     |
-| `no-test-weakening`          | Edit/Write on a test         | **deny** — no skip/xfail to reach green                                                                                                 |
-| `no-gate-bypass`             | Bash                         | **deny** — `--no-verify`, `--deselect`, `SKIP=`                                                                                         |
-| `confirm-destructive`        | Bash                         | **deny** — `rm -rf`, `reset --hard`, force push, `DROP TABLE`                                                                           |
-| `no-identity-override`       | Bash                         | **deny** — `git -c user.email=`                                                                                                         |
-| `no-ai-attribution`          | Bash                         | **deny** — Co-Authored-By: Claude                                                                                                       |
-| `no-silenced-staging`        | Bash                         | **deny** — `2>/dev/null` on mutating git                                                                                                |
-| `targeted-guard-run`         | Bash                         | **deny** — a full luxarch scan piped into grep/head/tail; use `--rule <id> [--path <file>]`                                             |
-| `luxpm-search-before-create` | `luxpm_create_issue`         | **deny** — no LuxPM search since the last issue created                                                                                 |
-| `delete-proposal-evidence`   | `AskUserQuestion`, Stop      | **deny** — a removal ask without a checked block per candidate; Stop only reminds once                                                  |
-| `edit-history`               | Edit/Write/Bash writes       | **deny** — a session's first change to a tracked file before it has searched LuxPM for that file                                        |
-| `commit-leftover-check`      | Bash (post)                  | advisory — partial-commit warning                                                                                                       |
-| `luxpm-record-commit`        | Bash (post)                  | records the commit in the ledger                                                                                                        |
-| `luxpm-clear-ledger`         | LuxPM log tools (post)       | clears the ledger                                                                                                                       |
-| `luxpm-stop-guard`           | Stop                         | **blocks** — work not logged in LuxPM                                                                                                   |
-| `unpushed-stop-guard`        | Stop                         | **blocks** — commits not pushed                                                                                                         |
-| `fleet-start-after-compact`  | SessionStart (`compact`)     | context — tells the agent to run `/fleet-start`                                                                                         |
-| `context-watch`              | every tool (post)            | context + owner message — once at 85% context: finish the step, run `/wrap-up`                                                          |
-| `worktree`                   | `EnterWorktree` (post)       | repairs `core.hooksPath`, links the main checkout's ignored `Makefile.local` into the worktree; also the `list` / `land` lifecycle tool |
+| hook                           | fires                                      | effect                                                                                                                                  |
+| ------------------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `no-agent-deferral`            | Edit/Write on a guard config               | **deny** — deferrals/allowlists are the owner's call                                                                                    |
+| `no-suppression`               | Edit/Write                                 | **deny** — no `# noqa` / `# type: ignore`                                                                                               |
+| `no-golden-edit`               | Edit/Write on `*.golden`                   | **deny** — use `make parity-update`                                                                                                     |
+| `no-test-weakening`            | Edit/Write on a test                       | **deny** — no skip/xfail to reach green                                                                                                 |
+| `no-gate-bypass`               | Bash                                       | **deny** — `--no-verify`, `--deselect`, `SKIP=`                                                                                         |
+| `confirm-destructive`          | Bash                                       | **deny** — `rm -rf`, `reset --hard`, force push, `DROP TABLE`                                                                           |
+| `no-identity-override`         | Bash                                       | **deny** — `git -c user.email=`                                                                                                         |
+| `no-ai-attribution`            | Bash                                       | **deny** — Co-Authored-By: Claude                                                                                                       |
+| `no-silenced-staging`          | Bash                                       | **deny** — `2>/dev/null` on mutating git                                                                                                |
+| `targeted-guard-run`           | Bash                                       | **deny** — a full luxarch scan piped into grep/head/tail; use `--rule <id> [--path <file>]`                                             |
+| `luxpm-search-before-create`   | `luxpm_create_issue`                       | **deny** — no LuxPM search since the last issue created                                                                                 |
+| `luxpm-close-tracks-deferrals` | `luxpm_update_issue`, `luxpm_create_issue` | **deny** — a close summary that defers work without naming the open issue tracking it, or `dropped: <why>`                              |
+| `delete-proposal-evidence`     | `AskUserQuestion`, Stop                    | **deny** — a removal ask without a checked block per candidate; Stop only reminds once                                                  |
+| `edit-history`                 | Edit/Write/Bash writes                     | **deny** — a session's first change to a tracked file before it has searched LuxPM for that file                                        |
+| `commit-leftover-check`        | Bash (post)                                | advisory — partial-commit warning                                                                                                       |
+| `luxpm-record-commit`          | Bash (post)                                | records the commit in the ledger                                                                                                        |
+| `luxpm-clear-ledger`           | LuxPM log tools (post)                     | clears the ledger                                                                                                                       |
+| `luxpm-stop-guard`             | Stop                                       | **blocks** — work not logged in LuxPM                                                                                                   |
+| `unpushed-stop-guard`          | Stop                                       | **blocks** — commits not pushed                                                                                                         |
+| `fleet-start-after-compact`    | SessionStart (`compact`)                   | context — tells the agent to run `/fleet-start`                                                                                         |
+| `context-watch`                | every tool (post)                          | context + owner message — once at 85% context: finish the step, run `/wrap-up`                                                          |
+| `worktree`                     | `EnterWorktree` (post)                     | repairs `core.hooksPath`, links the main checkout's ignored `Makefile.local` into the worktree; also the `list` / `land` lifecycle tool |
 
 `statusline.py` is not a hook: the installer wires it as `statusLine` (never over one the repo already sets). A user's own status line (`~/.claude/settings.json`) is run on the same input and the percentage appended to it, so nobody's is replaced. It shows `[Model] N% context` and records that percentage per session in `~/.claude/context-watch/` for `context-watch`. Hooks and the status line are read when a session starts: a session already running keeps the old set.
 

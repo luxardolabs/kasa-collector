@@ -94,6 +94,15 @@
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/edit-history.py\""
           }
         ]
+      },
+      {
+        "matcher": "mcp__luxpm__luxpm_update_issue|mcp__luxpm__luxpm_create_issue",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/luxpm-close-tracks-deferrals.py\""
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -3,7 +3,7 @@ name: wrap-up
 description: Close out a piece of work the fleet way before calling it done — tests written and run for what changed, every red in touched files fixed, docs updated (stale advice removed), make check green, committed in the issue's worktree, LuxPM fully closed out (issues, checklists, activities, commit links, sync receipt), then landed on the base branch, the worktree removed, and pushed as the repo declares. Every step reports evidence, not a tick.
 ---
 
-<!-- luxarch:wrap-up-skill asset v16 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit wrap-up-skill`. -->
+<!-- luxarch:wrap-up-skill asset v17 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit wrap-up-skill`. -->
 
 # Wrap up
 
@@ -62,10 +62,11 @@ A red can also be moved instead of fixed: the code goes to another layer, helper
 
 ## 6. LuxPM, closed out
 
-- Every issue this work touched: **closed** (`luxpm_update_issue` with a `close_summary` saying what shipped and anything deliberately not done), or left open on purpose with a comment saying what remains. A comment is not a close. **Close when the code is done** (committed, pushed, gate green), never later: not "after the deploy", not "once I've checked prod". Deploying is the owner's step; a check of the deployed stack is its own step or its own issue.
+- Every issue this work touched: **closed** (`luxpm_update_issue` with a `close_summary` saying what shipped), or left open on purpose with a comment saying what remains. A comment is not a close. **Close when the code is done** (committed, pushed, gate green), never later: not "after the deploy", not "once I've checked prod". Deploying is the owner's step; a check of the deployed stack is its own step or its own issue.
 - **Checklist items** done: one `luxpm_update_checklist(sequence_id, items=[{item: <number or title>, done: true}, …])` per issue, ticking every finished item. **Activities and todos** for this work completed (`luxpm_list_activities`).
 - **Work logged with its commits**, one call per issue: `luxpm_log_activity(sequence_id, kind="code_change", content=<the evidence>, commits=[{sha, committed_at}, …])` records the entry AND links the commits (use `luxpm_link_commits` only for commits that belong to no issue), every commit with its `committed_at` (`git log -1 --format=%cI <sha>`): without it LuxPM cannot know the commit's age, and an old sha linked as evidence becomes the sync receipt's anchor. Link this repo's commits to this repo's issues only.
 - **Every finding this session raised, filed or dropped.** Go back through the session, not just the diff: each bug, red, limit or follow-up you named in a reply ("not filed yet", "to file", "follow-up", "out of scope"), each `/adversarial` UNREPRODUCED or deferred item, each red you noticed in a file outside the change, and each owner aside. For each one: **search first** (`luxpm_semantic_search`, `luxpm_list_issues` with `search`), comment on the match, or create one; or name it dropped with the reason. One that lives only in the conversation is lost at the next compact.
+- **A close summary is not a tracker.** Work you did not do — not built, deferred, a follow-up, a stated limit with a fix, an UNREPRODUCED finding — is filed as its own open issue BEFORE the close, and the close summary names that key beside it ("Not built: X (<ticket>)"), or says `dropped: <why>`. Written into a closed issue's summary or comment, it is tracked by nothing and nobody picks it up. The emitted `luxpm-close-tracks-deferrals` hook denies a close whose summary defers work without naming another issue or `dropped`.
 - New follow-up work from the close-out itself: the same, search first, comment on an existing issue if found, create only if none.
 - **Close on the commit and the green gate**: step 7 lands and pushes it next. If landing then fails, set the issue back to `in_progress` with the reason.
 - Re-issue the **sync receipt** (`luxpm_issue_sync_receipt`), write it verbatim to `.luxpm-receipt` in the worktree, and commit it there: it lands with the work.
