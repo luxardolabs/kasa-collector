@@ -1067,6 +1067,39 @@ class TestEmeterUnits:
             "month_wh": 41250,
         }
 
+    @pytest.mark.parametrize(
+        "modules",
+        [property(lambda self: (_ for _ in ()).throw(RuntimeError("boom"))), [1]],
+        ids=["modules-raises", "modules-not-a-mapping"],
+    )
+    async def test_the_energy_extras_never_cost_the_reading(self, modules):
+        # today_wh/month_wh are extras: a device whose modules cannot be read still
+        # stores its realtime reading.
+        written: list[dict] = []
+
+        class Plug:
+            alias = "Kettle"
+            host = "10.0.0.5"
+            emeter_realtime = {"power_mw": 95000}
+
+        Plug.modules = modules
+        assert await self._poller(written).process_device_data("10.0.0.5", Plug())
+        assert written[0]["emeter"] == {"power_mw": 95000}
+
+    def test_energy_counters_are_whole_non_negative_numbers(self):
+        from app.collector.poller import smart_energy_fields
+
+        def fields(energy):
+            return smart_energy_fields(
+                SimpleNamespace(modules={"Energy": SimpleNamespace(energy=energy)})
+            )
+
+        assert fields({"today_energy": True, "month_energy": -5}) == {}
+        assert fields({"today_energy": 2899.6, "month_energy": 41250}) == {
+            "today_wh": 2900,
+            "month_wh": 41250,
+        }
+
     def test_a_null_legacy_field_drops_only_itself(self):
         from kasa.emeterstatus import EmeterStatus
 

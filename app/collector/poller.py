@@ -112,23 +112,34 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
 
 
 # A SMART device's energy counters, as its Energy module reads them from
-# get_energy_usage (Wh). Its realtime `total` is today's kWh, and the firmware exposes no
-# lifetime counter (python-kasa's `consumption_total` is always None), so these are the
-# energy figures it has.
+# get_energy_usage (Wh). Its realtime reading carries `total` (today's kWh, on energy
+# monitoring v1) or `energy_wh` (v2); python-kasa reads no lifetime counter
+# (`consumption_total` is always None), so these are the energy figures it has.
 _SMART_ENERGY_FIELDS = {"today_energy": "today_wh", "month_energy": "month_wh"}
 
 
 def smart_energy_fields(device: Any) -> dict[str, int]:
-    """Today's and this month's energy in Wh for a SMART device, where it reports them."""
-    modules = getattr(device, "modules", None)
-    energy = getattr(modules.get(Module.Energy), "energy", None) if modules else None
+    """Today's and this month's energy in Wh for a SMART device, where it reports them.
+
+    An extra beside the realtime reading: anything unreadable here yields nothing, and
+    never costs the reading itself. A counter is a whole, non-negative number of Wh.
+    """
+    try:
+        modules = getattr(device, "modules", None)
+        module = modules.get(Module.Energy) if isinstance(modules, Mapping) else None
+        energy = getattr(module, "energy", None)
+    except Exception:  # an unreadable optional extra
+        return {}
     if not isinstance(energy, Mapping):
         return {}
-    return {
-        field: int(value)
-        for key, field in _SMART_ENERGY_FIELDS.items()
-        if isinstance(value := energy.get(key), int | float) and _storable(value)
-    }
+    out: dict[str, int] = {}
+    for key, field in _SMART_ENERGY_FIELDS.items():
+        value = energy.get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            continue
+        if _storable(value) and value >= 0:
+            out[field] = round(value)
+    return out
 
 
 class Poller:
