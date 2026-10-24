@@ -20,9 +20,13 @@ Key Features:
 
 import asyncio
 import contextlib
+import hashlib
 import logging
 import os
 import signal
+from collections.abc import Callable
+from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from app.collector.device_manager import DeviceManager
 from app.collector.kasa_compat import verify_still_needed
@@ -36,15 +40,69 @@ logger = logging.getLogger("KasaCollector")
 _SENSITIVE = ("PASSWORD", "TOKEN", "USERNAME")
 
 
-def _mask(value: str) -> str:
+# A secret shorter than this is not scrubbed from log lines: replacing every occurrence of
+# one or two characters would destroy the log while protecting almost nothing.
+_MIN_SCRUBBED_LEN = 4
+
+
+def _mask(value: str | None) -> str:
     """Redact a secret completely, keeping only whether it is set.
 
     No character and no length: the dump reaches `docker logs` and any log shipper, and
     four characters from each end of a 9-12 character password leave almost nothing to guess.
+    Set or unset is read from the raw setting, so a password that is the word "None" is
+    masked like any other.
     """
-    if not value or value == "None":
-        return value
+    if value is None:
+        return "None"
+    if value == "":
+        return ""
     return "****"
+
+
+def _strip_userinfo(url: str) -> str:
+    """The URL with any `user:password@` replaced by `****@`."""
+    parts = urlsplit(url)
+    if "@" not in parts.netloc:
+        return url
+    return urlunsplit(parts._replace(netloc="****@" + parts.netloc.rsplit("@", 1)[1]))
+
+
+def _secret_values() -> list[str]:
+    """Every configured secret as it could appear in a log line, longest first.
+
+    The TP-Link password, username and InfluxDB token, a password inside the InfluxDB URL,
+    and the password's MD5 hex in both cases (python-kasa's SSL transport logs its login
+    request at DEBUG with the password as an unsalted MD5).
+    """
+    password = Config.KASA_COLLECTOR_TPLINK_PASSWORD
+    found = [
+        password,
+        Config.KASA_COLLECTOR_TPLINK_USERNAME,
+        Config.KASA_COLLECTOR_INFLUXDB_TOKEN,
+        urlsplit(Config.KASA_COLLECTOR_INFLUXDB_URL or "").password,
+    ]
+    if password:
+        # Reproduces python-kasa's login hash so it can be scrubbed; it protects nothing.
+        digest = hashlib.md5(password.encode(), usedforsecurity=False).hexdigest()
+        found += [digest, digest.upper()]
+    kept = {s for s in found if s and len(s.strip()) >= _MIN_SCRUBBED_LEN}
+    return sorted(kept, key=len, reverse=True)
+
+
+def _redactor(secrets: list[str]) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """A log redactor that replaces each secret with `****` in every string field."""
+
+    def scrub(part: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for key, value in part.items():
+            if isinstance(value, str):
+                for secret in secrets:
+                    value = value.replace(secret, "****")
+            out[key] = value
+        return out
+
+    return scrub
 
 
 class KasaCollector:
@@ -94,7 +152,7 @@ class KasaCollector:
 
         The startup config dump comes from ``config.describe_settings()`` (a single
         source of truth — no hand-kept list to drift), with PASSWORD/TOKEN/USERNAME
-        values masked.
+        values masked and any credentials in the InfluxDB URL removed.
 
         Raises:
             SystemExit: If any required configuration is missing.
@@ -110,7 +168,12 @@ class KasaCollector:
 
         self.logger.info("Configuration:")
         for var, value in describe_settings().items():
-            shown = _mask(value) if any(s in var for s in _SENSITIVE) else value
+            if any(s in var for s in _SENSITIVE):
+                shown = _mask(getattr(Config, var, None))
+            elif var == "KASA_COLLECTOR_INFLUXDB_URL":
+                shown = _strip_userinfo(value)
+            else:
+                shown = value
             self.logger.info("  %s: %s", var, shown)
         self.logger.info("=" * 60)
 
@@ -287,9 +350,12 @@ def configure_app_logging() -> None:
     JSON lines on stdout, or a readable line with LOG_FORMAT=text. The per-component
     KASA_COLLECTOR_LOG_LEVEL_* settings are the code's defaults; LOG_MODULE_LEVELS overrides
     any logger at runtime. python-kasa stays at WARNING, as it was when only the app's own
-    loggers had a handler.
+    loggers had a handler. Every line is scrubbed of the configured secrets, so a logger
+    turned up to DEBUG (python-kasa's login requests included) cannot write one.
     """
+    secrets = _secret_values()
     configure_logging(
+        redact=_redactor(secrets) if secrets else None,
         service="kasa-collector",
         version=os.getenv("KASA_COLLECTOR_VERSION", "unknown"),
         levels={
