@@ -661,6 +661,12 @@
               "key": "device_alias",
               "operator": "=~",
               "value": "/^$device_alias$/"
+            },
+            {
+              "condition": "AND",
+              "key": "equipment_type",
+              "operator": "=",
+              "value": "device"
             }
           ]
         }

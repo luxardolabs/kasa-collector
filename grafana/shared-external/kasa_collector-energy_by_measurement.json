@@ -560,6 +560,12 @@
               "key": "device_alias",
               "operator": "=~",
               "value": "/^$device_alias$/"
+            },
+            {
+              "condition": "AND",
+              "key": "equipment_type",
+              "operator": "=",
+              "value": "device"
             }
           ]
         }
@@ -719,6 +725,12 @@
               "key": "device_alias",
               "operator": "=~",
               "value": "/^$device_alias$/"
+            },
+            {
+              "condition": "AND",
+              "key": "equipment_type",
+              "operator": "=",
+              "value": "device"
             }
           ]
         }
@@ -854,7 +866,7 @@
           "measurement": "kasa_energy",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT mean(\"current_ma\") FROM \"emeter\" WHERE (\"device_alias\" =~ /^$device_alias$/) AND \"current_ma\" > 1 AND $timeFilter GROUP BY time($__interval), \"device_alias\" fill(null)",
+          "query": "SELECT mean(\"current_ma\") FROM \"emeter\" WHERE (\"device_alias\" =~ /^$device_alias$/) AND \"equipment_type\" = 'device' AND \"current_ma\" > 1 AND $timeFilter GROUP BY time($__interval), \"device_alias\" fill(null)",
           "rawQuery": true,
           "refId": "B",
           "resultFormat": "time_series",
@@ -1012,7 +1024,7 @@
           "measurement": "kasa_energy",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT mean(\"voltage_mv\") FROM \"emeter\" WHERE (\"device_alias\" =~ /^$device_alias$/) AND \"voltage_mv\" > 100000 AND $timeFilter GROUP BY time($__interval), \"device_alias\" fill(null)",
+          "query": "SELECT mean(\"voltage_mv\") FROM \"emeter\" WHERE (\"device_alias\" =~ /^$device_alias$/) AND \"equipment_type\" = 'device' AND \"voltage_mv\" > 100000 AND $timeFilter GROUP BY time($__interval), \"device_alias\" fill(null)",
           "rawQuery": true,
           "refId": "B",
           "resultFormat": "time_series",

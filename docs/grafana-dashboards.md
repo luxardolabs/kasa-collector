@@ -47,7 +47,7 @@ Consumption and cost over time:
 - Estimated daily device and plug costs
 - Multi-day trend monitoring
 
-Per-plug panels draw one line per outlet (grouped by the strip's `device_id` and the outlet's `plug_id`, labelled by its name), so two outlets that share a name are shown separately, never averaged together.
+Per-device panels read only each device's own point (`equipment_type = 'device'`), so a power strip counts once, at its aggregate, never blended with its outlets. Per-plug panels draw one line per outlet (grouped by the strip's `device_id` and the outlet's `plug_id`, labelled by its name), so two outlets that share a name are shown separately, never averaged together.
 
 ### Device Details — `luxardolabs_kasa_04`
 

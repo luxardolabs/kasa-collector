@@ -248,7 +248,7 @@
           ],
           "tz": "$tz",
           "rawQuery": true,
-          "query": "SELECT non_negative_difference(mean(\"total_wh\")) FROM \"emeter\" WHERE (\"device_alias\" =~ /^$device_alias$/) AND $timeFilter GROUP BY time($interval), \"device_alias\" tz('$tz')"
+          "query": "SELECT non_negative_difference(mean(\"total_wh\")) FROM \"emeter\" WHERE (\"device_alias\" =~ /^$device_alias$/) AND \"equipment_type\" = 'device' AND $timeFilter GROUP BY time($interval), \"device_alias\" tz('$tz')"
         }
       ],
       "title": "Device (By Day)",
@@ -562,7 +562,7 @@
               ],
               "tz": "$tz",
               "rawQuery": true,
-              "query": "SELECT non_negative_difference(mean(\"total_wh\")) * $cost / 1000 FROM \"emeter\" WHERE (\"device_alias\" =~ /^$device_alias$/) AND $timeFilter GROUP BY time($interval), \"device_alias\" tz('$tz')"
+              "query": "SELECT non_negative_difference(mean(\"total_wh\")) * $cost / 1000 FROM \"emeter\" WHERE (\"device_alias\" =~ /^$device_alias$/) AND \"equipment_type\" = 'device' AND $timeFilter GROUP BY time($interval), \"device_alias\" tz('$tz')"
             }
           ],
           "title": "Device (By Day)",
