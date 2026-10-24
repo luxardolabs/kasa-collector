@@ -887,6 +887,34 @@ class TestStripOutletIdentity:
     before the strip's first sysinfo poll.
     """
 
+    @pytest.mark.parametrize("key", ["deviceId", "device_id"])
+    async def test_a_plug_point_carries_its_device_id_before_any_sysinfo(
+        self, monkeypatch, key
+    ):
+        # Read off the device as polled, so the first points (before the sysinfo
+        # cache holds this plug) are not a separate series without device_id.
+        async def hostname(ip):
+            return "plug.lan"
+
+        monkeypatch.setattr("app.collector.poller.get_hostname_cached", hostname)
+        written: list[dict] = []
+
+        async def capture(data):
+            written.extend(data.values())
+            return True
+
+        p = object.__new__(Poller)
+        p.logger = logging.getLogger("test")
+        p.storage = SimpleNamespace(process_emeter_data=capture)
+        plug = SimpleNamespace(
+            alias="Kettle",
+            host="10.0.0.5",
+            sys_info={key: "DEV1"},
+            emeter_realtime={"power_mw": 1},
+        )
+        assert await p.process_device_data("10.0.0.5", plug)
+        assert written[0]["device_id"] == "DEV1"
+
     async def test_each_outlet_carries_its_position_and_the_strip_id(self, monkeypatch):
         async def hostname(ip):
             return "strip.lan"

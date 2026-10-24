@@ -23,6 +23,7 @@ import contextlib
 import json
 import logging
 import os
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -36,6 +37,18 @@ from app.collector.utils import sanitize_tag
 from app.core.config import Config
 
 logger = logging.getLogger("InfluxDBStorage")
+
+
+def device_id_of(sysinfo: Mapping[str, Any]) -> str | None:
+    """A device's id from its sysinfo, or None.
+
+    IOT firmware reports `deviceId`, SMART `device_id`. Every point that tags a device
+    reads it here, so emeter and sysinfo points of one device carry the same value.
+    """
+    for key in ("deviceId", "device_id"):
+        if value := sysinfo.get(key):
+            return str(value)
+    return None
 
 
 class InfluxDBStorage:
@@ -221,7 +234,7 @@ class InfluxDBStorage:
                 sysinfo = self.sysinfo_data.get(ip, {}).get("sysinfo", {})
                 # Identity the poller read off the device wins over the sysinfo cache,
                 # which may not hold this device yet.
-                device_id = data.get("device_id") or sysinfo.get("deviceId", None)
+                device_id = data.get("device_id") or device_id_of(sysinfo)
                 children = sysinfo.get("children", [])
 
                 # Log for sysinfo lookup
@@ -344,13 +357,9 @@ class InfluxDBStorage:
             points = []
             for ip, data in device_data.items():
                 normalized_sysinfo = self.normalize_sysinfo(data.get("sysinfo", {}))
-                # IOT firmware reports `deviceId`, SMART `device_id`: the same id the
-                # device's emeter points carry, so the measurements join on it.
-                device_id = (
-                    normalized_sysinfo.get("deviceId")
-                    or normalized_sysinfo.get("device_id")
-                    or "unknown"
-                )
+                # The same id the device's emeter points carry, so the measurements
+                # join on it.
+                device_id = device_id_of(normalized_sysinfo) or "unknown"
                 alias = sanitize_tag(
                     data.get("device_alias") or data.get("alias") or ip
                 )
@@ -371,7 +380,10 @@ class InfluxDBStorage:
                 )
 
                 for key, value in normalized_sysinfo.items():
-                    point = point.field(key, self._format_value(value))
+                    # device_id is this point's tag: the same key as a field would make
+                    # InfluxQL's `WHERE device_id = …` read the field, not the tag.
+                    if key != "device_id":
+                        point = point.field(key, self._format_value(value))
 
                 point = point.time(datetime.now(UTC))
                 points.append(point)

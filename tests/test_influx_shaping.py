@@ -317,6 +317,53 @@ class TestProcessSysinfo:
         )
         assert {_tags(p)["device_id"] for p in s.captured} == {"STRIP1"}
 
+    @pytest.mark.parametrize(
+        "sysinfo",
+        [
+            {"deviceId": "DEV1", "model": "HS110(US)"},  # IOT
+            {"device_id": "DEV1", "model": "P110"},  # SMART
+            {"device_id": "DEV1", "model": "KP125M", "fw_ver": "1.2"},
+            {"deviceId": "", "device_id": "DEV1", "model": "P110"},
+        ],
+    )
+    async def test_sysinfo_and_emeter_carry_the_same_device_id(self, sysinfo):
+        s = _storage()
+        await s.process_sysinfo_data(
+            {
+                "10.0.0.1": {
+                    "sysinfo": sysinfo,
+                    "device_alias": "Kettle",
+                    "dns_name": "k",
+                }
+            }
+        )
+        await s.process_emeter_data(
+            {
+                "10.0.0.1": {
+                    "emeter": {"power_mw": 1},
+                    "alias": "Kettle",
+                    "dns_name": "k",
+                    "equipment_type": "device",
+                }
+            }
+        )
+        assert {_tags(p).get("device_id") for p in s.captured} == {"DEV1"}
+
+    async def test_device_id_is_a_tag_never_also_a_field(self):
+        # A key that is a tag on some points and a field on others makes InfluxQL's
+        # `WHERE device_id = '…'` read the field and miss every tag-only point.
+        s = _storage()
+        await s.process_sysinfo_data(
+            {
+                "10.0.0.1": {
+                    "sysinfo": {"device_id": "SMART1", "model": "P110"},
+                    "device_alias": "Kettle",
+                    "dns_name": "k",
+                }
+            }
+        )
+        assert "device_id" not in s.captured[0]._fields
+
 
 @pytest.mark.unit
 class TestFileSink:

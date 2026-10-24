@@ -33,7 +33,7 @@ from app.collector.dns_cache import get_hostname_cached
 from app.collector.utils import DeviceContext, async_retry
 from app.core.config import Config
 from app.health import heartbeat
-from app.storage.influxdb import InfluxDBStorage
+from app.storage.influxdb import InfluxDBStorage, device_id_of
 
 # The emeter fields written, in the units the dashboards read. Legacy firmware (HS110
 # hardware v1) reports A / V / W / kWh as floats under `current` / `voltage` / `power` /
@@ -469,18 +469,19 @@ class Poller:
         # here is retried: a re-run would write the strip's points again.
         try:
             dns_name = await get_hostname_cached(ip)
+            # The strip's id, and each outlet's position on it (the order of
+            # sys_info["children"], so it matches the sysinfo_child plug_id), are read
+            # off the strip as polled: an outlet's alias is user-set and may repeat, and
+            # the sysinfo cache may not hold this strip yet.
+            device_id = device_id_of(smart_strip.sys_info)
             smart_strip_data = {
                 "emeter": _storable_reading(smart_strip.emeter_realtime, True),
                 "alias": smart_strip.alias,
+                "device_id": device_id,
                 "dns_name": dns_name,
                 "ip": ip,
                 "equipment_type": "device",
             }
-            # An outlet is identified by its position on the strip (the order of
-            # sys_info["children"], so it matches the sysinfo_child plug_id) and the
-            # strip's deviceId. Its alias is user-set and may repeat, and the sysinfo
-            # cache may not hold this strip yet.
-            device_id = smart_strip.sys_info.get("deviceId")
             outlets = []
             for index, child in enumerate(smart_strip.children, start=1):
                 await child.update()
@@ -528,6 +529,8 @@ class Poller:
             device_data = {
                 "emeter": emeter_data,
                 "alias": device_alias,
+                # Read off the device as polled: the sysinfo cache may not hold it yet.
+                "device_id": device_id_of(getattr(device, "sys_info", None) or {}),
                 "dns_name": await get_hostname_cached(ip),
                 "ip": ip,
                 "equipment_type": "device",
