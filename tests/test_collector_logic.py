@@ -1032,6 +1032,41 @@ class TestEmeterUnits:
         assert await self._poller(written).process_device_data("10.0.0.5", plug)
         assert written[0]["emeter"] == {"power_mw": 95000, "total": 2}
 
+    async def test_smart_device_writes_today_and_month_energy_in_wh(self):
+        # The SMART Energy module reports today's and this month's energy in Wh
+        # (get_energy_usage); they are written whole, never as a lifetime total_wh.
+        from kasa import Module
+        from kasa.smart import SmartDevice
+        from kasa.smart.modules.energy import Energy
+
+        # python-kasa's own SmartDevice and Energy module, after its update hook.
+        device = SmartDevice("10.0.0.5")
+        device._last_update = {
+            "get_energy_usage": {
+                "today_energy": 2900,
+                "month_energy": 41250,
+                "current_power": 95000,
+            }
+        }
+        device._components = {"energy_monitoring": 1}
+        energy = Energy(device, "Energy")
+        await energy._post_update_hook()
+
+        written: list[dict] = []
+        plug = SimpleNamespace(
+            alias="Kettle",
+            host="10.0.0.5",
+            emeter_realtime=energy.status,
+            modules={Module.Energy: energy},
+        )
+        assert await self._poller(written).process_device_data("10.0.0.5", plug)
+        assert written[0]["emeter"] == {
+            "power_mw": 95000,
+            "total": 2,
+            "today_wh": 2900,
+            "month_wh": 41250,
+        }
+
     def test_a_null_legacy_field_drops_only_itself(self):
         from kasa.emeterstatus import EmeterStatus
 

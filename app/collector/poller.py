@@ -25,7 +25,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from kasa import Device
+from kasa import Device, Module
 from kasa.emeterstatus import EmeterStatus
 from kasa.iot import IotDevice, IotStrip
 
@@ -109,6 +109,26 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
         if key not in _EMETER_FIELDS and key not in legacy and _storable(value):
             out[key] = int(value)
     return out
+
+
+# A SMART device's energy counters, as its Energy module reads them from
+# get_energy_usage (Wh). Its realtime `total` is today's kWh, and the firmware exposes no
+# lifetime counter (python-kasa's `consumption_total` is always None), so these are the
+# energy figures it has.
+_SMART_ENERGY_FIELDS = {"today_energy": "today_wh", "month_energy": "month_wh"}
+
+
+def smart_energy_fields(device: Any) -> dict[str, int]:
+    """Today's and this month's energy in Wh for a SMART device, where it reports them."""
+    modules = getattr(device, "modules", None)
+    energy = getattr(modules.get(Module.Energy), "energy", None) if modules else None
+    if not isinstance(energy, Mapping):
+        return {}
+    return {
+        field: int(value)
+        for key, field in _SMART_ENERGY_FIELDS.items()
+        if isinstance(value := energy.get(key), int | float) and _storable(value)
+    }
 
 
 class Poller:
@@ -522,9 +542,10 @@ class Poller:
         data gracefully with specific error types for debugging.
         """
         try:
-            emeter_data = _storable_reading(
-                device.emeter_realtime, isinstance(device, IotDevice)
-            )
+            is_iot = isinstance(device, IotDevice)
+            emeter_data = _storable_reading(device.emeter_realtime, is_iot)
+            if not is_iot:
+                emeter_data.update(smart_energy_fields(device))
             device_alias = device.alias if device.alias else device.host
             device_data = {
                 "emeter": emeter_data,
