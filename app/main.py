@@ -23,6 +23,7 @@ import contextlib
 import hashlib
 import logging
 import os
+import re
 import signal
 from collections.abc import Callable
 from typing import Any
@@ -88,6 +89,26 @@ def _secret_values() -> list[str]:
         found += [digest, digest.upper()]
     kept = {s for s in found if s and len(s.strip()) >= _MIN_SCRUBBED_LEN}
     return sorted(kept, key=len, reverse=True)
+
+
+# python-kasa's transports log their handshakes at DEBUG with seeds, nonces and
+# challenge hashes as hex. A KLAP handshake1 line holds both seeds and the server hash
+# (sha256 over them and a hash of the TP-Link username and password), enough to guess the
+# password offline. No configured secret appears in them literally, so on those loggers
+# every run of 32 or more hex digits is scrubbed.
+_TRANSPORT_LOGGERS = "kasa.transports"
+_HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
+
+
+class _TransportHexFilter(logging.Filter):
+    """Scrubs every long hex run from a python-kasa transport's records, in JSON and
+    text format alike (the redactor sees no logger name in text format)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name.startswith(_TRANSPORT_LOGGERS):
+            record.msg = _HEX_RUN.sub("****", record.getMessage())
+            record.args = None
+        return True
 
 
 def _redactor(secrets: list[str]) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -350,12 +371,12 @@ def configure_app_logging() -> None:
     JSON lines on stdout, or a readable line with LOG_FORMAT=text. The per-component
     KASA_COLLECTOR_LOG_LEVEL_* settings are the code's defaults; LOG_MODULE_LEVELS overrides
     any logger at runtime. python-kasa stays at WARNING, as it was when only the app's own
-    loggers had a handler. Every line is scrubbed of the configured secrets, so a logger
-    turned up to DEBUG (python-kasa's login requests included) cannot write one.
+    loggers had a handler. Every line is scrubbed of the configured secrets, and every
+    python-kasa transport line of its handshake hex, so a logger turned up to DEBUG
+    (python-kasa's login requests and handshakes included) cannot write one.
     """
-    secrets = _secret_values()
     configure_logging(
-        redact=_redactor(secrets) if secrets else None,
+        redact=_redactor(_secret_values()),
         service="kasa-collector",
         version=os.getenv("KASA_COLLECTOR_VERSION", "unknown"),
         levels={
@@ -366,6 +387,8 @@ def configure_app_logging() -> None:
             "kasa": "WARNING",
         },
     )
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(_TransportHexFilter())
 
 
 if __name__ == "__main__":

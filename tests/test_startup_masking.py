@@ -50,11 +50,11 @@ def credentials(monkeypatch):
     )
 
 
-@pytest.fixture
-def app_log(monkeypatch, credentials):
-    """The process's real logging setup, as `python -m app.main` installs it, with the
-    installed stdout handler pointed at a buffer the test reads."""
-    monkeypatch.setenv("LOG_FORMAT", "text")
+@pytest.fixture(params=["text", "json"])
+def app_log(request, monkeypatch, credentials):
+    """The process's real logging setup, as `python -m app.main` installs it, in each
+    LOG_FORMAT, with the installed stdout handler pointed at a buffer the test reads."""
+    monkeypatch.setenv("LOG_FORMAT", request.param)
     monkeypatch.setenv("LOG_MODULE_LEVELS", '{"kasa": "DEBUG"}')
     configure_app_logging()
     buffer = io.StringIO()
@@ -129,6 +129,43 @@ async def test_python_kasa_debug_login_logs_no_credential(app_log):
     await transport.try_login(transport._get_login_params(transport._credentials))
 
     out = app_log.getvalue()
-    assert '"method":"login"' in out  # the DEBUG line was written: the control
+    assert (
+        "Sending" in out and "login" in out
+    )  # the DEBUG line was written: the control
     md5 = hashlib.md5(PASSWORD.encode(), usedforsecurity=False).hexdigest()
     _assert_no_window(out, (USERNAME, PASSWORD, md5, md5.upper()))
+
+
+@pytest.mark.unit
+async def test_python_kasa_debug_klap_handshake_logs_no_crackable_hash(app_log):
+    # KLAP's handshake1 DEBUG lines carry both seeds and the server hash
+    # (sha256(local_seed + remote_seed + auth_hash), auth_hash from the TP-Link username
+    # and password): together they allow an offline guess of the password.
+    from kasa.transports.klaptransport import KlapTransport
+
+    transport = KlapTransport(
+        config=DeviceConfig(
+            host="192.0.2.11", credentials=Credentials(USERNAME, PASSWORD)
+        )
+    )
+    remote_seed = bytes(range(16))
+    sent: list[bytes] = []
+
+    async def post(url, *, data=None, **kwargs):
+        sent.append(data)
+        server_hash = transport.handshake1_seed_auth_hash(
+            data, remote_seed, transport._local_auth_hash
+        )
+        return 200, remote_seed + server_hash
+
+    transport._http_client.post = post
+
+    await transport.perform_handshake1()
+
+    out = app_log.getvalue()
+    assert "Handshake1 success" in out  # the DEBUG lines were written: the control
+    server_hash = transport.handshake1_seed_auth_hash(
+        sent[0], remote_seed, transport._local_auth_hash
+    )
+    for secret in (sent[0].hex(), remote_seed.hex(), server_hash.hex()):
+        assert secret not in out, f"{secret[:8]}… logged"
