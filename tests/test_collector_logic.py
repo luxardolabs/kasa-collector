@@ -570,6 +570,76 @@ class TestFetchCountedWriteFailures:
 
 
 @pytest.mark.unit
+class TestBadReadingsAreNotStorageFailures:
+    """A reading the collector cannot turn into points is the device's fault.
+
+    It counts as `failed`, never as `write_failed` (an InfluxDB problem), and the log
+    says the reading was bad. The device answered, so it still counts as reachable.
+    """
+
+    @staticmethod
+    def _poller(reached):
+        async def store(data):
+            return True
+
+        p = object.__new__(Poller)
+        p.logger = logging.getLogger("test")
+        p.storage = SimpleNamespace(process_emeter_data=store)
+        p.on_reachable = reached.append
+        return p
+
+    @pytest.fixture(autouse=True)
+    def _no_dns(self, monkeypatch):
+        async def hostname(ip):
+            return "plug.lan"
+
+        monkeypatch.setattr("app.collector.poller.get_hostname_cached", hostname)
+
+    async def test_unparseable_reading_counts_as_failed_not_write_failed(self, caplog):
+        reached: list[str] = []
+        p = self._poller(reached)
+        plug = SimpleNamespace(
+            alias="Kettle", host="10.0.0.5", emeter_realtime={"power_mw": "garbage"}
+        )
+        outcome = {"ok": 0, "failed": 0, "write_failed": 0}
+
+        async def fetch(ip, device):
+            return await p.process_device_data(ip, device)
+
+        await p._fetch_counted(fetch, "10.0.0.5", plug, outcome, "emeter fetch")
+        assert outcome == {"ok": 0, "failed": 1, "write_failed": 0}
+        assert reached == ["10.0.0.5"]
+        assert "InfluxDB" not in caplog.text
+
+    async def test_a_strip_outlet_that_does_not_answer_stays_a_transport_error(self):
+        # Retried by async_retry, then counted as unreachable: not a bad reading.
+        class Outlet:
+            alias = "Lamp"
+            emeter_realtime = {"power_mw": 1}
+
+            async def update(self):
+                raise ConnectionError("outlet did not answer")
+
+        p = self._poller([])
+        strip = SimpleNamespace(
+            alias="Desk Strip",
+            sys_info={"deviceId": "STRIP1"},
+            emeter_realtime={"power_mw": 2},
+            children=[Outlet()],
+        )
+        with pytest.raises(ConnectionError):
+            await p.process_smart_strip_data("10.0.0.9", strip)
+
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+    def test_a_non_finite_value_drops_only_its_field(self, bad):
+        from app.collector.poller import emeter_fields
+
+        reading = {"power_mw": bad, "voltage_mv": 120000}
+        assert emeter_fields(reading, legacy_units=False) == {"voltage_mv": 120000}
+        assert emeter_fields(reading, legacy_units=True) == {"voltage_mv": 120000}
+
+
+@pytest.mark.unit
 class TestManualHostsAreIntent:
     """A host in KASA_COLLECTOR_DEVICE_HOSTS must converge to collected.
 

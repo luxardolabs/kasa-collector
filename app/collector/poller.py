@@ -20,6 +20,7 @@ issues or problematic devices.
 
 import asyncio
 import logging
+import math
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -46,6 +47,19 @@ _EMETER_FIELDS = {
 }
 
 
+class UnstorableReading(Exception):
+    """A device answered, but its reading could not be turned into points.
+
+    A device fault, not a storage one: `_fetch_counted` counts it as `failed`, never as
+    `write_failed`, and the device still counts as reachable.
+    """
+
+
+def _finite(value: Any) -> bool:
+    """False for a float NaN or infinity, which no InfluxDB integer field can hold."""
+    return not isinstance(value, float) or math.isfinite(value)
+
+
 def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, int]:
     """A device's realtime emeter reading as integer fields.
 
@@ -53,10 +67,11 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
     legacy-unit keys are replaced by their converted milli-unit field; a null one is
     skipped and the rest still written. Without it every key is written as reported:
     a SMART device's `total` is today's kWh, never the lifetime `total_wh`. Any other key
-    (such as `err_code`) is written as before.
+    (such as `err_code`) is written as before. A NaN or infinite value drops only its
+    own field.
     """
     if not legacy_units:
-        return {key: int(value) for key, value in realtime.items()}
+        return {key: int(value) for key, value in realtime.items() if _finite(value)}
     status = EmeterStatus(realtime)
     legacy = set(_EMETER_FIELDS.values())
     out: dict[str, int] = {}
@@ -65,10 +80,10 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
             value = status[field]
         except KeyError, TypeError:  # absent, or a null legacy value to convert
             continue
-        if value is not None:
+        if value is not None and _finite(value):
             out[field] = round(value)
     for key, value in status.items():
-        if key not in _EMETER_FIELDS and key not in legacy:
+        if key not in _EMETER_FIELDS and key not in legacy and _finite(value):
             out[key] = int(value)
     return out
 
@@ -139,7 +154,9 @@ class Poller:
         its data was stored (``ok``); the device could not be polled (``failed``); or the
         device answered fine but the write to InfluxDB failed (``write_failed``). The
         third used to be counted as ``ok``, so an InfluxDB outage produced a cycle
-        reporting every device as succeeded while nothing landed.
+        reporting every device as succeeded while nothing landed. A device that answered
+        with a reading that cannot be stored (``UnstorableReading``) is ``failed`` and
+        still reachable: the fault is the device's, not InfluxDB's.
         """
         try:
             stored = await fetch(ip, device)
@@ -155,6 +172,14 @@ class Poller:
                 )
             else:
                 outcome["ok"] += 1
+        except UnstorableReading as e:
+            # The device ANSWERED, with a reading that cannot be stored: a device fault.
+            if self.on_reachable is not None:
+                self.on_reachable(ip)
+            outcome["failed"] += 1
+            self.logger.warning(
+                "%s polled %s but its reading could not be stored: %s", label, ip, e
+            )
         except Exception as e:
             # Deliberately NOT reachable: the fetch raised after retries, so we have no
             # evidence the device is there and must not manufacture any.
@@ -460,12 +485,16 @@ class Poller:
                     await self.storage.process_emeter_data({ip: child_data}) and stored
                 )
             return stored
-        # swallowed-exceptions: per-device boundary. A strip with one malformed child payload
-        # must not abort the cycle for the other devices; the outcome is counted into the
-        # cycle's collector_stats point and the traceback survives via logger.exception.
+        except ConnectionError, TimeoutError, OSError:
+            # A child that did not answer is a transport fault: async_retry retries it.
+            raise
+        # A strip with one malformed child payload must not abort the cycle for the other
+        # devices: it is raised as UnstorableReading, which _fetch_counted counts as a
+        # device failure (never an InfluxDB one); the traceback survives via
+        # logger.exception.
         except Exception as e:
             self.logger.exception("Error processing smart strip data for %s: %s", ip, e)
-            return False
+            raise UnstorableReading(str(e)) from e
 
     async def process_device_data(self, ip: str, device: Device) -> bool:
         """Process energy data for a single smart plug.
@@ -492,21 +521,20 @@ class Poller:
             }
             self.logger.debug("Storing emeter data for %s (IP: %s).", device_alias, ip)
             return await self.storage.process_emeter_data({ip: device_data})
-        except (AttributeError, KeyError, ValueError, TypeError) as e:
+        except (AttributeError, KeyError, ValueError, TypeError, OverflowError) as e:
             self.logger.exception(
                 "Data processing error for emeter data at %s: %s", ip, e
             )
-            return False
-        # swallowed-exceptions: the broad tail behind an already-narrowed handler above
-        # (AttributeError/KeyError/ValueError/TypeError cover the known device-payload shapes).
-        # It stays broad because device firmware returns arbitrary JSON and one device must not
-        # end the poll cycle -- but it is deliberately a SEPARATE branch so an unexpected type
-        # is visible as such in the logs rather than blending into the expected ones.
+            raise UnstorableReading(str(e)) from e
+        # The broad tail behind the narrowed handler above (which covers the known
+        # device-payload shapes). It stays broad because device firmware returns arbitrary
+        # JSON, but it is a SEPARATE branch so an unexpected type is visible as such in the
+        # logs. Either way it is the reading's fault, so it is raised as UnstorableReading.
         except Exception as e:
             self.logger.exception(
                 "Unexpected error processing emeter data for %s: %s", ip, e
             )
-            return False
+            raise UnstorableReading(str(e)) from e
 
     @async_retry(operation_name="sysinfo fetch")
     async def fetch_and_store_sysinfo(self, ip: str, device: Device) -> bool:
