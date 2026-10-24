@@ -1,0 +1,55 @@
+# Whole-platform adversarial audit record (`/adversarial-audit`, luxarch --doc FLEET-ADVERSARIAL-TESTING-STANDARD).
+# [profile] is the owner-reviewed statement of what an attacker wants here; [slices.*] records what was attacked.
+
+[profile]
+written = "2026-10-24"
+commit = "d1a4867e26add63f6c5f888fd5f0c62fa33622ba"
+crown_jewels = [
+  "the TP-Link cloud account credentials (KASA_COLLECTOR_TPLINK_USERNAME/PASSWORD): one account controls every plug and strip in the home",
+  "the InfluxDB token (KASA_COLLECTOR_INFLUXDB_TOKEN): write access to the bucket, often a shared InfluxDB holding other data",
+  "the integrity of the energy series in InfluxDB and the .jsonl files: the dashboards and any billing or automation built on them read it as truth",
+  "the collector's own liveness: a HEALTHCHECK that reports healthy while nothing is collected hides an outage",
+]
+actors = [
+  "any device on the home LAN: answers the UDP discovery broadcast, or impersonates a configured host, and the collector parses its replies",
+  "whoever controls DNS for a hostname in KASA_COLLECTOR_DEVICE_HOSTS (the cached resolution decides where credentials go)",
+  "the operator, through environment variables and the bind-mounted output directory",
+  "readers of the container logs (log shipping, `docker logs`, issue reports pasting a startup dump)",
+  "a user of the published image on their own hardware, running it with host networking",
+]
+boundaries = [
+  "UDP discovery and device responses (IOT XOR protocol, SMART/KLAP): untrusted JSON from the LAN into python-kasa and the poller",
+  "credentials handed to discovered and manual devices during KLAP/AES handshakes",
+  "device-supplied strings (alias, model, child aliases) into InfluxDB points, log lines and .jsonl file names",
+  "DNS resolution and its cache (app/collector/dns_cache.py) for configured hosts",
+  "environment configuration parsed at startup (app/core/config.py), including intervals, timeouts and paths",
+  "the HEALTHCHECK heartbeat file and /proc reads (app/health/)",
+]
+hot_spots = [
+  { path = "app/main.py", why = "dumps the effective config at startup with partial masking of PASSWORD/TOKEN/USERNAME; what reaches the log is a crown-jewel leak path" },
+  { path = "app/collector/kasa_api.py", why = "discovery sends credentials to whatever answers the broadcast; a rogue LAN device is the cheapest path to the TP-Link account" },
+  { path = "app/collector/device_manager.py", why = "owns credentials, manual-host resolution, and the auth fallback (with credentials, then without)" },
+  { path = "app/storage/influxdb.py", why = "device strings become tags, fields and file names; the one write path to the data an operator trusts" },
+  { path = "app/health/check.py", why = "a false healthy here hid a collector that collected nothing (fixed in 2026.10.2); smoke trusts its verdict" },
+]
+out_of_scope = [
+  { path = "harness/fake_kasa.py", why = "the test emulator; never in the production image and only run in the demo and e2e stacks" },
+  { path = "grafana/", why = "provisioned dashboards with no code; the datasource auth is the bundled stack's, not the collector's" },
+]
+history = [
+  "real credentials were committed in compose files before the fleet migration; scrubbed and history cleaned for public release (KASACOLLEC-36)",
+  "an .env.demo path allowlist suppressed the org-denylist disclosure tier, so internal topology could reach a public commit (KASACOLLEC-68)",
+  "the HEALTHCHECK reported healthy while nothing was collected, and smoke passed it (2026.10.2, KASACOLLEC-79)",
+  "unreachable devices consumed the whole poll cycle until a dead-host circuit breaker (KASACOLLEC-60)",
+  "the released 2026.10.2 image carries fixable HIGH/CRITICAL aiohttp and certifi findings (KASACOLLEC-92)",
+]
+
+[profile.surface]
+routes = 0
+anon = 0
+money = 0
+credential = 0
+upload = 0
+webhook = 0
+mounts = 0
+jobs = 0
