@@ -38,7 +38,7 @@ cp .env.example .env.prod   # then edit with your real values
 docker pull ghcr.io/luxardolabs/kasa-collector:2026.10.2
 ```
 
-Pin a version tag for anything you deploy: a deployable does not roll, so you always know which bits you run and can roll back to them. `:latest` exists for a quick try-out, but for now it stays at 2026.10.2. The release flow does not move it yet; it will track each release again once that lands.
+Pin a version tag for anything you deploy: a deployable does not roll, so you always know which bits you run and can roll back to them. `:latest` is for a quick try-out: it moves to each new release when that release is published.
 
 ## Collector-only deployment
 
