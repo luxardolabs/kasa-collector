@@ -233,7 +233,9 @@ class InfluxDBStorage:
                 )  # Default plug alias to device alias
                 plug_id = data.get("plug_id")
 
-                if plug_id is None and children:
+                # Only an outlet gets outlet tags: a strip's own total point never does,
+                # even when an outlet shares the strip's alias.
+                if plug_id is None and children and equipment_type == "plug":
                     # This is a power strip with child plugs
                     plug_info = self._get_plug_info_from_sysinfo_by_alias(
                         sysinfo, plug_alias

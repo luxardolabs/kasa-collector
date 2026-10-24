@@ -13,6 +13,8 @@ One image emulates any device; configure via environment:
     KASA_FAKE_MAC    MAC address          (default 50:C7:BF:00:00:01)
     KASA_FAKE_BASE_W base power in watts   (default 42.0)
     KASA_FAKE_OUTLETS strip outlet count   (default 6; strip only)
+    KASA_FAKE_OUTLET_ALIAS one alias for EVERY outlet (default "<ALIAS> Outlet <n>";
+                      strip only): outlets a user left with the same name
 
 Device kinds:
     plug           — smart plug WITH energy monitoring (e.g. HS110, KP115)
@@ -85,6 +87,7 @@ UNICAST_ONLY = os.getenv("KASA_FAKE_UNICAST_ONLY", "false").lower() in (
 # delete it. A device that was never discoverable is a different (and easier) case.
 DEAF_AFTER = float(os.getenv("KASA_FAKE_DEAF_AFTER", "0"))
 OUTLETS = int(os.getenv("KASA_FAKE_OUTLETS", "6"))
+OUTLET_ALIAS = os.getenv("KASA_FAKE_OUTLET_ALIAS", "")
 
 HAS_EMETER = KIND in ("plug", "strip")
 IS_STRIP = KIND == "strip"
@@ -120,7 +123,7 @@ def _children() -> list[dict[str, Any]]:
             {
                 "id": f"{DEVICE_ID}{i:02d}",
                 "state": 1,
-                "alias": f"{ALIAS} Outlet {i + 1}",
+                "alias": OUTLET_ALIAS or f"{ALIAS} Outlet {i + 1}",
                 "on_time": 3600 + i * 60,
                 "next_action": {"type": -1},
             }

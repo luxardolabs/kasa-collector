@@ -22,7 +22,7 @@ export TAG="${TAG:-unused-by-e2e}"
 DC="docker compose --profile e2e -p kasa-collector-e2e"
 TOKEN="kasa-e2e-token"
 # Devices whose emeter data must reach InfluxDB (the two plugs + the strip).
-EXPECTED=("Fake HS110 Plug" "Fake KP115 Plug" "Fake HS300 Strip" "Fake Deaf Plug")
+EXPECTED=("Fake HS110 Plug" "Fake KP115 Plug" "Fake HS300 Strip" "Fake Deaf Plug" "Fake Twin Strip")
 # The non-emeter plug must be handled without crashing but must NOT appear in emeter.
 NOT_EXPECTED="Fake HS103 Plug"
 TIMEOUT="${E2E_TIMEOUT:-120}"
@@ -159,36 +159,47 @@ if [ "$recent" -lt 1 ]; then
 fi
 echo "✓ 'Fake Deaf Plug' still collecting ($recent points in the last 25s) although discovery cannot see it (KASACOLLEC-70)"
 
-# Every strip outlet's point names its outlet. A point tagged equipment_type=plug with
-# no plug_id is several outlets' power merged into one series. In InfluxQL `= ''`
-# matches a series that lacks the tag. The tagged count is the control: it proves the
-# query reads strip outlets at all, so a zero untagged count means something.
-plug_points() {
-  local where="$1" resp
+# Every strip outlet has its own series. The stack is a fresh tmpfs InfluxDB, so the
+# all-time tag index is this run's alone. Each strip must show one plug_id per outlet:
+# a merge (two outlets under one plug_id, or under none) leaves fewer. 'Fake Twin Strip'
+# names both of its outlets "Twin", the case a lookup by alias merges.
+outlet_ids() {
+  local strip="$1" resp
   resp="$($DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \
     --data-urlencode "db=kasa" \
-    --data-urlencode "q=SELECT COUNT(power_mw) FROM \"emeter\" WHERE \"equipment_type\"='plug' AND ${where}" \
+    --data-urlencode "q=SHOW TAG VALUES FROM \"emeter\" WITH KEY = \"plug_id\" WHERE \"device_alias\"='${strip}' AND \"equipment_type\"='plug'" \
     -H "Authorization: Token ${TOKEN}" 2>/dev/null || true)"
   case "$resp" in
-    *'"series"'*) echo "$resp" | grep -oE '[0-9]+\]\]' | grep -oE '^[0-9]+' | head -1 ;;
-    *'"results"'*) echo 0 ;;
+    *'"results"'*) printf '%s' "$resp" | grep -o '\["plug_id","[^"]*"\]' | wc -l | tr -d ' ' ;;
     *) echo "" ;;
   esac
 }
-tagged="$(plug_points "\"plug_id\" != ''" || true)"
-untagged="$(plug_points "\"plug_id\" = ''" || true)"
-case "$tagged$untagged" in
-  ''|*[!0-9]*)
-    echo "✗ FAIL: could not read strip outlet point counts (tagged: '$tagged', untagged: '$untagged')"
-    exit 1
-    ;;
+# A point tagged equipment_type=plug with no plug_id at all (InfluxQL `= ''` matches a
+# series lacking the tag) is outlets merged into one untagged series.
+untagged="$($DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \
+  --data-urlencode "db=kasa" \
+  --data-urlencode "q=SELECT COUNT(power_mw) FROM \"emeter\" WHERE \"equipment_type\"='plug' AND \"plug_id\" = ''" \
+  -H "Authorization: Token ${TOKEN}" 2>/dev/null || true)"
+case "$untagged" in
+  *'"series"'*) untagged="$(printf '%s' "$untagged" | grep -oE '[0-9]+\]\]' | grep -oE '^[0-9]+' | head -1)" ;;
+  *'"results"'*) untagged=0 ;;
+  *) echo "✗ FAIL: could not read the untagged outlet point count"; exit 1 ;;
 esac
-if [ "$tagged" -lt 1 ] || [ "$untagged" -ne 0 ]; then
-  echo "✗ FAIL: strip outlet points: $tagged with a plug_id, $untagged without one"
-  echo "   (every outlet point must name its outlet, and at least one must exist)"
+for strip_outlets in "Fake HS300 Strip:6" "Fake Twin Strip:2"; do
+  strip="${strip_outlets%:*}" want="${strip_outlets##*:}"
+  got="$(outlet_ids "$strip" || true)"
+  if [ "$got" != "$want" ]; then
+    echo "✗ FAIL: '$strip' has ${got:-?} outlet series (plug_id values), expected $want"
+    echo "   two outlets written into one series lose one outlet's readings"
+    exit 1
+  fi
+  echo "✓ '$strip': $got outlets, $got separate series"
+done
+if [ "$untagged" -ne 0 ]; then
+  echo "✗ FAIL: $untagged strip outlet points carry no plug_id (outlets merged, untagged)"
   exit 1
 fi
-echo "✓ every strip outlet point carries a plug_id ($tagged points)"
+echo "✓ no strip outlet point is missing its plug_id"
 
 # Show a sample point count for good measure.
 count="$($DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \

@@ -171,6 +171,21 @@ services:
       KASA_FAKE_OUTLETS: "6"
     restart: unless-stopped
 
+  # A strip whose outlets share one name, as a user leaves them. e2e only: it proves each
+  # outlet still gets its own series (plug_id), not one series per alias.
+  kasa_fake_twin_strip:
+    profiles: [e2e]
+    image: kasa-collector-fake:test
+    environment:
+      KASA_FAKE_KIND: strip
+      KASA_FAKE_MODEL: HS300(US)
+      KASA_FAKE_ALIAS: Fake Twin Strip
+      KASA_FAKE_MAC: "50:C7:BF:00:00:15"
+      KASA_FAKE_BASE_W: "20"
+      KASA_FAKE_OUTLETS: "2"
+      KASA_FAKE_OUTLET_ALIAS: Twin
+    restart: unless-stopped
+
   # Deaf to broadcast discovery, reachable by direct query -- the KASACOLLEC-70 shape.
   # e2e only: it exists to prove a device that discovery stops seeing keeps collecting.
   kasa_fake_deaf:
@@ -302,6 +317,8 @@ services:
       kasa_fake_hs103:
         condition: service_started
       kasa_fake_hs300:
+        condition: service_started
+      kasa_fake_twin_strip:
         condition: service_started
 
 volumes:
