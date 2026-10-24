@@ -395,7 +395,7 @@
           ],
           "tz": "$tz",
           "rawQuery": true,
-          "query": "SELECT non_negative_difference(mean(\"total_wh\")) FROM \"emeter\" WHERE (\"plug_alias\" =~ /^$plug_alias$/) AND $timeFilter GROUP BY time($interval), \"plug_alias\" tz('$tz')"
+          "query": "SELECT non_negative_difference(mean(\"total_wh\")) FROM \"emeter\" WHERE (\"plug_alias\" =~ /^$plug_alias$/) AND $timeFilter GROUP BY time($interval), \"device_id\", \"plug_id\", \"plug_alias\" tz('$tz')"
         }
       ],
       "title": "Plug (By Day)",
@@ -715,7 +715,7 @@
               ],
               "tz": "$tz",
               "rawQuery": true,
-              "query": "SELECT non_negative_difference(mean(\"total_wh\")) * $cost / 1000 FROM \"emeter\" WHERE (\"plug_alias\" =~ /^$plug_alias$/) AND $timeFilter GROUP BY time($interval), \"plug_alias\" tz('$tz')"
+              "query": "SELECT non_negative_difference(mean(\"total_wh\")) * $cost / 1000 FROM \"emeter\" WHERE (\"plug_alias\" =~ /^$plug_alias$/) AND $timeFilter GROUP BY time($interval), \"device_id\", \"plug_id\", \"plug_alias\" tz('$tz')"
             }
           ],
           "title": "Plug (By Day)",

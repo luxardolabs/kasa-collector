@@ -47,6 +47,8 @@ Consumption and cost over time:
 - Estimated daily device and plug costs
 - Multi-day trend monitoring
 
+Per-plug panels draw one line per outlet (grouped by the strip's `device_id` and the outlet's `plug_id`, labelled by its name), so two outlets that share a name are shown separately, never averaged together.
+
 ### Device Details — `luxardolabs_kasa_04`
 
 An inventory-style overview of connected devices and plugs: state (on/off), software/firmware versions, model and device names, network connectivity, and real-time signal strength.
