@@ -824,15 +824,23 @@ class TestEmeterUnits:
 
         monkeypatch.setattr("app.collector.poller.get_hostname_cached", hostname)
 
+    @staticmethod
+    def _iot_plug(realtime):
+        """An IOT plug (the device class whose firmware may use legacy units)."""
+        from kasa.iot import IotPlug
+
+        class Plug(IotPlug):
+            alias = "Kettle"
+            host = "10.0.0.5"
+            emeter_realtime = realtime
+
+        return object.__new__(Plug)
+
     async def test_legacy_plug_reading_is_written_in_milli_units(self):
         from kasa.emeterstatus import EmeterStatus
 
         written: list[dict] = []
-        plug = SimpleNamespace(
-            alias="Kettle",
-            host="10.0.0.5",
-            emeter_realtime=EmeterStatus({**self.LEGACY, "err_code": 0}),
-        )
+        plug = self._iot_plug(EmeterStatus({**self.LEGACY, "err_code": 0}))
         assert await self._poller(written).process_device_data("10.0.0.5", plug)
         assert written[0]["emeter"] == {**self.NORMALIZED, "err_code": 0}
 
@@ -840,13 +848,37 @@ class TestEmeterUnits:
         from kasa.emeterstatus import EmeterStatus
 
         written: list[dict] = []
+        plug = self._iot_plug(EmeterStatus(dict(self.NORMALIZED)))
+        assert await self._poller(written).process_device_data("10.0.0.5", plug)
+        assert written[0]["emeter"] == self.NORMALIZED
+
+    async def test_smart_device_reading_is_not_converted(self):
+        # A SMART energy-v1 device reports `total` as TODAY's kWh: it must never be
+        # written as `total_wh`, which the dashboards read as a lifetime counter.
+        from kasa.emeterstatus import EmeterStatus
+
+        written: list[dict] = []
         plug = SimpleNamespace(
             alias="Kettle",
             host="10.0.0.5",
-            emeter_realtime=EmeterStatus(dict(self.NORMALIZED)),
+            emeter_realtime=EmeterStatus({"power_mw": 95000, "total": 2.9}),
         )
         assert await self._poller(written).process_device_data("10.0.0.5", plug)
-        assert written[0]["emeter"] == self.NORMALIZED
+        assert written[0]["emeter"] == {"power_mw": 95000, "total": 2}
+
+    def test_a_null_legacy_field_drops_only_itself(self):
+        from kasa.emeterstatus import EmeterStatus
+
+        from app.collector.poller import emeter_fields
+
+        reading = EmeterStatus({**self.LEGACY, "power": None})
+        expected = {k: v for k, v in self.NORMALIZED.items() if k != "power_mw"}
+        assert emeter_fields(reading, legacy_units=True) == expected
+
+    def test_a_plain_mapping_is_converted_like_an_emeter_status(self):
+        from app.collector.poller import emeter_fields
+
+        assert emeter_fields(dict(self.LEGACY), legacy_units=True) == self.NORMALIZED
 
     async def test_legacy_strip_and_outlet_readings_are_written_in_milli_units(self):
         from kasa.emeterstatus import EmeterStatus

@@ -204,23 +204,23 @@ echo "✓ no strip outlet point is missing its plug_id"
 # A legacy-firmware plug reports A / V / W / kWh floats. Its readings must land in the
 # milli-unit fields the dashboards read, with sub-unit precision kept: its ~12 W draw is
 # ~100 mA, which a whole-amp truncation would write as 0.
+# Its voltage (~120 V) must read as ~120000 mV and its lifetime total (~1 kWh) as Wh.
 legacy="$($DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \
   --data-urlencode "db=kasa" \
-  --data-urlencode "q=SELECT MIN(current_ma), MIN(power_mw) FROM \"emeter\" WHERE \"device_alias\"='Fake Legacy Plug'" \
+  --data-urlencode "q=SELECT MIN(current_ma), MIN(voltage_mv), MIN(total_wh), MIN(power_mw) FROM \"emeter\" WHERE \"device_alias\"='Fake Legacy Plug'" \
   -H "Authorization: Token ${TOKEN}" 2>/dev/null || true)"
-min_ma="$(printf '%s' "$legacy" | grep -oE '"values":\[\["[^"]*",[0-9]+,[0-9]+\]\]' | grep -oE ',[0-9]+,' | tr -d ',' || true)"
-case "$min_ma" in
-  ''|*[!0-9]*)
-    echo "✗ FAIL: 'Fake Legacy Plug' wrote no current_ma/power_mw fields (legacy units not converted)"
-    echo "   response: $legacy"
-    exit 1
-    ;;
-esac
-if [ "$min_ma" -lt 1 ]; then
-  echo "✗ FAIL: 'Fake Legacy Plug' current_ma is $min_ma (a sub-amp reading was truncated)"
+row="$(printf '%s' "$legacy" | grep -oE '"values":\[\["[^"]*",[0-9]+,[0-9]+,[0-9]+,[0-9]+\]\]' | grep -oE '[0-9]+,[0-9]+,[0-9]+,[0-9]+\]' | tr -d ']' || true)"
+if [ -z "$row" ]; then
+  echo "✗ FAIL: 'Fake Legacy Plug' wrote no current_ma/voltage_mv/total_wh/power_mw fields (legacy units not converted)"
+  echo "   response: $legacy"
   exit 1
 fi
-echo "✓ legacy-units plug written in milli-units (min current_ma ${min_ma})"
+IFS=, read -r min_ma min_mv min_wh _ <<<"$row"
+if [ "$min_ma" -lt 1 ] || [ "$min_mv" -lt 100000 ] || [ "$min_wh" -lt 100 ]; then
+  echo "✗ FAIL: 'Fake Legacy Plug' mis-scaled: min current_ma=$min_ma voltage_mv=$min_mv total_wh=$min_wh"
+  exit 1
+fi
+echo "✓ legacy-units plug written in milli-units (min current_ma $min_ma, voltage_mv $min_mv, total_wh $min_wh)"
 
 # Show a sample point count for good measure.
 count="$($DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \

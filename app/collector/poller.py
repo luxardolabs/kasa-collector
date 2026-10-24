@@ -25,7 +25,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from kasa import Device
-from kasa.iot import IotStrip
+from kasa.emeterstatus import EmeterStatus
+from kasa.iot import IotDevice, IotStrip
 
 from app.collector.dns_cache import get_hostname_cached
 from app.collector.utils import DeviceContext, async_retry
@@ -45,22 +46,28 @@ _EMETER_FIELDS = {
 }
 
 
-def emeter_fields(realtime: Mapping[str, Any]) -> dict[str, int]:
-    """A device's realtime emeter reading as integer milli-unit fields.
+def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, int]:
+    """A device's realtime emeter reading as integer fields.
 
-    The legacy-unit keys are replaced by their converted field. Any other key the
-    firmware reports (such as `err_code`) is written as before.
+    With `legacy_units` (an IOT device, whose firmware may report A / V / W / kWh), the
+    legacy-unit keys are replaced by their converted milli-unit field; a null one is
+    skipped and the rest still written. Without it every key is written as reported:
+    a SMART device's `total` is today's kWh, never the lifetime `total_wh`. Any other key
+    (such as `err_code`) is written as before.
     """
+    if not legacy_units:
+        return {key: int(value) for key, value in realtime.items()}
+    status = EmeterStatus(realtime)
     legacy = set(_EMETER_FIELDS.values())
     out: dict[str, int] = {}
     for field in _EMETER_FIELDS:
         try:
-            value = realtime[field]
-        except KeyError:
+            value = status[field]
+        except KeyError, TypeError:  # absent, or a null legacy value to convert
             continue
         if value is not None:
             out[field] = round(value)
-    for key, value in realtime.items():
+    for key, value in status.items():
         if key not in _EMETER_FIELDS and key not in legacy:
             out[key] = int(value)
     return out
@@ -408,7 +415,9 @@ class Poller:
         for both aggregate and per-plug analysis in Grafana.
         """
         try:
-            smart_strip_emeter_data = emeter_fields(smart_strip.emeter_realtime)
+            smart_strip_emeter_data = emeter_fields(
+                smart_strip.emeter_realtime, legacy_units=True
+            )
             smart_strip_data = {
                 "emeter": smart_strip_emeter_data,
                 "alias": smart_strip.alias,
@@ -429,7 +438,9 @@ class Poller:
             for index, child in enumerate(smart_strip.children, start=1):
                 await child.update()
                 plug_alias = f"{child.alias}"
-                child_emeter_data = emeter_fields(child.emeter_realtime)
+                child_emeter_data = emeter_fields(
+                    child.emeter_realtime, legacy_units=True
+                )
                 child_data = {
                     "emeter": child_emeter_data,
                     "alias": smart_strip.alias,
@@ -468,7 +479,9 @@ class Poller:
         data gracefully with specific error types for debugging.
         """
         try:
-            emeter_data = emeter_fields(device.emeter_realtime)
+            emeter_data = emeter_fields(
+                device.emeter_realtime, legacy_units=isinstance(device, IotDevice)
+            )
             device_alias = device.alias if device.alias else device.host
             device_data = {
                 "emeter": emeter_data,
