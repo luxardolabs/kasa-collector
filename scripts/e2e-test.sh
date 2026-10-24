@@ -3,7 +3,7 @@
 # Brings up the `e2e` PROFILE of the single compose.yml, waits for the collector to
 # write emeter data for the emulated devices, and asserts both device aliases show up
 # in InfluxDB. Always tears the stack down. Driven by `make test-e2e`, which first builds
-# the collector and fake images under their BARE verification names (`kasa-collector:test`,
+# the collector and fake images under their BARE verification names (`kasa-collector-e2e:test`,
 # `kasa-collector-fake:test`) — compose only runs those tags; nothing is pulled or pushed.
 #
 # Its own project name keeps the throwaway stack isolated from the dev/demo stacks, so
@@ -30,7 +30,7 @@ TIMEOUT="${E2E_TIMEOUT:-120}"
 cleanup() { $DC down -v >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-echo "▶ starting e2e stack (image kasa-collector:test)…"
+echo "▶ starting e2e stack (image kasa-collector-e2e:test)…"
 $DC up -d
 
 # Query InfluxDB (InfluxQL over the v1-compat API) for the emeter device_alias tags.

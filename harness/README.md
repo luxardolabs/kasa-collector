@@ -6,21 +6,25 @@ A tiny, dependency-free emulator that lets you test Kasa Collector against devic
 
 ## How it's used
 
-The e2e stack (the `e2e` profile of `compose.yml`, driven by `make test-e2e`) runs a couple of these on a bridge network and points the collector at them via `KASA_COLLECTOR_DEVICE_HOSTS`. Emeter values sway over time so dashboards actually move.
+The e2e stack (the `e2e` profile of `compose.yml`, driven by `make test-e2e`) runs seven of these on a bridge network, and the collector finds them by broadcast discovery (a Docker bridge floods broadcast); the demo stack names its four via `KASA_COLLECTOR_DEVICE_HOSTS`. Emeter values sway over time so dashboards actually move.
 
 ## Configuration (environment)
 
 One image emulates any device; pick the **kind** and model per container:
 
-| Variable            | Default             | Meaning                                                      |
-| ------------------- | ------------------- | ------------------------------------------------------------ |
-| `KASA_FAKE_KIND`    | `plug`              | `plug` (with emeter), `plug_noemeter`, or `strip`            |
-| `KASA_FAKE_MODEL`   | per kind            | Reported device model (e.g. HS110(US), HS103(US), HS300(US)) |
-| `KASA_FAKE_ALIAS`   | `Fake <MODEL>`      | Friendly device name                                         |
-| `KASA_FAKE_MAC`     | `50:C7:BF:00:00:01` | MAC address                                                  |
-| `KASA_FAKE_ID`      | derived from alias  | `deviceId`                                                   |
-| `KASA_FAKE_BASE_W`  | `42.0`              | Base power draw (watts); readings sway around this           |
-| `KASA_FAKE_OUTLETS` | `6`                 | Outlet count (strip only); each gets its own emeter          |
+| Variable                 | Default              | Meaning                                                       |
+| ------------------------ | -------------------- | ------------------------------------------------------------- |
+| `KASA_FAKE_KIND`         | `plug`               | `plug` (with emeter), `plug_noemeter`, or `strip`             |
+| `KASA_FAKE_MODEL`        | per kind             | Reported device model (e.g. HS110(US), HS103(US), HS300(US))  |
+| `KASA_FAKE_ALIAS`        | `Fake <MODEL>`       | Friendly device name                                          |
+| `KASA_FAKE_MAC`          | `50:C7:BF:00:00:01`  | MAC address                                                   |
+| `KASA_FAKE_ID`           | derived from alias   | `deviceId`                                                    |
+| `KASA_FAKE_BASE_W`       | `42.0`               | Base power draw (watts); readings sway around this            |
+| `KASA_FAKE_OUTLETS`      | `6`                  | Outlet count (strip only); each gets its own emeter           |
+| `KASA_FAKE_OUTLET_ALIAS` | `<ALIAS> Outlet <n>` | One name for every outlet (strip only), as a user leaves them |
+| `KASA_FAKE_LEGACY_UNITS` | `false`              | `true`: emeter in A / V / W / kWh floats (HS110 hardware v1)  |
+| `KASA_FAKE_UNICAST_ONLY` | `false`              | `true`: deaf to broadcast discovery, answers direct queries   |
+| `KASA_FAKE_DEAF_AFTER`   | `0`                  | Seconds after which it goes deaf to broadcast (0: never)      |
 
 ### Device kinds
 

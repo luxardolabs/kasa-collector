@@ -30,10 +30,9 @@ PUBLIC_REGISTRY ?= ghcr.io
 PUBLIC_LATEST := 1
 # LOCAL verification images for the hardware-free stacks — BARE on purpose, so they cannot be
 # pushed by accident or mistaken for a deployable, and a clean clone needs no registry. The
-# e2e image shares the image block's TEST_IMAGE name (`<repo>:test`, the only bare app name
-# repo.compose_conventions accepts): `make test` builds the `test` stage there and `make test-e2e`
-# the `production` stage, each from source immediately before it runs, so neither reads the other's.
-E2E_IMAGE  := kasa-collector:test
+# e2e image (the `production` stage) has its own `<repo>-<role>:test` name, so it never shares
+# a tag with the image block's TEST_IMAGE (`<repo>:test`, the `test` stage `make test` builds).
+E2E_IMAGE  := kasa-collector-e2e:test
 FAKE_IMAGE := kasa-collector-fake:test
 
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).

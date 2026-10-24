@@ -25,11 +25,11 @@ make test-e2e
 
 What it does:
 
-1. Builds the collector image from the current source as `kasa-collector:test`, and the emulator as `kasa-collector-fake:test` — bare local names, never pushed, so no registry is involved.
-1. Brings up the `e2e` profile of `compose.yml` on a bridge network, under its own compose project so a teardown can never reach the dev or demo volumes: an ephemeral InfluxDB, a roster of fake Kasa devices (`harness/fake_kasa.py` speaking the real TP-Link IOT protocol) — two emeter plugs (HS110, KP115), a non-emeter plug (HS103), and a 6-outlet power strip (HS300) — and the collector pointed at them via `KASA_COLLECTOR_DEVICE_HOSTS` (auto-discovery off, since a bridge network can't broadcast).
-1. Polls InfluxDB and asserts the emeter data for the plugs **and** the strip lands in the `emeter` measurement, and that the non-emeter plug is handled cleanly (no emeter data, collector stays healthy), then tears everything down.
+1. Builds the collector image from the current source as `kasa-collector-e2e:test`, and the emulator as `kasa-collector-fake:test` — bare local names, never pushed, so no registry is involved.
+1. Brings up the `e2e` profile of `compose.yml` on a bridge network, under its own compose project so a teardown can never reach the dev or demo volumes: an ephemeral InfluxDB, a roster of fake Kasa devices (`harness/fake_kasa.py` speaking the real TP-Link IOT protocol), and the collector finding them by broadcast discovery (a Docker bridge floods broadcast). The roster: two emeter plugs (HS110, KP115), a non-emeter plug (HS103), a 6-outlet strip (HS300), a plug that goes deaf to discovery after 45 s, a 2-outlet strip whose outlets share one name, and a plug on legacy-unit firmware.
+1. Polls InfluxDB and asserts: emeter data for every emeter device; the non-emeter plug handled cleanly; the deaf plug still collected once discovery cannot see it; one series per strip outlet, even for outlets sharing a name; and the legacy plug's readings written in milli-units. Then it tears everything down.
 
-To emulate other models or more devices, add services to `compose.yml` carrying `profiles: [demo, e2e]`, using the harness image and set `KASA_FAKE_KIND` (`plug` | `plug_noemeter` | `strip`), `KASA_FAKE_MODEL`, `KASA_FAKE_ALIAS`, `KASA_FAKE_BASE_W`, and (for strips) `KASA_FAKE_OUTLETS`. See [`harness/README.md`](../harness/README.md) and [supported-devices.md](supported-devices.md) for the device kinds the emulator covers.
+To emulate other models or more devices, add services to `compose.yml` carrying `profiles: [demo, e2e]`, using the harness image and set `KASA_FAKE_KIND` (`plug` | `plug_noemeter` | `strip`), `KASA_FAKE_MODEL`, `KASA_FAKE_ALIAS`, `KASA_FAKE_BASE_W`, and (for strips) `KASA_FAKE_OUTLETS` and `KASA_FAKE_OUTLET_ALIAS`; `KASA_FAKE_LEGACY_UNITS=true` reports legacy A / V / W / kWh floats. See [`harness/README.md`](../harness/README.md) and [supported-devices.md](supported-devices.md) for the device kinds the emulator covers.
 
 ## Try the full system interactively
 

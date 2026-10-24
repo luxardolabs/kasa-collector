@@ -296,10 +296,10 @@ services:
       retries: 30
 
   # The runtime stage built from current source by `make test-e2e`, under the BARE
-  # verification name: never pushed, so the test needs no registry (`<repo>:test`).
+  # verification name: never pushed, so the test needs no registry (`<repo>-e2e:test`).
   kasa-collector-e2e:
     profiles: [e2e]
-    image: kasa-collector:test
+    image: kasa-collector-e2e:test
     environment:
       # DISCOVERY, not explicit hosts. A Docker bridge is a Linux bridge and floods
       # broadcast, so 255.255.255.255 reaches every emulator on it -- verified. The
