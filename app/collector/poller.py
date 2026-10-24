@@ -48,16 +48,39 @@ _EMETER_FIELDS = {
 
 
 class UnstorableReading(Exception):
-    """A device answered, but its reading could not be turned into points.
+    """A device answered, but its reading could not be read in full or turned into
+    points (a strip outlet that did not answer, a malformed payload).
 
     A device fault, not a storage one: `_fetch_counted` counts it as `failed`, never as
-    `write_failed`, and the device still counts as reachable.
+    `write_failed`, and the device still counts as reachable. It is never retried.
     """
 
 
-def _finite(value: Any) -> bool:
-    """False for a float NaN or infinity, which no InfluxDB integer field can hold."""
-    return not isinstance(value, float) or math.isfinite(value)
+_INT64 = range(-(2**63), 2**63)
+
+
+def _storable(value: Any) -> bool:
+    """False for a value no InfluxDB integer field can hold: a float NaN or infinity,
+    or an integer outside int64 (InfluxDB rejects the device's whole batch for it)."""
+    if isinstance(value, float):
+        return math.isfinite(value) and int(value) in _INT64
+    if isinstance(value, int):
+        return value in _INT64
+    return True
+
+
+def _storable_reading(
+    realtime: Mapping[str, Any], legacy_units: bool
+) -> dict[str, int]:
+    """`emeter_fields`, refusing a reading that leaves nothing to store.
+
+    A non-empty reading whose every field was dropped would write no point and count
+    as a success; it is a bad reading instead.
+    """
+    fields = emeter_fields(realtime, legacy_units=legacy_units)
+    if realtime and not fields:
+        raise ValueError(f"no storable field in emeter reading {dict(realtime)!r}")
+    return fields
 
 
 def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, int]:
@@ -67,11 +90,11 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
     legacy-unit keys are replaced by their converted milli-unit field; a null one is
     skipped and the rest still written. Without it every key is written as reported:
     a SMART device's `total` is today's kWh, never the lifetime `total_wh`. Any other key
-    (such as `err_code`) is written as before. A NaN or infinite value drops only its
-    own field.
+    (such as `err_code`) is written as before. A value InfluxDB cannot hold (NaN,
+    infinity, an integer outside int64) drops only its own field.
     """
     if not legacy_units:
-        return {key: int(value) for key, value in realtime.items() if _finite(value)}
+        return {key: int(value) for key, value in realtime.items() if _storable(value)}
     status = EmeterStatus(realtime)
     legacy = set(_EMETER_FIELDS.values())
     out: dict[str, int] = {}
@@ -80,10 +103,10 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
             value = status[field]
         except KeyError, TypeError:  # absent, or a null legacy value to convert
             continue
-        if value is not None and _finite(value):
+        if value is not None and _storable(value):
             out[field] = round(value)
     for key, value in status.items():
-        if key not in _EMETER_FIELDS and key not in legacy and _finite(value):
+        if key not in _EMETER_FIELDS and key not in legacy and _storable(value):
             out[key] = int(value)
     return out
 
@@ -178,7 +201,7 @@ class Poller:
                 self.on_reachable(ip)
             outcome["failed"] += 1
             self.logger.warning(
-                "%s polled %s but its reading could not be stored: %s", label, ip, e
+                "%s polled %s but its reading could not be collected: %s", label, ip, e
             )
         except Exception as e:
             # Deliberately NOT reachable: the fetch raised after retries, so we have no
@@ -439,62 +462,52 @@ class Poller:
         tagging to identify it as part of the parent strip. This allows
         for both aggregate and per-plug analysis in Grafana.
         """
+        # Every outlet is read and every reading converted BEFORE anything is written.
+        # The strip already answered, so an outlet that does not, or a malformed
+        # payload, is a device fault (UnstorableReading: counted once, the strip still
+        # reachable, never retried) and leaves no partly-written strip behind. Nothing
+        # here is retried: a re-run would write the strip's points again.
         try:
-            smart_strip_emeter_data = emeter_fields(
-                smart_strip.emeter_realtime, legacy_units=True
-            )
+            dns_name = await get_hostname_cached(ip)
             smart_strip_data = {
-                "emeter": smart_strip_emeter_data,
+                "emeter": _storable_reading(smart_strip.emeter_realtime, True),
                 "alias": smart_strip.alias,
-                "dns_name": await get_hostname_cached(ip),
+                "dns_name": dns_name,
                 "ip": ip,
                 "equipment_type": "device",
             }
-            self.logger.debug(
-                "Storing smart strip data for %s (IP: %s).", smart_strip.alias, ip
-            )
-            stored = await self.storage.process_emeter_data({ip: smart_strip_data})
-
             # An outlet is identified by its position on the strip (the order of
             # sys_info["children"], so it matches the sysinfo_child plug_id) and the
             # strip's deviceId. Its alias is user-set and may repeat, and the sysinfo
             # cache may not hold this strip yet.
             device_id = smart_strip.sys_info.get("deviceId")
+            outlets = []
             for index, child in enumerate(smart_strip.children, start=1):
                 await child.update()
-                plug_alias = f"{child.alias}"
-                child_emeter_data = emeter_fields(
-                    child.emeter_realtime, legacy_units=True
+                outlets.append(
+                    {
+                        "emeter": _storable_reading(child.emeter_realtime, True),
+                        "alias": smart_strip.alias,
+                        "plug_alias": f"{child.alias}",
+                        "plug_id": str(index),
+                        "device_id": device_id,
+                        "dns_name": dns_name,
+                        "ip": ip,
+                        "equipment_type": "plug",
+                    }
                 )
-                child_data = {
-                    "emeter": child_emeter_data,
-                    "alias": smart_strip.alias,
-                    "plug_alias": plug_alias,
-                    "plug_id": str(index),
-                    "device_id": device_id,
-                    "dns_name": await get_hostname_cached(ip),
-                    "ip": ip,
-                    "equipment_type": "plug",
-                }
-                self.logger.debug(
-                    "Storing child plug data for %s (IP: %s).", plug_alias, ip
-                )
-                # A strip counts as stored only if the parent AND every child landed --
-                # a partially-written strip is not a success.
-                stored = (
-                    await self.storage.process_emeter_data({ip: child_data}) and stored
-                )
-            return stored
-        except ConnectionError, TimeoutError, OSError:
-            # A child that did not answer is a transport fault: async_retry retries it.
-            raise
-        # A strip with one malformed child payload must not abort the cycle for the other
-        # devices: it is raised as UnstorableReading, which _fetch_counted counts as a
-        # device failure (never an InfluxDB one); the traceback survives via
-        # logger.exception.
         except Exception as e:
-            self.logger.exception("Error processing smart strip data for %s: %s", ip, e)
+            self.logger.exception("Error reading smart strip data for %s: %s", ip, e)
             raise UnstorableReading(str(e)) from e
+
+        self.logger.debug(
+            "Storing smart strip data for %s (IP: %s).", smart_strip.alias, ip
+        )
+        stored = await self.storage.process_emeter_data({ip: smart_strip_data})
+        for outlet in outlets:
+            # A strip counts as stored only if the parent AND every outlet landed.
+            stored = await self.storage.process_emeter_data({ip: outlet}) and stored
+        return stored
 
     async def process_device_data(self, ip: str, device: Device) -> bool:
         """Process energy data for a single smart plug.
@@ -508,8 +521,8 @@ class Poller:
         data gracefully with specific error types for debugging.
         """
         try:
-            emeter_data = emeter_fields(
-                device.emeter_realtime, legacy_units=isinstance(device, IotDevice)
+            emeter_data = _storable_reading(
+                device.emeter_realtime, isinstance(device, IotDevice)
             )
             device_alias = device.alias if device.alias else device.host
             device_data = {

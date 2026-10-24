@@ -611,24 +611,92 @@ class TestBadReadingsAreNotStorageFailures:
         assert reached == ["10.0.0.5"]
         assert "InfluxDB" not in caplog.text
 
-    async def test_a_strip_outlet_that_does_not_answer_stays_a_transport_error(self):
-        # Retried by async_retry, then counted as unreachable: not a bad reading.
+    @pytest.mark.parametrize("kind", ["builtin", "kasa"])
+    async def test_an_outlet_that_does_not_answer_writes_nothing_once(
+        self, monkeypatch, kind
+    ):
+        # The strip answered, one outlet did not: a device failure, counted once.
+        # Nothing of the strip is written (no partial strip), the fetch is not re-run
+        # (which would re-write the strip's points), and the strip stays reachable.
+        from kasa.exceptions import _ConnectionError
+
+        import app.collector.poller as poller_mod
+        import app.collector.utils as utils_mod
+
+        error: Exception = (
+            ConnectionError("outlet did not answer")
+            if kind == "builtin"
+            else _ConnectionError("Unable to connect to the device")
+        )
+
+        async def hostname(ip):
+            return "strip.lan"
+
+        async def no_sleep(seconds):
+            return None
+
+        updates: list[str] = []
+
         class Outlet:
             alias = "Lamp"
-            emeter_realtime = {"power_mw": 1}
+            emeter_realtime = {"power_mw": 5}
 
             async def update(self):
-                raise ConnectionError("outlet did not answer")
+                updates.append(self.alias)
+                raise error
 
-        p = self._poller([])
-        strip = SimpleNamespace(
-            alias="Desk Strip",
-            sys_info={"deviceId": "STRIP1"},
-            emeter_realtime={"power_mw": 2},
-            children=[Outlet()],
+        class Strip:
+            alias = "Desk Strip"
+            host = "10.0.0.9"
+            sys_info = {"deviceId": "STRIP1"}
+            emeter_realtime = {"power_mw": 2}
+            children = [Outlet()]
+
+            async def update(self):
+                return None
+
+        monkeypatch.setattr(poller_mod, "IotStrip", Strip)
+        monkeypatch.setattr(utils_mod, "get_hostname_cached", hostname)
+        monkeypatch.setattr(utils_mod.asyncio, "sleep", no_sleep)
+        written: list[dict] = []
+
+        async def capture(data):
+            written.extend(data.values())
+            return True
+
+        reached: list[str] = []
+        p = self._poller(reached)
+        p.storage = SimpleNamespace(process_emeter_data=capture)
+        outcome = {"ok": 0, "failed": 0, "write_failed": 0}
+
+        await p._fetch_counted(
+            p.fetch_and_store_emeter_data, "10.0.0.9", Strip(), outcome, "emeter fetch"
         )
-        with pytest.raises(ConnectionError):
-            await p.process_smart_strip_data("10.0.0.9", strip)
+        assert outcome == {"ok": 0, "failed": 1, "write_failed": 0}
+        assert written == [] and updates == ["Lamp"] and reached == ["10.0.0.9"]
+
+    async def test_a_reading_with_no_storable_field_is_not_ok(self):
+        # Every field NaN: nothing would be written, which must not count as a
+        # success (a success drives the healthcheck heartbeat).
+        p = self._poller([])
+        plug = SimpleNamespace(
+            alias="Kettle", host="10.0.0.5", emeter_realtime={"power_mw": float("nan")}
+        )
+        outcome = {"ok": 0, "failed": 0, "write_failed": 0}
+
+        async def fetch(ip, device):
+            return await p.process_device_data(ip, device)
+
+        await p._fetch_counted(fetch, "10.0.0.5", plug, outcome, "emeter fetch")
+        assert outcome == {"ok": 0, "failed": 1, "write_failed": 0}
+
+    @pytest.mark.parametrize("legacy_units", [False, True])
+    def test_an_integer_outside_int64_drops_only_its_field(self, legacy_units):
+        # InfluxDB rejects the whole batch for one out-of-range integer field.
+        from app.collector.poller import emeter_fields
+
+        reading = {"power_mw": 5, "total_wh": 2**63}
+        assert emeter_fields(reading, legacy_units=legacy_units) == {"power_mw": 5}
 
     @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
     def test_a_non_finite_value_drops_only_its_field(self, bad):
