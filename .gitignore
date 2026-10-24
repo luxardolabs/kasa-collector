@@ -70,3 +70,6 @@ Makefile.local
 .claude/.luxpm-search-terms.json
 .claude/hooks/__pycache__/
 .claude/worktrees/
+
+# Local cache of /adversarial-audit run reproductions (the issues carry the proof)
+/.adversarial-audit/

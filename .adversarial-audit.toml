@@ -53,3 +53,10 @@ upload = 0
 webhook = 0
 mounts = 0
 jobs = 0
+
+[slices."entry-points"]
+fingerprint = "f99629bd8c1fd390de8c4e164d307737314e3fb4bde5156be33229f607bc0ab9"
+commit = "8c7ead5"
+date = "2026-10-24"
+epic = "KASACOLLEC-93"
+findings = ["KASACOLLEC-94", "KASACOLLEC-95", "KASACOLLEC-96", "KASACOLLEC-97", "KASACOLLEC-98", "KASACOLLEC-99"]
