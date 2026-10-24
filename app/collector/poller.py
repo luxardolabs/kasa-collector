@@ -390,7 +390,12 @@ class Poller:
             )
             stored = await self.storage.process_emeter_data({ip: smart_strip_data})
 
-            for child in smart_strip.children:
+            # An outlet is identified by its position on the strip (the order of
+            # sys_info["children"], so it matches the sysinfo_child plug_id) and the
+            # strip's deviceId. Its alias is user-set and may repeat, and the sysinfo
+            # cache may not hold this strip yet.
+            device_id = smart_strip.sys_info.get("deviceId")
+            for index, child in enumerate(smart_strip.children, start=1):
                 await child.update()
                 plug_alias = f"{child.alias}"
                 child_emeter_data = {
@@ -400,6 +405,8 @@ class Poller:
                     "emeter": child_emeter_data,
                     "alias": smart_strip.alias,
                     "plug_alias": plug_alias,
+                    "plug_id": str(index),
+                    "device_id": device_id,
                     "dns_name": await get_hostname_cached(ip),
                     "ip": ip,
                     "equipment_type": "plug",

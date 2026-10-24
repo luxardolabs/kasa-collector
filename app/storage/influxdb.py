@@ -219,7 +219,9 @@ class InfluxDBStorage:
 
                 # Fetch the sysinfo for this device
                 sysinfo = self.sysinfo_data.get(ip, {}).get("sysinfo", {})
-                device_id = sysinfo.get("deviceId", None)  # Get device_id from sysinfo
+                # Identity the poller read off the device wins over the sysinfo cache,
+                # which may not hold this device yet.
+                device_id = data.get("device_id") or sysinfo.get("deviceId", None)
                 children = sysinfo.get("children", [])
 
                 # Log for sysinfo lookup
@@ -229,9 +231,9 @@ class InfluxDBStorage:
                 plug_alias = data.get(
                     "plug_alias", alias
                 )  # Default plug alias to device alias
-                plug_id = None
+                plug_id = data.get("plug_id")
 
-                if children:
+                if plug_id is None and children:
                     # This is a power strip with child plugs
                     plug_info = self._get_plug_info_from_sysinfo_by_alias(
                         sysinfo, plug_alias

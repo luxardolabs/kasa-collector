@@ -738,3 +738,52 @@ class TestManualHostKeyedByResolvedAddress:
 
         await dm.remove_missing_devices({})  # never appears in a broadcast
         assert "198.51.100.100" in dm.devices  # protected
+
+
+@pytest.mark.unit
+class TestStripOutletIdentity:
+    """Each outlet's point carries the outlet's own position and the strip's id.
+
+    Outlet identity comes from the strip as polled, not from a lookup by alias in the
+    sysinfo cache: two outlets may share a user-set alias, and the emeter loop can run
+    before the strip's first sysinfo poll.
+    """
+
+    async def test_each_outlet_carries_its_position_and_the_strip_id(self, monkeypatch):
+        async def hostname(ip):
+            return "strip.lan"
+
+        monkeypatch.setattr("app.collector.poller.get_hostname_cached", hostname)
+
+        class Outlet:
+            def __init__(self, alias):
+                self.alias = alias
+                self.emeter_realtime = {"power_mw": 1000}
+
+            async def update(self):
+                return None
+
+        written: list[dict] = []
+
+        async def capture(data):
+            written.extend(data.values())
+            return True
+
+        p = object.__new__(Poller)
+        p.logger = logging.getLogger("test")
+        p.storage = SimpleNamespace(process_emeter_data=capture)
+        strip = SimpleNamespace(
+            alias="Desk Strip",
+            sys_info={"deviceId": "STRIP1"},
+            emeter_realtime={"power_mw": 2000},
+            children=[Outlet("Plug"), Outlet("Plug"), Outlet("TV")],
+        )
+
+        assert await p.process_smart_strip_data("10.0.0.9", strip) is True
+        outlets = [d for d in written if d["equipment_type"] == "plug"]
+        assert [(d["plug_id"], d["plug_alias"]) for d in outlets] == [
+            ("1", "Plug"),
+            ("2", "Plug"),
+            ("3", "TV"),
+        ]
+        assert all(d["device_id"] == "STRIP1" for d in outlets)

@@ -159,6 +159,37 @@ if [ "$recent" -lt 1 ]; then
 fi
 echo "✓ 'Fake Deaf Plug' still collecting ($recent points in the last 25s) although discovery cannot see it (KASACOLLEC-70)"
 
+# Every strip outlet's point names its outlet. A point tagged equipment_type=plug with
+# no plug_id is several outlets' power merged into one series. In InfluxQL `= ''`
+# matches a series that lacks the tag. The tagged count is the control: it proves the
+# query reads strip outlets at all, so a zero untagged count means something.
+plug_points() {
+  local where="$1" resp
+  resp="$($DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \
+    --data-urlencode "db=kasa" \
+    --data-urlencode "q=SELECT COUNT(power_mw) FROM \"emeter\" WHERE \"equipment_type\"='plug' AND ${where}" \
+    -H "Authorization: Token ${TOKEN}" 2>/dev/null || true)"
+  case "$resp" in
+    *'"series"'*) echo "$resp" | grep -oE '[0-9]+\]\]' | grep -oE '^[0-9]+' | head -1 ;;
+    *'"results"'*) echo 0 ;;
+    *) echo "" ;;
+  esac
+}
+tagged="$(plug_points "\"plug_id\" != ''" || true)"
+untagged="$(plug_points "\"plug_id\" = ''" || true)"
+case "$tagged$untagged" in
+  ''|*[!0-9]*)
+    echo "✗ FAIL: could not read strip outlet point counts (tagged: '$tagged', untagged: '$untagged')"
+    exit 1
+    ;;
+esac
+if [ "$tagged" -lt 1 ] || [ "$untagged" -ne 0 ]; then
+  echo "✗ FAIL: strip outlet points: $tagged with a plug_id, $untagged without one"
+  echo "   (every outlet point must name its outlet, and at least one must exist)"
+  exit 1
+fi
+echo "✓ every strip outlet point carries a plug_id ($tagged points)"
+
 # Show a sample point count for good measure.
 count="$($DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \
   --data-urlencode "db=kasa" \

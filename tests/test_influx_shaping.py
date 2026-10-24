@@ -116,6 +116,46 @@ class TestProcessEmeter:
         tags = _tags(s.captured[0])
         assert tags["plug_alias"] == "OutletB" and tags["plug_id"] == "2"
 
+    @staticmethod
+    def _outlet(plug_id, alias="Plug"):
+        return {
+            "10.0.0.9": {
+                "emeter": {"power_mw": 1000},
+                "alias": "Desk Strip",
+                "plug_alias": alias,
+                "plug_id": plug_id,
+                "device_id": "STRIP1",
+                "dns_name": "strip.lan",
+                "ip": "10.0.0.9",
+                "equipment_type": "plug",
+            }
+        }
+
+    async def test_outlets_sharing_an_alias_stay_in_separate_series(self):
+        s = _storage()
+        s.sysinfo_data = {
+            "10.0.0.9": {
+                "sysinfo": {
+                    "deviceId": "STRIP1",
+                    "children": [{"alias": "Plug"}, {"alias": "Plug"}],
+                }
+            }
+        }
+        await s.process_emeter_data(self._outlet("1"))
+        await s.process_emeter_data(self._outlet("2"))
+        assert [_tags(p)["plug_id"] for p in s.captured] == ["1", "2"]
+
+    async def test_outlet_written_before_the_first_sysinfo_keeps_its_identity(self):
+        s = _storage()  # no sysinfo cached for the strip yet
+        await s.process_emeter_data(self._outlet("1", alias="Lamp"))
+        await s.process_emeter_data(self._outlet("2", alias="TV"))
+        tags = [_tags(p) for p in s.captured]
+        assert [(t["plug_id"], t["plug_alias"]) for t in tags] == [
+            ("1", "Lamp"),
+            ("2", "TV"),
+        ]
+        assert all(t["device_id"] == "STRIP1" for t in tags)
+
     async def test_malicious_alias_is_sanitized(self):
         s = _storage()
         s.sysinfo_data = {"10.0.0.3": {"sysinfo": {"deviceId": "D", "children": []}}}
