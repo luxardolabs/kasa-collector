@@ -17,3 +17,7 @@ source_client = ["collector/device_manager.py"]
 [observability]
 enabled = false
 exempt_reason = "Headless collector: no OTel dependency, no span helpers, and no request tree to trace — the unit of work is a poll cycle, not a request. It already self-reports through the collector_stats measurement (devices/succeeded/failed/write_failed/duration_seconds per cycle, surfaced on the Collector Health dashboard row), which covers the same questions the overlay would answer here. Revisit if the collector grows an HTTP surface or fans out across services."
+
+# Who pushes: the agent pushes when its issue lands (owner ruling, 2026-10-24). Releases stay the owner's.
+[agents]
+push = "agent"

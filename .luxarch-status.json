@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.289.3",
+  "guard_version": "0.321.0",
   "repo": "/repo",
   "targets": [
     {
@@ -218,6 +218,17 @@
         "example": ""
       },
       {
+        "rule": "repo.agent_push_declared",
+        "status": "PASS",
+        "since": "0.296.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
         "rule": "repo.logging_canonical",
         "status": "PASS",
         "since": "0.254.0",
@@ -362,23 +373,23 @@
       },
       {
         "rule": "repo.luxpm_receipt_current",
-        "status": "PASS",
+        "status": "INERT",
         "since": "0.211.0",
         "violations": 0,
         "deferred": false,
-        "inert": false,
-        "inert_reason": "",
+        "inert": true,
+        "inert_reason": "the receipt verifies and is current, but this checkout's git (remote / object store) cannot be read here, so whether it describes THIS repo and anchors on a commit in it is unknown. NOT a clearance: run in a working checkout",
         "fix": "",
         "example": ""
       },
       {
         "rule": "repo.luxpm_backlog_triaged",
-        "status": "PASS",
+        "status": "INERT",
         "since": "0.252.0",
         "violations": 0,
         "deferred": false,
-        "inert": false,
-        "inert_reason": "",
+        "inert": true,
+        "inert_reason": "this checkout's git remote cannot be read here, so whether `.luxpm-receipt` describes THIS repo is unknown \u2014 the backlog counts are only trusted from a verified receipt (`repo.luxpm_receipt_current` says what to fix). NOT a clearance",
         "fix": "",
         "example": ""
       },
@@ -483,23 +494,23 @@
       },
       {
         "rule": "repo.release_tag_hygiene",
-        "status": "PASS",
+        "status": "INERT",
         "since": "0.151.0",
         "violations": 0,
         "deferred": false,
-        "inert": false,
-        "inert_reason": "",
+        "inert": true,
+        "inert_reason": "`.git` is not a readable directory here (a git-worktree pointer file, or an exported tree with no refs) \u2014 tag hygiene can't be evaluated without the refs; run at a full checkout. Not manufacturing a red.",
         "fix": "",
         "example": ""
       },
       {
         "rule": "repo.hooks_wired",
-        "status": "PASS",
+        "status": "INERT",
         "since": "0.154.0",
         "violations": 0,
         "deferred": false,
-        "inert": false,
-        "inert_reason": "",
+        "inert": true,
+        "inert_reason": "hooks are installed and wired, but there is NO heartbeat \u2014 so it cannot be confirmed they ever executed. Hooks can be disabled centrally (enterprise/user settings) while the repo looks fully protected; that is a hollow green no file scan can see. Run any agent tool call and re-check \u2014 if the heartbeat stays absent, the hooks are not running.",
         "fix": "",
         "example": ""
       },
@@ -846,20 +857,20 @@
       }
     ],
     "summary": {
-      "PASS": 62,
+      "PASS": 59,
       "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
-      "INERT": 5
+      "INERT": 9
     }
   },
   "summary": {
-    "PASS": 68,
+    "PASS": 65,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 7
+    "INERT": 11
   },
-  "commit": "6a21cd3665f4d30208f8429a9126fbd17e25d850",
-  "generated_at": "2026-10-13T04:01:32Z"
+  "commit": "c74e7ba3c3e3db98954e60db2e35e57d80ffc59e",
+  "generated_at": "2026-10-24T15:39:33Z"
 }

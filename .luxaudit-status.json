@@ -7,21 +7,22 @@
   "summary": {
     "PASS": 32,
     "FAIL": 0,
-    "XFAIL": 0
+    "XFAIL": 0,
+    "INERT": 1
   },
   "vulnerable": [],
   "deferred": [],
   "banned": [],
   "not_audited": [],
   "image": {
-    "ref": "luxardolabs/kasa-collector:2026.10.2",
-    "inert": false,
-    "inert_reason": "",
+    "ref": "",
+    "inert": true,
+    "inert_reason": "cannot derive the shipped image: needs the git remote and a VERSION file, or `[image] refs = [\"<registry>/<name>:{version}\"]` in .luxaudit.toml",
     "error": "",
     "not_released": [],
     "vulnerable": [],
     "deferred": []
   },
-  "commit": "6a21cd3665f4d30208f8429a9126fbd17e25d850",
-  "generated_at": "2026-10-13T04:01:32Z"
+  "commit": "c74e7ba3c3e3db98954e60db2e35e57d80ffc59e",
+  "generated_at": "2026-10-24T15:39:33Z"
 }

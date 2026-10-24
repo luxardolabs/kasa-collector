@@ -1,6 +1,6 @@
 {
   "guard": "luxlint",
-  "guard_version": "0.66.2",
+  "guard_version": "0.70.0",
   "repo": "/repo",
   "source": [
     "app",
@@ -57,11 +57,12 @@
     },
     {
       "rule": "secret.githooks_wired",
-      "status": "PASS",
+      "status": "INERT",
       "since": "0.10.0",
       "violations": 0,
       "sites": [],
-      "deferred": false
+      "deferred": false,
+      "inert_reason": "this is a linked git worktree whose git dir is outside the mount, so its core.hooksPath cannot be read from here \u2014 judge it from the main checkout"
     },
     {
       "rule": "lint.ruff",
@@ -188,13 +189,13 @@
     }
   ],
   "summary": {
-    "PASS": 19,
+    "PASS": 18,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 3
+    "INERT": 4
   },
   "mypy": "separate: `luxlint --mypy` ([mypy].baseline ratchet)",
-  "commit": "6a21cd3665f4d30208f8429a9126fbd17e25d850",
-  "generated_at": "2026-10-13T04:01:32Z"
+  "commit": "c74e7ba3c3e3db98954e60db2e35e57d80ffc59e",
+  "generated_at": "2026-10-24T15:39:33Z"
 }

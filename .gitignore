@@ -65,3 +65,8 @@ Makefile.local
 
 # Claude Code hook session state (luxarch --emit hooks)
 .claude/.session-commits.json
+
+# Claude Code hook session state (luxarch --emit hooks)
+.claude/.luxpm-search-terms.json
+.claude/hooks/__pycache__/
+.claude/worktrees/

@@ -3,13 +3,15 @@ name: luxpm-audit
 description: Audit this repo's whole LuxPM project, not just the issues the current work touched — verify every open issue against the code and close, park, merge or comment on it with evidence, backfill a close summary on every closed issue that lacks one, then re-issue the sync receipt. Use when the receipt shows untriaged or unexplained issues, when repo.luxpm_backlog_triaged is red, or when asked to review/clean up/audit LuxPM.
 ---
 
-<!-- luxarch:luxpm-audit-skill asset v6 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit luxpm-audit-skill`. -->
+<!-- luxarch:luxpm-audit-skill asset v7 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit luxpm-audit-skill`. -->
 
 # Audit the LuxPM backlog
 
 Emitted from luxarch (`luxarch --emit luxpm-audit-skill`); re-emit, never hand-edit. Standard: `luxarch --doc FLEET-AGENT-CONDUCT-STANDARD` ("LuxPM: required practices") and `luxarch --playbook luxpm-currency`.
 
-**In an iOS repo** (luxios: native, no Docker), luxios installs this file unchanged (`bash $LUXIOS/scripts/install.sh`). Read every `luxarch --doc X` here as the file `$LUXIOS/docs/fleet/X.md`, and every `luxarch --playbook X` as `$LUXIOS/docs/fleet/playbooks/X.md`. The guard there is luxios: its version is `cat $LUXIOS/VERSION`, and its changelog is `$LUXIOS/CHANGELOG.md`.
+**Which agent are you?** In a repo that hosts a luxios app (a nested `apps/ios/` with its own `CLAUDE.md`, beside the backend), there are two agents. If this machine has no Docker (`command -v docker` prints nothing), you are that app's agent: read its `CLAUDE.md` first, follow the iOS reading below, and leave the root guard gates (`make check`, the luxarch, luxlint and luxaudit images) to the backend agent. Never look for a Docker binary to install.
+
+**In an iOS repo, or as the iOS agent of a repo that hosts one** (luxios: native, no Docker), luxios installs this file unchanged (`bash $LUXIOS/scripts/install.sh`). Read every `luxarch --doc X` here as the file `$LUXIOS/docs/fleet/X.md`, and every `luxarch --playbook X` as `$LUXIOS/docs/fleet/playbooks/X.md`. The guard there is luxios: its version is `cat $LUXIOS/VERSION`, and its changelog is `$LUXIOS/CHANGELOG.md`.
 
 `/wrap-up` closes the issues ONE piece of work touched. This is the other half: the whole project. A tracker nobody audits fills with issues that shipped months ago, issues nobody will do, and closes nobody can explain. Each looks like open work to the next agent and the owner.
 

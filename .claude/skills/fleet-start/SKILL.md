@@ -3,13 +3,17 @@ name: fleet-start
 description: Start (or resume after a compact) a working session the fleet way — read this repo's CLAUDE.md and the conduct standard, rehydrate from LuxPM leanly (focus + this repo's open issues, keys and titles only), and restate the six session rules. Run at the start of every session and after every compact.
 ---
 
-<!-- luxarch:fleet-start-skill asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit fleet-start-skill`. -->
+<!-- luxarch:fleet-start-skill asset v10 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit fleet-start-skill`. -->
 
 # Fleet start
 
 The start-of-session routine for this repo. Emitted from luxarch (`luxarch --emit fleet-start-skill`); re-emit, never hand-edit. Standard: `luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`. This skill points at it and restates nothing but the six rules below.
 
-**In an iOS repo** (luxios: native, no Docker), luxios installs this file unchanged (`bash $LUXIOS/scripts/install.sh`). Read every `luxarch --doc X` here as the file `$LUXIOS/docs/fleet/X.md`, and every `luxarch --playbook X` as `$LUXIOS/docs/fleet/playbooks/X.md`. The guard there is luxios: its version is `cat $LUXIOS/VERSION`, and its changelog is `$LUXIOS/CHANGELOG.md`.
+**`luxarch …` is a Docker image, not a host command.** Run `luxarch --doc X` as `docker run --rm -v <checkout>:/repo -w /repo <image> --doc X`, where `<checkout>` is the absolute path of the checkout you are in, written out (your issue's worktree when you are in one: inside a worktree Claude Code refuses a mount computed at run time, such as `"$PWD"`), and `<image>` is the Makefile's pinned `LUXARCH` image (set from `LUXARCH_VERSION`). There is no host install. `luxlint …` and `luxaudit …` are the same, with `LUXLINT` and `LUXAUDIT`.
+
+**Which agent are you?** In a repo that hosts a luxios app (a nested `apps/ios/` with its own `CLAUDE.md`, beside the backend), there are two agents. If this machine has no Docker (`command -v docker` prints nothing), you are that app's agent: read its `CLAUDE.md` first, follow the iOS reading below, and leave the root guard gates (`make check`, the luxarch, luxlint and luxaudit images) to the backend agent. Never look for a Docker binary to install.
+
+**In an iOS repo, or as the iOS agent of a repo that hosts one** (luxios: native, no Docker), luxios installs this file unchanged (`bash $LUXIOS/scripts/install.sh`). Read every `luxarch --doc X` here as the file `$LUXIOS/docs/fleet/X.md`, and every `luxarch --playbook X` as `$LUXIOS/docs/fleet/playbooks/X.md`. The guard there is luxios: its version is `cat $LUXIOS/VERSION`, and its changelog is `$LUXIOS/CHANGELOG.md`.
 
 LuxPM is the state. The conversation is not a second copy of it: rehydrate from LuxPM, and persist decisions back to it as they are made, so a compact at any moment loses nothing.
 
@@ -26,7 +30,19 @@ LuxPM is the state. The conversation is not a second copy of it: rehydrate from 
 
 **Evidence:** one line: what is in progress, and what you are picking up.
 
-## 3. The six session rules
+## 3. Worktrees: inventory, prune, enter yours
+
+Every agent works in its issue's worktree; the main checkout is the owner's (`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Concurrent agents: one worktree per issue").
+
+- From the main checkout: `python3 .claude/hooks/worktree.py list --prune`. It removes each worktree that is clean, fully merged and has no live session, and lists the rest with each one's session: `LIVE` or `locked by a live session` (a `claude` works there, or the lock's pid and start time are a running claude), or `gone` (the machine rebooted under it, or it exited).
+- **An `ADOPT` line is yours, before any new work.** A session that died (a reboot, a lost connection) left that worktree's work mid-issue, and you are its successor: the owner starts every session in the main checkout and never goes looking for the old one. Run the line's steps in order: `python3 .claude/hooks/worktree.py adopt <ISSUE-KEY>` (it claims the worktree's lock for you; two sessions never adopt the same one), `EnterWorktree` with `path=.claude/worktrees/<ISSUE-KEY>`, then rehydrate from the issue's last LuxPM note, the end of the dead session's transcript, and its scratchpad, all named on the line. Then carry on where it stopped. Never start that issue afresh beside it, and never hand the owner the `claude --resume` fallback instead of adopting. With several ADOPT lines, adopt the first; the owner's other sessions take the rest.
+- A worktree with a live session is that agent's: name it to the owner in one line (issue, branch, state). Removing any worktree holding work is a delete, the owner's call.
+- Before your first write: `EnterWorktree` with `name` = the issue key (`.claude/worktrees/<ISSUE-KEY>`), or `path=.claude/worktrees/<ISSUE-KEY>` for one you adopted.
+- Know who pushes: `[agents] push` in `.luxarch.toml` (`"agent"`: you push when the issue lands; `"owner"`: you stop at the landed commit).
+
+**Evidence:** the `list --prune` summary line (`N pruned, M kept, K holding unmerged or uncommitted work, A with no live session to adopt`), the `adopt` result when there was one, and the worktree you entered.
+
+## 4. The six session rules
 
 1. **Ask or do, by the class of action**, never by how confident you feel. Ask: deleting, changing scope, a deferral/allowlist/exemption, publishing outward, a genuine product fork. Do: aligning to a ratified standard or a guard red, anything evidenced and reversible in one commit.
 1. **One decision per question, with your recommendation stated as one.** No menu after a recommendation.
@@ -35,7 +51,7 @@ LuxPM is the state. The conversation is not a second copy of it: rehydrate from 
 1. **Evidence over memory.** Cite the file and line, the command output, the issue. "Done" is a check you ran this turn.
 1. **Reds stay red.** Align the code or escalate the guard (`/escalate`). Never an exemption, a suppression comment, a deferral or a local config.
 
-## 4. Compaction
+## 5. Compaction
 
 Agents never prompt for a compact. The owner runs `/compact`, and Claude Code also compacts on its own when the context fills. Nothing can run before a compact, so your part is to keep decisions persisted to LuxPM as they are made. The standard focus text, for the owner to copy:
 
@@ -43,6 +59,6 @@ Agents never prompt for a compact. The owner runs `/compact`, and Claude Code al
 
 After a compact, run `/fleet-start` again. The emitted `fleet-start-after-compact` hook (`luxarch --emit hooks`) says so in the context the compact leaves.
 
-## 5. The other fleet skills
+## 6. The other fleet skills
 
 `/wrap-up` before calling anything done. `/adversarial` to attack a risky change before that. `/pin-bump` to upgrade the guards. `/escalate` when a guard is wrong. `/luxpm-audit` to triage the whole backlog. `/release` to cut a release.

@@ -2,11 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-<!-- luxarch:claude-pointer asset v7 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
+<!-- luxarch:claude-pointer asset v12 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
 
 ## How to work here (fleet conduct — read the standard, not just this block)
 
 **`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD` — read it in full before your first change.** It is the one home for *how* agents work in this fleet. This block is a pointer plus the handful of rules that get broken most; it is not a summary and does not replace reading it.
+
+**`luxarch …` is a Docker image, not a host command.** Run `luxarch --doc X` as `docker run --rm -v <checkout>:/repo -w /repo <image> --doc X`, where `<checkout>` is the absolute path of the checkout you are in, written out (your issue's worktree when you are in one: inside a worktree Claude Code refuses a mount computed at run time, such as `"$PWD"`), and `<image>` is the Makefile's pinned `LUXARCH` image (set from `LUXARCH_VERSION`). There is no host install, and the pinned version is the one this repo's rules and docs match. `luxlint …` and `luxaudit …` are the same, with `LUXLINT` and `LUXAUDIT`.
+
+**Which agent are you?** In a repo that hosts a luxios app (a nested `apps/ios/` with its own `CLAUDE.md`, beside the backend), there are two agents. If this machine has no Docker (`command -v docker` prints nothing), you are that app's agent: read its `CLAUDE.md` first, follow the iOS reading below, and leave the root guard gates (`make check`, the luxarch, luxlint and luxaudit images) to the backend agent. Never look for a Docker binary to install.
 
 **Run `/fleet-start` at the start of every session and after every compact.** It rehydrates from LuxPM and restates the session rules.
 
@@ -19,6 +23,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Work the guard reds in `luxarch --plan` order. Never ask which family or sweep is next.** The order is decided. An escalation covers ONE site: its family keeps going.
 
+**Check one rule or one file with a targeted run, never a filtered full scan.** `luxarch --rule <id>` runs only the matching rules (exact or substring, repeatable); add `--path <file>` to show one file's sites. The whole repo's per-rule counts are in `.luxarch-status.json` (`make status`). A full scan piped into `grep`, `head` or `tail` is denied by the emitted `targeted-guard-run` hook.
+
 **An owner hold is exactly as wide as the owner said.** "Hold off on X" excludes X and nothing else. It is not permission to pause, ask, or check in about anything outside X. Skip the held family, say so in one line, and keep burning down the rest.
 
 **End every turn that worked guard reds with `reds: N (was M)`**, plus the held families by name. A turn that ends on a question while N > 0, outside an ask-class, is the failure this block exists to stop.
@@ -30,6 +36,8 @@ When you do ask: **one decision per message**, the evidence that makes it answer
 **You touched it, you own it.** Edit a file for any reason and it has a mypy, ruff or luxarch red: fix every one in that file, not just yours. Never spend time proving a red predates you; fix it. Test what you changed first. **Before fixing any mypy red, read `luxlint --playbook mypy-sweep` in full.**
 
 **Align or escalate; never route around.** A guard red is fixed by changing the code, or escalated to the guard maintainer as genuinely wrong. Never by an exemption, a `# noqa`, a deferral, or a local config. Verification is not authorization: proving something is unreferenced does not license deleting it.
+
+**Search LuxPM for a file before you change it to clear a red.** `luxpm_list_issues(search="<path>")`, every hit read, then `git log -- <file>`. A site that is on hold, in another agent's work, or under an open escalation is skipped and named, never changed. A red moved to another file, or out of a rule's sight, is not fixed: `/wrap-up` compares the whole repo's per-rule counts.
 
 **Escalations go in THIS repo's LuxPM project** — label `fleet-escalation`, title `[<guard> ESCALATION] …`, self-contained enough to forward whole. **Search LuxPM for an existing issue first** (and comment on it if found); filing a new one is pre-authorized. **Never a GitHub issue** — there is no fallback. The maintainer sweeps the label across every project and picks it up where you filed it.
 
@@ -179,7 +187,7 @@ Each env file names its stack in `COMPOSE_PROFILES`: `.env.prod` → `collector`
 
 **Variables interpolate file-wide, regardless of profile.** `${ENV_FILE:?}` on the `collector` service is resolved even for an `--profile e2e` run, which is why `scripts/e2e-test.sh` exports `ENV_FILE` although nothing in the e2e profile reads it.
 
-Images: the NAME declares provenance (`repo.image_name_declares_provenance`) and stacks pin only IMMUTABLE tags (`repo.deploy_tag_is_immutable`). `make dev-deploy` (→ `publish-sha`) pushes `:sha-<commit>` once (moving the `:dev` alias onto it) and `make release` pushes `:VERSION` only; both build the `production` stage through luxarch's emitted image block (`repo.image_block_wired`) — never a hand-written publish flow. GHCR gets `:VERSION` from `make release-public`. A public `:latest` that moves with each release is wanted (owner, 2026-10-12), but the block cannot do it yet (KASACOLLEC-86), so GHCR `:latest` stays at 2026.10.2 until then. The hardware-free stacks run BARE local images that are never pushed: `make harness-build` → `kasa-collector-fake:test`, `make test-e2e` → `kasa-collector:test` (the production stage, under the image block's TEST_IMAGE name — the only bare app name `repo.compose_conventions` accepts; `make test` and `make test-e2e` each rebuild it from source right before use). The runtime image ships only the app's venv — no Poetry, no pip (luxaudit's image leg scans it). Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
+Images: the NAME declares provenance (`repo.image_name_declares_provenance`) and stacks pin only IMMUTABLE tags (`repo.deploy_tag_is_immutable`). `make dev-deploy` (→ `publish-sha`) pushes `:sha-<commit>` once (moving the `:dev` alias onto it) and `make release` pushes `:VERSION` only; both build the `production` stage through luxarch's emitted image block (`repo.image_block_wired`) — never a hand-written publish flow. GHCR gets `:VERSION` from `make release-public`, which also moves the public `:latest` to the released digest (`PUBLIC_LATEST := 1`, owner's call), and only when VERSION is origin's newest release. The hardware-free stacks run BARE local images that are never pushed: `make harness-build` → `kasa-collector-fake:test`, `make test-e2e` → `kasa-collector:test` (the production stage, under the image block's TEST_IMAGE name — the only bare app name `repo.compose_conventions` accepts; `make test` and `make test-e2e` each rebuild it from source right before use). The runtime image ships only the app's venv — no Poetry, no pip (luxaudit's image leg scans it). Bundled InfluxDB uses a v1 DBRP mapping (`ops/influxdb/init-dbrp.sh`) because the dashboards are InfluxQL; the Grafana datasource (uid `uDxwFcOGz`) uses token-header auth. The emulator (`harness/fake_kasa.py`) does IOT plugs (emeter + non-emeter) and HS300-style strips (per-outlet emeter) via `KASA_FAKE_KIND`.
 
 ## Naming Convention
 
@@ -261,7 +269,7 @@ make onboard-check  # the MACHINE GATE for "is this repo onboarded" — wiring +
              # hook only sees staged diffs, so an old untouched leak passes every commit).
 ```
 
-`make check` is byte-identical across every fleet app repo (`repo.makefile_canonical`) — a gate that quietly drops mypy, arch, or the secret scan reads exactly as green as one that runs them. It is a **gate, not a report**: Make stops at the first failing step, so use `make plan` to work a list down. `guard-version-check` is **fatal** — a guard pin behind the published `:latest` fails the gate, so no one works off a stale guard; `make guard-upgrade` bumps every pin and prints what newly bites.
+`make check` is byte-identical across every fleet app repo (`repo.makefile_canonical`) — a gate that quietly drops mypy, arch, or the secret scan reads exactly as green as one that runs them. It is luxarch's emitted gate (`--emit check-gate`): `guard-version-check` and `honest` run first and are fatal, then every leg in `CHECK_LEGS` runs and the gate fails naming each red one. Use `make plan` to work an arch list down. `guard-version-check` is **fatal** — a guard pin behind the published `:latest` fails the gate, so no one works off a stale guard; `make guard-upgrade` bumps every pin and prints what newly bites.
 
 Secret scanning is fleet-owned too: there is no local `.gitleaks.toml` (luxlint's `secret.no_local_gitleaks_config` flags one). `make gitleaks` emits the canonical config (gitleaks defaults + the org denylist) from the luxlint image at scan time and runs it over full history; `make gitleaks-staged` scans staged changes. The committed `hooks/` (pre-commit → `gitleaks-staged`, pre-push → `gitleaks`) fire the scan on every commit/push once wired with `make hooks` (`core.hooksPath hooks`) — enforced by luxlint's `secret.githooks_wired`. There is deliberately **no** public CI: `make check` is the sole gate (luxarch's `repo.no_public_ci` — a public GitHub Actions workflow would expose its YAML + logs).
 
