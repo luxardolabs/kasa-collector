@@ -37,12 +37,14 @@ _SENSITIVE = ("PASSWORD", "TOKEN", "USERNAME")
 
 
 def _mask(value: str) -> str:
-    """Partially mask a secret; fully redact values too short to partially mask."""
+    """Redact a secret completely, keeping only whether it is set.
+
+    No character and no length: the dump reaches `docker logs` and any log shipper, and
+    four characters from each end of a 9-12 character password leave almost nothing to guess.
+    """
     if not value or value == "None":
         return value
-    if len(value) <= 8:
-        return "*" * len(value)
-    return value[:4] + "****" + value[-4:]
+    return "****"
 
 
 class KasaCollector:
