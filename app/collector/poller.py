@@ -20,8 +20,9 @@ issues or problematic devices.
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from kasa import Device
 from kasa.iot import IotStrip
@@ -31,6 +32,38 @@ from app.collector.utils import DeviceContext, async_retry
 from app.core.config import Config
 from app.health import heartbeat
 from app.storage.influxdb import InfluxDBStorage
+
+# The emeter fields written, in the units the dashboards read. Legacy firmware (HS110
+# hardware v1) reports A / V / W / kWh as floats under `current` / `voltage` / `power` /
+# `total`; python-kasa's EmeterStatus converts those when one of these keys is read, so
+# a reading is never stored as a truncated whole amp or kilowatt-hour.
+_EMETER_FIELDS = {
+    "current_ma": "current",
+    "voltage_mv": "voltage",
+    "power_mw": "power",
+    "total_wh": "total",
+}
+
+
+def emeter_fields(realtime: Mapping[str, Any]) -> dict[str, int]:
+    """A device's realtime emeter reading as integer milli-unit fields.
+
+    The legacy-unit keys are replaced by their converted field. Any other key the
+    firmware reports (such as `err_code`) is written as before.
+    """
+    legacy = set(_EMETER_FIELDS.values())
+    out: dict[str, int] = {}
+    for field in _EMETER_FIELDS:
+        try:
+            value = realtime[field]
+        except KeyError:
+            continue
+        if value is not None:
+            out[field] = round(value)
+    for key, value in realtime.items():
+        if key not in _EMETER_FIELDS and key not in legacy:
+            out[key] = int(value)
+    return out
 
 
 class Poller:
@@ -375,9 +408,7 @@ class Poller:
         for both aggregate and per-plug analysis in Grafana.
         """
         try:
-            smart_strip_emeter_data = {
-                key: int(value) for key, value in smart_strip.emeter_realtime.items()
-            }
+            smart_strip_emeter_data = emeter_fields(smart_strip.emeter_realtime)
             smart_strip_data = {
                 "emeter": smart_strip_emeter_data,
                 "alias": smart_strip.alias,
@@ -398,9 +429,7 @@ class Poller:
             for index, child in enumerate(smart_strip.children, start=1):
                 await child.update()
                 plug_alias = f"{child.alias}"
-                child_emeter_data = {
-                    key: int(value) for key, value in child.emeter_realtime.items()
-                }
+                child_emeter_data = emeter_fields(child.emeter_realtime)
                 child_data = {
                     "emeter": child_emeter_data,
                     "alias": smart_strip.alias,
@@ -434,14 +463,12 @@ class Poller:
             ip: IP address of the device.
             device: Device object with emeter capability.
 
-        Converts floating point readings to integers for consistency
-        and stores with device identification tags. Handles missing
+        Writes the reading as integer milli-unit fields (`emeter_fields`) with
+        device identification tags. Handles missing
         data gracefully with specific error types for debugging.
         """
         try:
-            emeter_data = {
-                key: int(value) for key, value in device.emeter_realtime.items()
-            }
+            emeter_data = emeter_fields(device.emeter_realtime)
             device_alias = device.alias if device.alias else device.host
             device_data = {
                 "emeter": emeter_data,

@@ -787,3 +787,83 @@ class TestStripOutletIdentity:
             ("3", "TV"),
         ]
         assert all(d["device_id"] == "STRIP1" for d in outlets)
+
+
+@pytest.mark.unit
+class TestEmeterUnits:
+    """Readings are written in the dashboards' units, whatever units the firmware uses.
+
+    Legacy firmware (HS110 hardware v1) reports A / V / W / kWh as floats under
+    `current` / `voltage` / `power` / `total`; python-kasa's EmeterStatus converts them
+    when a `*_ma` / `*_mv` / `*_mw` / `*_wh` key is read.
+    """
+
+    LEGACY = {"current": 0.123, "voltage": 230.5, "power": 12.7, "total": 1.876}
+    NORMALIZED = {
+        "current_ma": 123,
+        "voltage_mv": 230500,
+        "power_mw": 12700,
+        "total_wh": 1876,
+    }
+
+    @staticmethod
+    def _poller(written):
+        async def capture(data):
+            written.extend(data.values())
+            return True
+
+        p = object.__new__(Poller)
+        p.logger = logging.getLogger("test")
+        p.storage = SimpleNamespace(process_emeter_data=capture)
+        return p
+
+    @pytest.fixture(autouse=True)
+    def _no_dns(self, monkeypatch):
+        async def hostname(ip):
+            return "plug.lan"
+
+        monkeypatch.setattr("app.collector.poller.get_hostname_cached", hostname)
+
+    async def test_legacy_plug_reading_is_written_in_milli_units(self):
+        from kasa.emeterstatus import EmeterStatus
+
+        written: list[dict] = []
+        plug = SimpleNamespace(
+            alias="Kettle",
+            host="10.0.0.5",
+            emeter_realtime=EmeterStatus({**self.LEGACY, "err_code": 0}),
+        )
+        assert await self._poller(written).process_device_data("10.0.0.5", plug)
+        assert written[0]["emeter"] == {**self.NORMALIZED, "err_code": 0}
+
+    async def test_modern_plug_reading_is_written_unchanged(self):
+        from kasa.emeterstatus import EmeterStatus
+
+        written: list[dict] = []
+        plug = SimpleNamespace(
+            alias="Kettle",
+            host="10.0.0.5",
+            emeter_realtime=EmeterStatus(dict(self.NORMALIZED)),
+        )
+        assert await self._poller(written).process_device_data("10.0.0.5", plug)
+        assert written[0]["emeter"] == self.NORMALIZED
+
+    async def test_legacy_strip_and_outlet_readings_are_written_in_milli_units(self):
+        from kasa.emeterstatus import EmeterStatus
+
+        class Outlet:
+            alias = "Lamp"
+            emeter_realtime = EmeterStatus(dict(TestEmeterUnits.LEGACY))
+
+            async def update(self):
+                return None
+
+        written: list[dict] = []
+        strip = SimpleNamespace(
+            alias="Desk Strip",
+            sys_info={"deviceId": "STRIP1"},
+            emeter_realtime=EmeterStatus(dict(self.LEGACY)),
+            children=[Outlet()],
+        )
+        assert await self._poller(written).process_smart_strip_data("10.0.0.9", strip)
+        assert [d["emeter"] for d in written] == [self.NORMALIZED, self.NORMALIZED]

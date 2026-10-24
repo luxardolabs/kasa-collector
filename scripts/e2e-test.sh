@@ -22,7 +22,7 @@ export TAG="${TAG:-unused-by-e2e}"
 DC="docker compose --profile e2e -p kasa-collector-e2e"
 TOKEN="kasa-e2e-token"
 # Devices whose emeter data must reach InfluxDB (the two plugs + the strip).
-EXPECTED=("Fake HS110 Plug" "Fake KP115 Plug" "Fake HS300 Strip" "Fake Deaf Plug" "Fake Twin Strip")
+EXPECTED=("Fake HS110 Plug" "Fake KP115 Plug" "Fake HS300 Strip" "Fake Deaf Plug" "Fake Twin Strip" "Fake Legacy Plug")
 # The non-emeter plug must be handled without crashing but must NOT appear in emeter.
 NOT_EXPECTED="Fake HS103 Plug"
 TIMEOUT="${E2E_TIMEOUT:-120}"
@@ -200,6 +200,27 @@ if [ "$untagged" -ne 0 ]; then
   exit 1
 fi
 echo "✓ no strip outlet point is missing its plug_id"
+
+# A legacy-firmware plug reports A / V / W / kWh floats. Its readings must land in the
+# milli-unit fields the dashboards read, with sub-unit precision kept: its ~12 W draw is
+# ~100 mA, which a whole-amp truncation would write as 0.
+legacy="$($DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \
+  --data-urlencode "db=kasa" \
+  --data-urlencode "q=SELECT MIN(current_ma), MIN(power_mw) FROM \"emeter\" WHERE \"device_alias\"='Fake Legacy Plug'" \
+  -H "Authorization: Token ${TOKEN}" 2>/dev/null || true)"
+min_ma="$(printf '%s' "$legacy" | grep -oE '"values":\[\["[^"]*",[0-9]+,[0-9]+\]\]' | grep -oE ',[0-9]+,' | tr -d ',' || true)"
+case "$min_ma" in
+  ''|*[!0-9]*)
+    echo "✗ FAIL: 'Fake Legacy Plug' wrote no current_ma/power_mw fields (legacy units not converted)"
+    echo "   response: $legacy"
+    exit 1
+    ;;
+esac
+if [ "$min_ma" -lt 1 ]; then
+  echo "✗ FAIL: 'Fake Legacy Plug' current_ma is $min_ma (a sub-amp reading was truncated)"
+  exit 1
+fi
+echo "✓ legacy-units plug written in milli-units (min current_ma ${min_ma})"
 
 # Show a sample point count for good measure.
 count="$($DC exec -T kasa_e2e_influxdb curl -s -G "http://localhost:8086/query" \

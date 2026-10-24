@@ -13,6 +13,8 @@ One image emulates any device; configure via environment:
     KASA_FAKE_MAC    MAC address          (default 50:C7:BF:00:00:01)
     KASA_FAKE_BASE_W base power in watts   (default 42.0)
     KASA_FAKE_OUTLETS strip outlet count   (default 6; strip only)
+    KASA_FAKE_LEGACY_UNITS true: report emeter in A / V / W / kWh floats under
+                      current/voltage/power/total, as HS110 hardware v1 firmware does
     KASA_FAKE_OUTLET_ALIAS one alias for EVERY outlet (default "<ALIAS> Outlet <n>";
                       strip only): outlets a user left with the same name
 
@@ -87,6 +89,11 @@ UNICAST_ONLY = os.getenv("KASA_FAKE_UNICAST_ONLY", "false").lower() in (
 # delete it. A device that was never discoverable is a different (and easier) case.
 DEAF_AFTER = float(os.getenv("KASA_FAKE_DEAF_AFTER", "0"))
 OUTLETS = int(os.getenv("KASA_FAKE_OUTLETS", "6"))
+LEGACY_UNITS = os.getenv("KASA_FAKE_LEGACY_UNITS", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 OUTLET_ALIAS = os.getenv("KASA_FAKE_OUTLET_ALIAS", "")
 
 HAS_EMETER = KIND in ("plug", "strip")
@@ -97,7 +104,7 @@ _start = time.time()
 _totals: dict[str, float] = {}
 
 
-def _emeter_realtime(key: str, base_w: float) -> dict[str, int]:
+def _emeter_realtime(key: str, base_w: float) -> dict[str, int | float]:
     t = time.time() - _start
     # Deterministic-ish base + slow sway + jitter; unique phase per key.
     phase = (hash(key) % 100) / 100.0 * math.tau
@@ -107,6 +114,15 @@ def _emeter_realtime(key: str, base_w: float) -> dict[str, int]:
     voltage_v = 120.0 + random.uniform(-0.8, 0.8)
     current_a = power_w / voltage_v
     _totals[key] = _totals.get(key, 1000.0) + power_w / 3600.0
+    if LEGACY_UNITS:
+        # HS110 hardware v1 firmware: A / V / W / kWh as floats, unsuffixed keys.
+        return {
+            "voltage": round(voltage_v, 3),
+            "current": round(current_a, 4),
+            "power": round(power_w, 3),
+            "total": round(_totals[key] / 1000.0, 4),
+            "err_code": 0,
+        }
     return {
         "voltage_mv": int(voltage_v * 1000),
         "current_ma": int(current_a * 1000),

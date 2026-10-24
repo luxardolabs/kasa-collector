@@ -171,6 +171,20 @@ services:
       KASA_FAKE_OUTLETS: "6"
     restart: unless-stopped
 
+  # A plug on legacy firmware (HS110 hardware v1: A / V / W / kWh floats). e2e only: it
+  # proves its readings are written in the dashboards' milli-units, not truncated.
+  kasa_fake_legacy:
+    profiles: [e2e]
+    image: kasa-collector-fake:test
+    environment:
+      KASA_FAKE_KIND: plug
+      KASA_FAKE_MODEL: HS110(EU)
+      KASA_FAKE_ALIAS: Fake Legacy Plug
+      KASA_FAKE_MAC: "50:C7:BF:00:00:16"
+      KASA_FAKE_BASE_W: "12"
+      KASA_FAKE_LEGACY_UNITS: "true"
+    restart: unless-stopped
+
   # A strip whose outlets share one name, as a user leaves them. e2e only: it proves each
   # outlet still gets its own series (plug_id), not one series per alias.
   kasa_fake_twin_strip:
@@ -319,6 +333,8 @@ services:
       kasa_fake_hs300:
         condition: service_started
       kasa_fake_twin_strip:
+        condition: service_started
+      kasa_fake_legacy:
         condition: service_started
 
 volumes:
