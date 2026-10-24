@@ -344,7 +344,13 @@ class InfluxDBStorage:
             points = []
             for ip, data in device_data.items():
                 normalized_sysinfo = self.normalize_sysinfo(data.get("sysinfo", {}))
-                device_id = normalized_sysinfo.get("device_id", "unknown")
+                # IOT firmware reports `deviceId`, SMART `device_id`: the same id the
+                # device's emeter points carry, so the measurements join on it.
+                device_id = (
+                    normalized_sysinfo.get("deviceId")
+                    or normalized_sysinfo.get("device_id")
+                    or "unknown"
+                )
                 alias = sanitize_tag(
                     data.get("device_alias") or data.get("alias") or ip
                 )

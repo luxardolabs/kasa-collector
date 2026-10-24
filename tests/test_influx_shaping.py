@@ -298,6 +298,25 @@ class TestProcessSysinfo:
         ]
         assert all("id" not in fields for fields in child_fields)
 
+    async def test_iot_device_id_tags_sysinfo_like_its_emeter_points(self):
+        # IOT firmware reports `deviceId`; the sysinfo points carry the same device_id
+        # as the device's emeter points, so the two measurements join on it.
+        s = _storage()
+        await s.process_sysinfo_data(
+            {
+                "10.0.0.9": {
+                    "sysinfo": {
+                        "deviceId": "STRIP1",
+                        "model": "HS300(US)",
+                        "children": [{"alias": "Lamp", "id": "STRIP100", "state": 1}],
+                    },
+                    "device_alias": "Desk Strip",
+                    "dns_name": "strip.lan",
+                }
+            }
+        )
+        assert {_tags(p)["device_id"] for p in s.captured} == {"STRIP1"}
+
 
 @pytest.mark.unit
 class TestFileSink:
