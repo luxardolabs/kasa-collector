@@ -73,3 +73,9 @@ Makefile.local
 
 # Local cache of /adversarial-audit run reproductions (the issues carry the proof)
 /.adversarial-audit/
+
+# Claude Code hook session state (luxarch --emit hooks)
+.claude/.release-guides-read.json
+.claude/.*.lock
+.claude/.*.tmp
+.claude/.*.unreadable-*

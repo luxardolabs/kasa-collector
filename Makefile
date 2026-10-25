@@ -38,7 +38,7 @@ FAKE_IMAGE := kasa-collector-fake:test
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.322.0
+LUXARCH_VERSION  := 0.324.0
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
@@ -53,7 +53,7 @@ LUXLINT = $(if $(LUXLINT_REGISTRY),$(LUXLINT_IMAGE),luxlint:$(LUXLINT_VERSION))
 # Dependency-vulnerability guard (luxaudit) — pinned; pulled via LUXAUDIT_REGISTRY (Makefile.local).
 # Scans poetry.lock against the live OSV+PyPA feed. Unset host → `make audit` skips gracefully.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  := 0.14.0
+LUXAUDIT_VERSION  := 0.15.0
 LUXAUDIT_IMAGE    ?= $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION)
 # The public image runs on other people's hardware (Raspberry Pis included), so every published
 # build is multi-arch: the image block builds the candidate once per platform and scans each.
@@ -2055,7 +2055,7 @@ TEST_ENV := -e KASA_COLLECTOR_INFLUXDB_URL=http://kasa_test_influxdb:8086 \
             -e KASA_COLLECTOR_INFLUXDB_TOKEN=kasa-test-token \
             -e KASA_COLLECTOR_INFLUXDB_ORG=kasa -e KASA_COLLECTOR_INFLUXDB_BUCKET=kasa
 
-# luxarch:test-block asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
+# luxarch:test-block asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
 # ── Test: THE suite, in the test image, against an isolated stack of real services ───────────────
 # Emitted by `luxarch --emit test-block`; paste below the build core (`luxarch --emit build-core`, v4:
 # it builds with the core's `img_*` helpers and TEST_IMAGE, and the repo's BUILD_ARGS, and quotes every
@@ -2242,10 +2242,14 @@ test_suite = $($(call test_suite_var,$(1),$(2)))
 test_suite_image = $(if $(filter -,$(1)),$(IMAGE_PRIMARY),$(1))
 test_suite_floors = $(foreach s,$(test_suites),$(or $(realpath $(call test_suite,$(s),FLOOR)),$(abspath $(call test_suite,$(s),FLOOR))))
 # The overlay's host paths a suite mounts (v7), and over every suite those measured (OVERLAY_COV 1)
-# and those left out: each left out must be measured, and by one suite.
+# and those left out: each left out must be measured, and by one suite. A NARROWED run (`test-fast`,
+# or TEST_SUITES given on the command line or in the environment) may leave out the suite that
+# measures it, so it is not asked whether the overlay is measured; two suites measuring one overlay
+# is wrong on any run.
 test_suite_mount_srcs = $(sort $(foreach w,$(filter-out -v,$(call test_suite,$(1),MOUNTS)),$(foreach h,$(firstword $(subst :, ,$(w))),$(or $(realpath $(h)),$(abspath $(h))))))
 test_overlay_measured = $(foreach s,$(test_suites),$(if $(filter 1,$(call test_suite,$(s),OVERLAY_COV)),$(call test_suite_mount_srcs,$(s))))
 test_overlay_unmeasured = $(filter-out $(test_overlay_measured),$(foreach s,$(test_suites),$(if $(filter 1,$(call test_suite,$(s),OVERLAY_COV)),,$(call test_suite_mount_srcs,$(s)))))
+test_suites_narrowed = $(or $(filter test-fast,$(MAKECMDGOALS)),$(filter command line environment override,$(origin TEST_SUITES)))
 
 # LEFTOVERS. Every image and container a run makes is labelled `luxarch.test-block=1`, with its run
 # token, its shell's PID and PID namespace, this host's machine id (/etc/machine-id; IOPlatformUUID
@@ -2312,7 +2316,7 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	[ -z $(call sq,$(TEST_ENV_FILE)) ] || [ -f $(call sq,$(TEST_ENV_FILE)) ] || { printf 'REFUSING: TEST_ENV_FILE is %s, which this checkout does not have: compose would fail on interpolation. Commit it (test-suite.env), or set TEST_ENV_FILE to a committed file\n' $(call sq,$(TEST_ENV_FILE)); rm -rf "$$D"; exit 2; }; \
 	[ $(words $(test_suite_floors)) = $(words $(sort $(test_suite_floors))) ] || { printf 'REFUSING: two suites would share one coverage floor (%s): give each its own <suite>_TEST_FLOOR\n' $(call sq,$(foreach s,$(test_suites),$(s)=$(call test_suite,$(s),FLOOR))); rm -rf "$$D"; exit 2; }; \
 	[ -z $(call sq,$(findstring %,$(foreach s,$(test_suites),$(call test_suite,$(s),MOUNTS)))) ] || { echo 'REFUSING: a TEST_MOUNTS path holds %, which make reads as a pattern: each path is letters, digits and ._/@+-'; rm -rf "$$D"; exit 2; }; \
-	[ -z $(call sq,$(strip $(test_overlay_unmeasured))) ] || { printf 'REFUSING: no suite measures the overlay %s, and every suite mounting it leaves it out of its coverage: set <suite>_TEST_OVERLAY_COV := 1 on the suite holding its tests\n' $(call sq,$(strip $(test_overlay_unmeasured))); rm -rf "$$D"; exit 2; }; \
+	[ -n $(call sq,$(strip $(test_suites_narrowed))) ] || [ -z $(call sq,$(strip $(test_overlay_unmeasured))) ] || { printf 'REFUSING: no suite measures the overlay %s, and every suite mounting it leaves it out of its coverage: set <suite>_TEST_OVERLAY_COV := 1 on the suite holding its tests\n' $(call sq,$(strip $(test_overlay_unmeasured))); rm -rf "$$D"; exit 2; }; \
 	[ $(words $(test_overlay_measured)) = $(words $(sort $(test_overlay_measured))) ] || { printf 'REFUSING: two suites measure one overlay (%s): it counts in one ratchet, so set <suite>_TEST_OVERLAY_COV := 1 on one suite only\n' $(call sq,$(strip $(test_overlay_measured))); rm -rf "$$D"; exit 2; }; \
 	stop="$$D/stop"; kid=; insuite=; fast=$(if $(filter default,$(origin MAKECMDGOALS)),$(if $(filter test,$(MAKECMDGOALS)),,$(if $(filter test-fast,$(MAKECMDGOALS)),1))); \
 	kids() { p=$$1; if command -v pgrep >/dev/null 2>&1; then pgrep -P "$$p"; else set +f; for f in /proc/[0-9]*/stat; do read -r l < "$$f" 2>/dev/null || continue; set -- $${l##*)}; [ "$${2:-}" = "$$p" ] && { c=$${f#/proc/}; echo "$${c%/stat}"; }; done; set -f; fi; }; \
