@@ -344,19 +344,20 @@ class DeviceManager:
     def _may_use_credentials(self, ip: str) -> bool:
         """Whether the TP-Link credentials may be handed to the device at ``ip``.
 
-        True for a device the operator listed in KASA_COLLECTOR_DEVICE_HOSTS (by its
-        resolved address too) or one we have collected from before; or for every device
-        when KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES is set. A new, unlisted device is
-        otherwise authenticated WITHOUT credentials, so a rogue responder on the LAN is
-        never handed the account's credentials (KASACOLLEC-99).
+        True only for a device the operator listed in KASA_COLLECTOR_DEVICE_HOSTS (by its
+        resolved address too), or for every device when KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES
+        is set. Any other device is authenticated WITHOUT credentials, so a rogue responder
+        on the LAN is never handed the account's credentials (KASACOLLEC-99).
+
+        It deliberately does NOT trust `known_addresses`. A device is remembered there the
+        moment it is collected from AT ALL, credentials or not, so a plain IOT responder that
+        needs none can put itself in that set; trusting it would let such a responder be handed
+        the credentials on a later cycle (through `reclaim_retired_devices`). Listing, or the
+        trust flag, is the only thing that authorises credentials.
         """
         if Config.KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES:
             return True
-        return (
-            ip in self.device_hosts
-            or ip in self.manual_addresses.values()
-            or ip in self.known_addresses
-        )
+        return ip in self.device_hosts or ip in self.manual_addresses.values()
 
     async def _authenticate_device_with_retry(
         self, ip: str, discovered_device: Device | None, allow_credentials: bool = True
@@ -637,8 +638,14 @@ class DeviceManager:
 
         async def reclaim(ip: str) -> None:
             try:
+                # Credentials only to a device allowed to receive them: a remembered
+                # address is re-probed either way (an IOT device needs none), but a
+                # self-promoted cred-less responder is never handed them (KASACOLLEC-99).
+                allow = self._may_use_credentials(ip)
                 device = await KasaAPI.get_device(
-                    ip, self.tplink_username, self.tplink_password
+                    ip,
+                    self.tplink_username if allow else None,
+                    self.tplink_password if allow else None,
                 )
                 key = str(getattr(device, "host", "") or ip)
                 self.devices[key] = device

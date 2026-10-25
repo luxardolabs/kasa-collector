@@ -1171,7 +1171,9 @@ class TestCredentialsGatedByTrust:
         dm.known_addresses = {"10.0.0.3"}
         assert dm._may_use_credentials("10.0.0.1")  # listed
         assert dm._may_use_credentials("10.0.0.2")  # resolved manual
-        assert dm._may_use_credentials("10.0.0.3")  # seen before
+        # collected-from-before alone does NOT authorise credentials: a cred-less
+        # responder can put itself in known_addresses (KASACOLLEC-99).
+        assert not dm._may_use_credentials("10.0.0.3")
         assert not dm._may_use_credentials("10.0.0.9")  # a stranger
 
         trusting = self._dm(monkeypatch, tmp_path, trust=True)
@@ -1226,13 +1228,13 @@ class TestCredentialsGatedByTrust:
         assert "10.0.0.9" not in dm.devices
         assert sum("not trusted" in w for w in warnings) == 1
 
-    async def test_seen_device_is_authenticated_with_credentials(
+    async def test_listed_device_is_authenticated_with_credentials(
         self, monkeypatch, tmp_path
     ):
         from app.collector import device_manager as dm_mod
 
         dm = self._dm(monkeypatch, tmp_path)
-        dm.known_addresses = {"10.0.0.3"}  # collected from before
+        dm.device_hosts = ["10.0.0.3"]  # operator-listed
         seen_creds: list[tuple] = []
 
         async def fake_get_device(ip, username=None, password=None):
@@ -1249,3 +1251,52 @@ class TestCredentialsGatedByTrust:
 
         assert ("owner@x", "s3cret") in seen_creds
         assert "10.0.0.3" in dm.devices
+
+    async def test_reclaim_withholds_credentials_from_a_self_promoted_stranger(
+        self, monkeypatch, tmp_path
+    ):
+        # A rogue IOT responder answers discovery once (cred-less), landing in
+        # known_addresses; it must never be handed the account credentials on a later
+        # reclaim pass (KASACOLLEC-99).
+        from app.collector import device_manager as dm_mod
+
+        dm = self._dm(monkeypatch, tmp_path)  # nothing listed, trust off
+        dm.known_addresses = {"10.0.0.9"}  # self-promoted via a cred-less register
+        dm.retired = {"10.0.0.9": 0.0}
+        seen_creds: list[tuple] = []
+
+        async def fake_get_device(ip, username=None, password=None):
+            seen_creds.append((username, password))
+            return SimpleNamespace(
+                host=ip, alias="Rogue", has_emeter=True, model="HS110"
+            )
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+
+        await dm.reclaim_retired_devices({})  # nothing seen by discovery this round
+
+        assert seen_creds and all(c == (None, None) for c in seen_creds), seen_creds
+
+    async def test_reclaim_after_restart_gives_creds_only_to_listed_addresses(
+        self, monkeypatch, tmp_path
+    ):
+        # After a restart the roster is reloaded and self.devices is empty, so reclaim
+        # probes every remembered address. The listed one gets credentials; a remembered
+        # stranger (e.g. a departed device's reused IP) does not.
+        from app.collector import device_manager as dm_mod
+
+        dm = self._dm(monkeypatch, tmp_path)
+        dm.device_hosts = ["10.0.0.1"]  # operator-listed survives a restart
+        dm.known_addresses = {"10.0.0.1", "10.0.0.9"}
+        creds_by_ip: dict[str, tuple] = {}
+
+        async def fake_get_device(ip, username=None, password=None):
+            creds_by_ip[ip] = (username, password)
+            return SimpleNamespace(host=ip, alias="Dev", has_emeter=True, model="HS110")
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+
+        await dm.reclaim_retired_devices({})
+
+        assert creds_by_ip["10.0.0.1"] == ("owner@x", "s3cret")  # listed
+        assert creds_by_ip["10.0.0.9"] == (None, None)  # remembered stranger
