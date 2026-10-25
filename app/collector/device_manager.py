@@ -116,6 +116,11 @@ class DeviceManager:
         self.tplink_username = Config.KASA_COLLECTOR_TPLINK_USERNAME
         self.tplink_password = Config.KASA_COLLECTOR_TPLINK_PASSWORD
 
+        # Addresses of new, unlisted devices we have already told the operator we are not
+        # authenticating, so the "add it to DEVICE_HOSTS" line is logged once, not every
+        # discovery round (KASACOLLEC-99).
+        self._unlisted_warned: set[str] = set()
+
         # Configurable retry and timeout settings for device authentication
         self.max_retries = Config.KASA_COLLECTOR_AUTH_MAX_RETRIES
         self.timeout_seconds = Config.KASA_COLLECTOR_AUTH_TIMEOUT
@@ -281,7 +286,10 @@ class DeviceManager:
 
         for ip, device in discovered_devices.items():
             if ip not in self.devices:  # Only authenticate new devices
-                auth_tasks.append(self._authenticate_device_with_retry(ip, device))
+                allow_credentials = self._may_use_credentials(ip)
+                auth_tasks.append(
+                    self._authenticate_device_with_retry(ip, device, allow_credentials)
+                )
                 device_name = get_device_name(device)
                 dns_name = await get_hostname_cached(ip)
                 self.logger.debug(
@@ -333,8 +341,25 @@ class DeviceManager:
         # Mark first discovery as complete
         self.first_discovery_complete = True
 
+    def _may_use_credentials(self, ip: str) -> bool:
+        """Whether the TP-Link credentials may be handed to the device at ``ip``.
+
+        True for a device the operator listed in KASA_COLLECTOR_DEVICE_HOSTS (by its
+        resolved address too) or one we have collected from before; or for every device
+        when KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES is set. A new, unlisted device is
+        otherwise authenticated WITHOUT credentials, so a rogue responder on the LAN is
+        never handed the account's credentials (KASACOLLEC-99).
+        """
+        if Config.KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES:
+            return True
+        return (
+            ip in self.device_hosts
+            or ip in self.manual_addresses.values()
+            or ip in self.known_addresses
+        )
+
     async def _authenticate_device_with_retry(
-        self, ip: str, discovered_device: Device | None
+        self, ip: str, discovered_device: Device | None, allow_credentials: bool = True
     ) -> None:
         """Authenticate a device with retry logic and multiple fallback strategies.
 
@@ -355,12 +380,18 @@ class DeviceManager:
         - Network connectivity issues
         - Device-specific protocol requirements
         """
+        # Credentials are withheld from a device that is not allowed to receive them
+        # (KASACOLLEC-99): it is authenticated without them, and if it turns out to need
+        # them, it is left alone with a one-time note to the operator.
+        username = self.tplink_username if allow_credentials else None
+        password = self.tplink_password if allow_credentials else None
+
         # First try to use the discovered device directly
         if discovered_device:
             # The RETURNED device is the one to keep: a discovered KLAP strip comes back
             # re-classed as IotStrip (python-kasa#1748), the object passed in does not.
             ready = await KasaAPI.authenticate_discovered_device(
-                discovered_device, self.tplink_username, self.tplink_password
+                discovered_device, username, password
             )
             if ready is not None:
                 self.devices[ip] = ready
@@ -398,7 +429,7 @@ class DeviceManager:
             try:
                 # Add timeout for authentication process
                 authenticated_device = await asyncio.wait_for(
-                    KasaAPI.get_device(ip, self.tplink_username, self.tplink_password),
+                    KasaAPI.get_device(ip, username, password),
                     timeout=self.timeout_seconds,
                 )
 
@@ -486,12 +517,31 @@ class DeviceManager:
                 )
         except Exception as e:
             error_msg = str(e)
+            needs_credentials = (
+                "challenge" in error_msg.lower()
+                or "credentials" in error_msg.lower()
+                or "authentication" in error_msg.lower()
+            )
             if "connection reset" in error_msg.lower():
                 self.logger.exception(
                     "Device %s is unreachable (connection reset). "
                     "It may be offline, blocked by firewall, or have networking issues.",
                     ip,
                 )
+            elif needs_credentials and not allow_credentials:
+                # A new device on the LAN that wants the account credentials. We did not
+                # hand them over (KASACOLLEC-99); tell the operator once how to opt it in.
+                if ip not in self._unlisted_warned:
+                    self._unlisted_warned.add(ip)
+                    self.logger.warning(
+                        "Discovered device %s needs TP-Link credentials but is not "
+                        "trusted: it is not in KASA_COLLECTOR_DEVICE_HOSTS and has not "
+                        "been collected from before, so its credentials were withheld. "
+                        "Add it to KASA_COLLECTOR_DEVICE_HOSTS to collect from it, or set "
+                        "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES=true to authenticate "
+                        "every discovered device (less safe).",
+                        ip,
+                    )
             elif "challenge" in error_msg.lower():
                 self.logger.exception(
                     "Device %s requires TP-Link cloud credentials. "

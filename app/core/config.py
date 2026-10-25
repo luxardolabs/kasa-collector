@@ -294,6 +294,19 @@ class Config:
     )
     """Enable automatic device discovery on the local network."""
 
+    KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES: bool = _get_bool_config(
+        "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES", default=False
+    )
+    """Hand the TP-Link credentials to any device that answers broadcast discovery.
+
+    Default False: credentials go only to a device the operator listed in
+    KASA_COLLECTOR_DEVICE_HOSTS or that the collector has collected from before. A new,
+    unlisted device that needs credentials is logged and left unauthenticated, because a
+    device answering the broadcast and asking for credentials is otherwise all it takes
+    for a rogue device on the LAN to be handed the account's credentials (KASACOLLEC-99).
+    Set True to restore the old behaviour of authenticating every responder.
+    """
+
     # Authentication settings
     KASA_COLLECTOR_AUTH_MAX_RETRIES: int = _get_int_config(
         "KASA_COLLECTOR_AUTH_MAX_RETRIES", default=3, min_value=1
@@ -358,6 +371,9 @@ def describe_settings() -> dict[str, str]:
         "KASA_COLLECTOR_DEVICE_HOSTS": str(Config.KASA_COLLECTOR_DEVICE_HOSTS),
         "KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY": str(
             Config.KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY
+        ),
+        "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES": str(
+            Config.KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES
         ),
         "KASA_COLLECTOR_DEVICE_DISCOVERY_INTERVAL": str(
             Config.KASA_COLLECTOR_DEVICE_DISCOVERY_INTERVAL

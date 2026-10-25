@@ -69,15 +69,16 @@ class KasaAPI:
         discovery_timeout = Config.KASA_COLLECTOR_DISCOVERY_TIMEOUT
         discovery_packets = Config.KASA_COLLECTOR_DISCOVERY_PACKETS
 
-        # Include credentials in discovery for devices that need them
-        username = Config.KASA_COLLECTOR_TPLINK_USERNAME
-        password = Config.KASA_COLLECTOR_TPLINK_PASSWORD
-
+        # No credentials here: this is the broadcast ENUMERATION. Passing the TP-Link
+        # username and password to Discover.discover makes python-kasa run a credentialed
+        # handshake with every device that answers the broadcast, which hands the account's
+        # credentials to any responder, a rogue LAN device included (KASACOLLEC-99). The
+        # credentialed handshake is done per device, only for ones the operator listed or
+        # has collected from before, by DeviceManager._authenticate_device_with_retry. IOT
+        # devices need no credentials and come back fully usable from enumeration alone.
         devices: dict[str, Device] = await Discover.discover(
             discovery_timeout=discovery_timeout,
             discovery_packets=discovery_packets,
-            username=username,
-            password=password,
         )
         logger.info("Discovered %s devices", len(devices))
 

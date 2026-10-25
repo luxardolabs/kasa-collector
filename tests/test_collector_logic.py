@@ -1133,3 +1133,119 @@ class TestEmeterUnits:
         )
         assert await self._poller(written).process_smart_strip_data("10.0.0.9", strip)
         assert [d["emeter"] for d in written] == [self.NORMALIZED, self.NORMALIZED]
+
+
+@pytest.mark.unit
+class TestCredentialsGatedByTrust:
+    """The TP-Link credentials reach only listed or already-seen devices.
+
+    Broadcast discovery hands credentials to whatever answers it, so a rogue device on
+    the LAN could be given the account's credentials. They now go only to a device the
+    operator listed, one collected from before, or every device when the operator opts
+    in with KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES (KASACOLLEC-99).
+    """
+
+    def _dm(self, monkeypatch, tmp_path, *, trust=False):
+        async def fake_hostname(ip):
+            return f"host-{ip}"
+
+        monkeypatch.setattr(
+            "app.collector.device_manager.get_hostname_cached", fake_hostname
+        )
+        from app.core import config
+
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_TPLINK_USERNAME", "owner@x")
+        monkeypatch.setattr(config.Config, "KASA_COLLECTOR_TPLINK_PASSWORD", "s3cret")
+        monkeypatch.setattr(
+            config.Config, "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES", trust
+        )
+        from app.collector.device_manager import DeviceManager
+
+        return DeviceManager(logging.getLogger("test"))
+
+    def test_predicate_allows_listed_seen_and_trusted_only(self, monkeypatch, tmp_path):
+        dm = self._dm(monkeypatch, tmp_path)
+        dm.device_hosts = ["10.0.0.1"]
+        dm.manual_addresses = {"plug.lan": "10.0.0.2"}
+        dm.known_addresses = {"10.0.0.3"}
+        assert dm._may_use_credentials("10.0.0.1")  # listed
+        assert dm._may_use_credentials("10.0.0.2")  # resolved manual
+        assert dm._may_use_credentials("10.0.0.3")  # seen before
+        assert not dm._may_use_credentials("10.0.0.9")  # a stranger
+
+        trusting = self._dm(monkeypatch, tmp_path, trust=True)
+        assert trusting._may_use_credentials("10.0.0.9")  # opted in
+
+    async def test_broadcast_enumeration_sends_no_credentials(self, monkeypatch):
+        from app.collector import kasa_api
+
+        captured: dict = {}
+
+        async def fake_discover(**kwargs):
+            captured.update(kwargs)
+            return {}
+
+        monkeypatch.setattr(kasa_api.Discover, "discover", fake_discover)
+        monkeypatch.setattr(
+            kasa_api.Config, "KASA_COLLECTOR_TPLINK_USERNAME", "owner@x"
+        )
+        monkeypatch.setattr(kasa_api.Config, "KASA_COLLECTOR_TPLINK_PASSWORD", "s3cret")
+
+        await kasa_api.KasaAPI.discover_devices()
+
+        assert captured.get("username") is None
+        assert captured.get("password") is None
+
+    async def test_unlisted_device_is_never_handed_credentials(
+        self, monkeypatch, tmp_path
+    ):
+        from app.collector import device_manager as dm_mod
+
+        dm = self._dm(monkeypatch, tmp_path)  # nothing listed, nothing known
+        seen_creds: list[tuple] = []
+
+        async def fake_get_device(ip, username=None, password=None):
+            seen_creds.append((username, password))
+            raise Exception("handshake challenge failed")
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            dm.logger, "warning", lambda msg, *a: warnings.append(msg % a)
+        )
+
+        await dm._authenticate_device_with_retry(
+            "10.0.0.9", None, allow_credentials=False
+        )
+        await dm._authenticate_device_with_retry(
+            "10.0.0.9", None, allow_credentials=False
+        )
+
+        assert seen_creds and all(c == (None, None) for c in seen_creds)
+        assert "10.0.0.9" not in dm.devices
+        assert sum("not trusted" in w for w in warnings) == 1
+
+    async def test_seen_device_is_authenticated_with_credentials(
+        self, monkeypatch, tmp_path
+    ):
+        from app.collector import device_manager as dm_mod
+
+        dm = self._dm(monkeypatch, tmp_path)
+        dm.known_addresses = {"10.0.0.3"}  # collected from before
+        seen_creds: list[tuple] = []
+
+        async def fake_get_device(ip, username=None, password=None):
+            seen_creds.append((username, password))
+            return SimpleNamespace(
+                host=ip, alias="Kettle", has_emeter=True, model="HS110"
+            )
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+
+        await dm._authenticate_device_with_retry(
+            "10.0.0.3", None, allow_credentials=dm._may_use_credentials("10.0.0.3")
+        )
+
+        assert ("owner@x", "s3cret") in seen_creds
+        assert "10.0.0.3" in dm.devices
