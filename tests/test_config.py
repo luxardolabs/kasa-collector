@@ -1,5 +1,7 @@
 """Unit tests for the environment-driven config parsing helpers."""
 
+import os
+
 import pytest
 
 from app.core import config
@@ -57,6 +59,19 @@ class TestConfigValidator:
         assert (
             config.ConfigValidator.validate_log_level("LOUD", default="INFO") == "INFO"
         )
+
+
+@pytest.mark.unit
+class TestProductDefaults:
+    def test_trust_discovered_devices_defaults_true(self):
+        # A headless, single-tenant collector authenticates discovered devices by
+        # default so auto-discovery collects them without a manual list; the flag is
+        # opt-out hardening for an untrusted network (KASACOLLEC-108). The var is unset
+        # in the test environment, so the imported value is the code default itself
+        # (asserted here rather than via importlib.reload, which would swap out the
+        # Config object that app.main already holds a reference to).
+        assert "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES" not in os.environ
+        assert config.Config.KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES is True
 
     def test_log_level_normalizes_case(self):
         assert config.ConfigValidator.validate_log_level("debug") == "DEBUG"

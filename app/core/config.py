@@ -295,16 +295,20 @@ class Config:
     """Enable automatic device discovery on the local network."""
 
     KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES: bool = _get_bool_config(
-        "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES", default=False
+        "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES", default=True
     )
     """Hand the TP-Link credentials to any device that answers broadcast discovery.
 
-    Default False: credentials go only to a device the operator listed in
-    KASA_COLLECTOR_DEVICE_HOSTS or that the collector has collected from before. A new,
-    unlisted device that needs credentials is logged and left unauthenticated, because a
-    device answering the broadcast and asking for credentials is otherwise all it takes
-    for a rogue device on the LAN to be handed the account's credentials (KASACOLLEC-99).
-    Set True to restore the old behaviour of authenticating every responder.
+    Default True: a user who enabled auto-discovery expects discovered devices to be
+    collected, and this is a headless, single-tenant collector on the operator's own LAN
+    with no UI to approve a device. So credentials go to every discovered device that
+    needs them, as before.
+
+    Set False to withhold them from any device not listed in KASA_COLLECTOR_DEVICE_HOSTS:
+    on a network you do not fully trust, authenticating an unknown responder is all it
+    takes for a rogue device impersonating Kasa to be handed the account's credentials
+    (KASACOLLEC-99). Credentials are never printed in logs and never sent in the discovery
+    broadcast regardless of this flag.
     """
 
     # Authentication settings
