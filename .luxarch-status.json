@@ -384,13 +384,13 @@
       },
       {
         "rule": "repo.luxpm_backlog_triaged",
-        "status": "FAIL",
+        "status": "PASS",
         "since": "0.252.0",
-        "violations": 1,
+        "violations": 0,
         "deferred": false,
         "inert": false,
         "inert_reason": "",
-        "fix": "run `/luxpm-audit` (`luxarch --emit luxpm-audit-skill > .claude/skills/luxpm-audit/SKILL.md`): verify each open issue against the code and close it with evidence, park it `on_hold` with `waiting_on`, merge it into its duplicate, or comment what remains; backfill a summary on each unexplained close; then re-issue the receipt. Never close live work to move the count, and leave escalations to the guard maintainer.",
+        "fix": "",
         "example": ""
       },
       {
@@ -857,20 +857,20 @@
       }
     ],
     "summary": {
-      "PASS": 62,
-      "FAIL": 1,
+      "PASS": 63,
+      "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
       "INERT": 5
     }
   },
   "summary": {
-    "PASS": 68,
-    "FAIL": 1,
+    "PASS": 69,
+    "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
     "INERT": 7
   },
-  "commit": "9d2a0ac7d5ff0292e16aa8e84d69a01f5b7e361d",
-  "generated_at": "2026-10-25T01:01:49Z"
+  "commit": "9159fc4824642a77bd459cdb44abdb4a1ec9a0e8",
+  "generated_at": "2026-10-25T01:04:44Z"
 }
