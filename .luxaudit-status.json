@@ -6,23 +6,59 @@
   "source": "poetry.lock",
   "summary": {
     "PASS": 32,
-    "FAIL": 0,
-    "XFAIL": 0,
-    "INERT": 1
+    "FAIL": 4,
+    "XFAIL": 0
   },
   "vulnerable": [],
   "deferred": [],
   "banned": [],
   "not_audited": [],
   "image": {
-    "ref": "",
-    "inert": true,
-    "inert_reason": "cannot derive the shipped image: needs the git remote and a VERSION file, or `[image] refs = [\"<registry>/<name>:{version}\"]` in .luxaudit.toml",
+    "ref": "luxardolabs/kasa-collector:2026.10.2",
+    "inert": false,
+    "inert_reason": "",
     "error": "",
     "not_released": [],
-    "vulnerable": [],
+    "vulnerable": [
+      {
+        "package": "certifi",
+        "installed": "2026.7.22",
+        "vuln_id": "GHSA-6q48-6c7w-9gw2",
+        "severity": "CRITICAL",
+        "layer": "lang",
+        "image": "luxardolabs/kasa-collector:2026.10.2",
+        "fix": "2026.10.19"
+      },
+      {
+        "package": "aiohttp",
+        "installed": "3.14.3",
+        "vuln_id": "CVE-2026-111064",
+        "severity": "HIGH",
+        "layer": "lang",
+        "image": "luxardolabs/kasa-collector:2026.10.2",
+        "fix": "3.14.4"
+      },
+      {
+        "package": "aiohttp",
+        "installed": "3.14.3",
+        "vuln_id": "CVE-2026-111066",
+        "severity": "HIGH",
+        "layer": "lang",
+        "image": "luxardolabs/kasa-collector:2026.10.2",
+        "fix": "3.14.4"
+      },
+      {
+        "package": "aiohttp",
+        "installed": "3.14.3",
+        "vuln_id": "GHSA-2g87-pp6c-29x5",
+        "severity": "HIGH",
+        "layer": "lang",
+        "image": "luxardolabs/kasa-collector:2026.10.2",
+        "fix": "3.14.4"
+      }
+    ],
     "deferred": []
   },
-  "commit": "a3a6e18278ee82103b2b05a7ab4ff49511b16fbb",
-  "generated_at": "2026-10-24T17:21:31Z"
+  "commit": "9d2a0ac7d5ff0292e16aa8e84d69a01f5b7e361d",
+  "generated_at": "2026-10-25T01:01:49Z"
 }
