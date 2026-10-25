@@ -1300,3 +1300,107 @@ class TestCredentialsGatedByTrust:
 
         assert creds_by_ip["10.0.0.1"] == ("owner@x", "s3cret")  # listed
         assert creds_by_ip["10.0.0.9"] == (None, None)  # remembered stranger
+
+    async def test_trusted_smart_device_falls_through_to_credentialed_connection(
+        self, monkeypatch, tmp_path
+    ):
+        # A discovered SMART/KLAP device reports no state without credentials, and the
+        # discovery object never carries them (KASACOLLEC-99). When the operator has opted
+        # in (trust on, or listed), the failed discovered-object probe must fall through to
+        # a fresh credentialed get_device(), not dead-end -- otherwise the trust knob is a
+        # no-op for exactly the devices it exists to serve (KASACOLLEC-107).
+        from app.collector import device_manager as dm_mod
+
+        dm = self._dm(monkeypatch, tmp_path, trust=True)  # operator opted in
+
+        class SmartDevice:  # the class name is what the SMART branch checks
+            host = "10.0.0.9"
+
+        async def fake_auth_discovered(device, username=None, password=None):
+            return (
+                None  # cred-less discovery object cannot complete the SMART handshake
+            )
+
+        monkeypatch.setattr(
+            dm_mod.KasaAPI, "authenticate_discovered_device", fake_auth_discovered
+        )
+        seen_creds: list[tuple] = []
+
+        async def fake_get_device(ip, username=None, password=None):
+            seen_creds.append((username, password))
+            return SimpleNamespace(
+                host=ip, alias="Outside Front", has_emeter=True, model="KP125M"
+            )
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+
+        await dm._authenticate_device_with_retry(
+            "10.0.0.9", SmartDevice(), allow_credentials=True
+        )
+
+        assert ("owner@x", "s3cret") in seen_creds  # the knob actually logs in
+        assert "10.0.0.9" in dm.devices
+
+    async def test_unlisted_smart_device_is_withheld_not_retried(
+        self, monkeypatch, tmp_path
+    ):
+        # An unlisted, untrusted SMART device still gets no credentials, is not hammered
+        # with a connection it may not make, and is reported with the actionable "not
+        # trusted" line (once), not the old misleading "newer protocol support" message.
+        from app.collector import device_manager as dm_mod
+
+        dm = self._dm(monkeypatch, tmp_path)  # unlisted, trust off
+
+        class SmartDevice:
+            host = "10.0.0.9"
+
+        async def fake_auth_discovered(device, username=None, password=None):
+            return None
+
+        monkeypatch.setattr(
+            dm_mod.KasaAPI, "authenticate_discovered_device", fake_auth_discovered
+        )
+        attempted: list[str] = []
+
+        async def fake_get_device(ip, username=None, password=None):
+            attempted.append(ip)
+            return SimpleNamespace(host=ip, alias="x", has_emeter=True, model="KP125M")
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            dm.logger, "warning", lambda msg, *a: warnings.append(msg % a)
+        )
+
+        await dm._authenticate_device_with_retry(
+            "10.0.0.9", SmartDevice(), allow_credentials=False
+        )
+        await dm._authenticate_device_with_retry(
+            "10.0.0.9", SmartDevice(), allow_credentials=False
+        )
+
+        assert attempted == []  # withheld: never opened a connection
+        assert "10.0.0.9" not in dm.devices
+        assert sum("not trusted" in w for w in warnings) == 1
+        assert not any("newer protocol support" in w for w in warnings)
+
+    async def test_failed_smart_probe_closes_its_session(self, monkeypatch):
+        # A discovered SMART probe that fails must close the device's aiohttp session;
+        # otherwise the event loop logs "Unclosed client session" on GC (KASACOLLEC-107).
+        from app.collector import kasa_api
+
+        closed: list[bool] = []
+
+        class SmartDevice:
+            host = "10.0.0.9"
+
+            async def update(self):
+                raise Exception("needs credentials")
+
+            async def disconnect(self):
+                closed.append(True)
+
+        result = await kasa_api.KasaAPI.authenticate_discovered_device(SmartDevice())
+
+        assert result is None
+        assert closed == [True]

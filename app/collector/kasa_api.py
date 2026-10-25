@@ -36,6 +36,26 @@ from app.core.config import Config
 logger = logging.getLogger("KasaAPI")
 
 
+async def _close_quietly(device: Device) -> None:
+    """Close a device's transport, swallowing any error.
+
+    A discovered device whose probe failed still holds an open aiohttp session; left
+    to garbage collection the event loop logs ``Unclosed client session`` / ``Unclosed
+    connector`` (KASACOLLEC-107). Closing it here is cleanup on an object we are about
+    to drop, so a failure to close is itself nothing to act on.
+    """
+    try:
+        await device.disconnect()
+    # swallowed-exceptions: HANDLED -- this is best-effort cleanup of an object being
+    # discarded; the only consequence of a failure is the very log line we are avoiding.
+    except Exception as close_error:
+        logger.debug(
+            "Error closing %s during cleanup: %s",
+            getattr(device, "host", "?"),
+            close_error,
+        )
+
+
 class KasaAPI:
     """Static API wrapper for Kasa device operations.
 
@@ -161,14 +181,14 @@ class KasaAPI:
                 logger.debug("IOT device ready: %s (IP: %s)", device.alias, device.host)
                 return await reclass_strip_if_needed(device)
 
-            # SmartDevice needs special handling - it might need HTTP/HTTPS
+            # A SmartDevice (HTTP/HTTPS, KLAP) reports no state without credentials, and
+            # the discovery object carries none (KASACOLLEC-99). Probe it as-is: a listed
+            # or trusted one is then reconnected WITH credentials by the caller, so the
+            # probe failing here is routine, not an error -- keep it at debug.
             elif protocol == "SmartDevice":
-                logger.warning(
-                    "SmartDevice %s detected. This device type may use "
-                    "HTTP/HTTPS protocol and might not be fully supported yet.",
-                    device.host,
+                logger.debug(
+                    "SmartDevice %s detected; probing without credentials.", device.host
                 )
-                # Try to update anyway
                 try:
                     await device.update()
                     return device
@@ -178,6 +198,7 @@ class KasaAPI:
                 # exception here is the expected negative result, not a failure to report.
                 except Exception as smart_error:
                     logger.debug("SmartDevice update failed: %s", smart_error)
+                    await _close_quietly(device)
                     return None
 
             # Unknown device type
@@ -202,6 +223,7 @@ class KasaAPI:
                     "It may be on a different VLAN or have firewall rules.",
                     device.host,
                 )
+            await _close_quietly(device)
             return None
 
     @staticmethod

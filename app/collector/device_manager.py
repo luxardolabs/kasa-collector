@@ -359,8 +359,27 @@ class DeviceManager:
             return True
         return ip in self.device_hosts or ip in self.manual_addresses.values()
 
+    def _warn_unlisted(self, ip: str) -> None:
+        """Tell the operator once that ``ip`` was found but had its credentials withheld.
+
+        A discovered device that needs the TP-Link account but is neither listed nor
+        trusted is left unauthenticated (KASACOLLEC-99). Warn the first time only, so the
+        line does not repeat every discovery cycle.
+        """
+        if ip in self._unlisted_warned:
+            return
+        self._unlisted_warned.add(ip)
+        self.logger.warning(
+            "Discovered device %s needs TP-Link credentials but is not trusted: it is "
+            "not in KASA_COLLECTOR_DEVICE_HOSTS and has not been collected from before, "
+            "so its credentials were withheld. Add it to KASA_COLLECTOR_DEVICE_HOSTS to "
+            "collect from it, or set KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES=true to "
+            "authenticate every discovered device (less safe).",
+            ip,
+        )
+
     async def _authenticate_device_with_retry(
-        self, ip: str, discovered_device: Device | None, allow_credentials: bool = True
+        self, ip: str, discovered_device: Device | None, allow_credentials: bool = False
     ) -> None:
         """Authenticate a device with retry logic and multiple fallback strategies.
 
@@ -416,13 +435,17 @@ class DeviceManager:
                     )
                 return
             else:
-                # If it's a SmartDevice that failed, don't try legacy connection
-                if discovered_device.__class__.__name__ == "SmartDevice":
-                    self.logger.warning(
-                        "SmartDevice at %s couldn't be connected. "
-                        "This device may require newer protocol support.",
-                        ip,
-                    )
+                # A discovered SmartDevice reports no usable state without credentials,
+                # and the discovery object never carries them (discovery enumerates without
+                # credentials, KASACOLLEC-99). If we are allowed to use them (the device is
+                # listed or trusted), fall through to the credentialed get_device() retry
+                # below -- that fresh connection DOES log in. If not, withhold them and tell
+                # the operator once, rather than retrying a device we may not authenticate.
+                if (
+                    discovered_device.__class__.__name__ == "SmartDevice"
+                    and not allow_credentials
+                ):
+                    self._warn_unlisted(ip)
                     return
 
         # Fallback to creating new connection if discovered device fails
@@ -532,17 +555,7 @@ class DeviceManager:
             elif needs_credentials and not allow_credentials:
                 # A new device on the LAN that wants the account credentials. We did not
                 # hand them over (KASACOLLEC-99); tell the operator once how to opt it in.
-                if ip not in self._unlisted_warned:
-                    self._unlisted_warned.add(ip)
-                    self.logger.warning(
-                        "Discovered device %s needs TP-Link credentials but is not "
-                        "trusted: it is not in KASA_COLLECTOR_DEVICE_HOSTS and has not "
-                        "been collected from before, so its credentials were withheld. "
-                        "Add it to KASA_COLLECTOR_DEVICE_HOSTS to collect from it, or set "
-                        "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES=true to authenticate "
-                        "every discovered device (less safe).",
-                        ip,
-                    )
+                self._warn_unlisted(ip)
             elif "challenge" in error_msg.lower():
                 self.logger.exception(
                     "Device %s requires TP-Link cloud credentials. "
