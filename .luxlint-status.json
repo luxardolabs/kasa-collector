@@ -73,16 +73,10 @@
     },
     {
       "rule": "lint.format",
-      "status": "FAIL",
+      "status": "PASS",
       "since": "0.1.0",
-      "violations": 1,
-      "sites": [
-        {
-          "path": "tests/test_dockerfile.py",
-          "line": null,
-          "detail": "would be reformatted"
-        }
-      ],
+      "violations": 0,
+      "sites": [],
       "deferred": false
     },
     {
@@ -194,13 +188,13 @@
     }
   ],
   "summary": {
-    "PASS": 18,
-    "FAIL": 1,
+    "PASS": 19,
+    "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
     "INERT": 3
   },
   "mypy": "separate: `luxlint --mypy` ([mypy].baseline ratchet)",
-  "commit": "90ec3a927101319349093da9482751cbd3593708",
-  "generated_at": "2026-10-26T00:11:27Z"
+  "commit": "d8ccf5fcff396b64a0f395b3fcb8a97e0c5315ad",
+  "generated_at": "2026-10-26T00:35:34Z"
 }
