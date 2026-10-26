@@ -84,9 +84,9 @@ if ! $DC ps --status running --services | grep -q '^kasa-collector-e2e$'; then
 fi
 echo "✓ non-emeter plug '$NOT_EXPECTED' handled cleanly (no emeter data, collector healthy)"
 # ---------------------------------------------------------------------------
-# The runtime user writes its output and nothing it executes (KASACOLLEC-110), checked in the
-# built image rather than the Dockerfile text: under /app and /opt/venv, nothing outside
-# /app/output may be owned by appuser or writable by group/other.
+# The runtime user writes its output and nothing it executes, checked in the built image
+# itself: under /app and /opt/venv, nothing outside /app/output may be owned by appuser or
+# writable by group/other.
 writable="$($DC exec -T kasa-collector-e2e find /app /opt/venv -xdev -path /app/output -prune \
   -o \( -user appuser -o -perm /022 \) ! -type l -print 2>/dev/null)"
 if [ -n "$writable" ]; then

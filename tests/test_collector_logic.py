@@ -1411,7 +1411,7 @@ class TestCredentialsGatedByTrust:
         # get_device tries discover_single first. When that returns a device whose update()
         # fails, the fallback connects a new one; the first, its HTTP session already open,
         # must be closed rather than dropped, or the event loop logs "Unclosed client
-        # session" for every device that takes the fallback (KASACOLLEC-109).
+        # session" for every device that takes the fallback.
         from app.collector import kasa_api
 
         closed: list[str] = []
