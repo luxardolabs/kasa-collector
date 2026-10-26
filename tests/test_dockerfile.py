@@ -28,12 +28,13 @@ def _production_stage() -> list[str]:
     return lines
 
 
-def test_app_code_is_not_copied_owned_by_the_runtime_user() -> None:
-    copies = [
-        ln for ln in _production_stage() if re.match(r"COPY\b.*\s/app/app\s*$", ln)
-    ]
-    assert copies, "production stage must COPY the app package to /app/app"
-    assert not any("--chown" in ln for ln in copies), copies
+def test_nothing_is_copied_owned_by_the_runtime_user() -> None:
+    stage = _production_stage()
+    assert any(re.match(r"COPY\b.*\s/app/app\s*$", ln) for ln in stage), (
+        "production stage must COPY the app package to /app/app"
+    )
+    chowned = [ln for ln in stage if ln.startswith("COPY") and "--chown" in ln]
+    assert not chowned, chowned
 
 
 def test_app_code_modes_are_set_readable_and_not_writable() -> None:
@@ -61,3 +62,11 @@ def test_the_runtime_user_owns_only_the_output_directory() -> None:
     assert all(
         re.fullmatch(r"chown\s+appuser:appuser\s+/app/output", c) for c in chowns
     ), chowns
+    installs = [
+        ln for ln in _production_stage() if re.search(r"\binstall\b.*\s-o\s", ln)
+    ]
+    assert not installs, installs
+
+
+# The built image is the authority: scripts/e2e-test.sh fails if anything under /app or
+# /opt/venv other than /app/output is owned by appuser or writable by group/other.

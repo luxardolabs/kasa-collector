@@ -88,17 +88,17 @@ Each JSON line carries `timestamp`, `level`, `logger`, `message`, `service` (`ka
 
 ## Output
 
-| Variable                       | Default  | Description                                                                                                         |
-| ------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------- |
-| `KASA_COLLECTOR_WRITE_TO_FILE` | `False`  | Also write each poll's data to newline-delimited JSON (`.jsonl`) files. Primarily for debugging.                    |
-| `KASA_COLLECTOR_OUTPUT_DIR`    | `output` | Directory for `.jsonl` files when file output is enabled (container path, typically bind-mounted to `/app/output`). |
+| Variable                       | Default  | Description                                                                                                                                                                                                                                           |
+| ------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KASA_COLLECTOR_WRITE_TO_FILE` | `False`  | Also write each poll's data to newline-delimited JSON (`.jsonl`) files. Primarily for debugging.                                                                                                                                                      |
+| `KASA_COLLECTOR_OUTPUT_DIR`    | `output` | Directory for `.jsonl` files when file output is enabled (container path, typically bind-mounted to `/app/output`). The collector runs as a non-root user that can write only `/app/output`, so a different path must be a mount that user can write. |
 
 ## Health check
 
-| Variable                              | Default                         | Description                                                                                                                             |
-| ------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` | `120`                           | Seconds since the last successful collection before the Docker health check reports unhealthy (minimum `1`).                            |
-| `KASA_COLLECTOR_HEARTBEAT_FILE`       | `/tmp/kasa-collector.heartbeat` | Where the collector records each cycle that stored data, for the health check. Keep it inside the container, never on the output mount. |
+| Variable                              | Default                         | Description                                                                                                                                                                                                             |
+| ------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` | `120`                           | Seconds since the last successful collection before the Docker health check reports unhealthy (minimum `1`).                                                                                                            |
+| `KASA_COLLECTOR_HEARTBEAT_FILE`       | `/tmp/kasa-collector.heartbeat` | Where the collector records each cycle that stored data, for the health check. Keep it inside the container, never on the output mount, and under `/tmp`: the collector's user cannot write anywhere else in the image. |
 
 The health check runs as `python -m app.health.check` and needs no web server. It is healthy only on a fresh heartbeat written by the container's current process, whether or not file output is on.
 

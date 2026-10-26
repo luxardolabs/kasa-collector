@@ -84,6 +84,23 @@ if ! $DC ps --status running --services | grep -q '^kasa-collector-e2e$'; then
 fi
 echo "✓ non-emeter plug '$NOT_EXPECTED' handled cleanly (no emeter data, collector healthy)"
 # ---------------------------------------------------------------------------
+# The runtime user writes its output and nothing it executes (KASACOLLEC-110), checked in the
+# built image rather than the Dockerfile text: under /app and /opt/venv, nothing outside
+# /app/output may be owned by appuser or writable by group/other.
+writable="$($DC exec -T kasa-collector-e2e find /app /opt/venv -xdev -path /app/output -prune \
+  -o \( -user appuser -o -perm /022 \) ! -type l -print 2>/dev/null)"
+if [ -n "$writable" ]; then
+  echo "✗ FAIL: the runtime user can rewrite code it runs (owned by appuser or group/other-writable):"
+  echo "$writable"
+  exit 1
+fi
+out_owner="$($DC exec -T kasa-collector-e2e stat -c %U /app/output)"
+if [ "$out_owner" != appuser ]; then
+  echo "✗ FAIL: /app/output is owned by '$out_owner', so the collector cannot write its exports"
+  exit 1
+fi
+echo "✓ the runtime user owns only /app/output; its code and venv are read-only to it"
+# ---------------------------------------------------------------------------
 # The KASACOLLEC-70 regression, end to end.
 #
 # "Fake Deaf Plug" answers broadcast for its first 45s -- long enough to be DISCOVERED
