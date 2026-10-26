@@ -1404,3 +1404,52 @@ class TestCredentialsGatedByTrust:
 
         assert result is None
         assert closed == [True]
+
+    async def test_get_device_closes_a_discovered_device_it_falls_back_from(
+        self, monkeypatch
+    ):
+        # get_device tries discover_single first. When that returns a device whose update()
+        # fails, the fallback connects a new one; the first, its HTTP session already open,
+        # must be closed rather than dropped, or the event loop logs "Unclosed client
+        # session" for every device that takes the fallback (KASACOLLEC-109).
+        from app.collector import kasa_api
+
+        closed: list[str] = []
+
+        class Probed:
+            host = "10.0.0.5"
+
+            async def update(self):
+                raise Exception("handshake failed")
+
+            async def disconnect(self):
+                closed.append("discovered")
+
+        class Connected:
+            host = "10.0.0.5"
+            alias = "Office Desk West Power Strip"
+            model = "HS300"
+            has_emeter = True
+            sys_info: dict = {}
+
+            async def update(self):
+                return None
+
+            async def disconnect(self):
+                closed.append("connected")
+
+        async def fake_discover_single(host, credentials=None):
+            return Probed()
+
+        async def fake_connect(*, host=None, config=None):
+            return Connected()
+
+        monkeypatch.setattr(kasa_api.Discover, "discover_single", fake_discover_single)
+        monkeypatch.setattr(kasa_api.Device, "connect", fake_connect)
+
+        device = await kasa_api.KasaAPI.get_device("10.0.0.5", "owner@x", "s3cret")
+
+        assert isinstance(device, Connected)
+        assert closed == [
+            "discovered"
+        ]  # the dropped one closed; the kept one left open

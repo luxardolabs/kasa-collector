@@ -288,6 +288,12 @@ class KasaAPI:
         # strategy fails, THAT raises. Not a dropped error: a tried-and-rejected branch.
         except Exception as discover_error:
             logger.debug("discover_single failed for %s: %s", ip, discover_error)
+            # The device discovery returned may already hold an open HTTP session (its
+            # update() got as far as the handshake). Close it before the fallback replaces
+            # it, or the event loop logs "Unclosed client session" when it is collected.
+            if device is not None:
+                await _close_quietly(device)
+                device = None
             # Fall through to try Device.connect
 
         try:
