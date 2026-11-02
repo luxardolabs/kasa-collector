@@ -135,6 +135,11 @@ def async_retry(
                     hostname = await get_hostname_cached(ip)
                     device_info = f" for {device_name} (IP: {ip}, Hostname: {hostname})"
                 except Exception:
+                    logger.warning(
+                        "Could not describe the device for retry logging; "
+                        "falling back to its address",
+                        exc_info=True,
+                    )
                     device_info = (
                         f" for device at {args[1] if len(args) > 1 else 'unknown'}"
                     )

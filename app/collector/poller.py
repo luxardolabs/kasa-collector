@@ -35,6 +35,10 @@ from app.core.config import Config
 from app.health import heartbeat
 from app.storage.influxdb import InfluxDBStorage, device_id_of
 
+# The collector's component logger, so KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR governs it
+# as it does the Poller instance's.
+logger = logging.getLogger("KasaCollector")
+
 # The emeter fields written, in the units the dashboards read. Legacy firmware (HS110
 # hardware v1) reports A / V / W / kWh as floats under `current` / `voltage` / `power` /
 # `total`; python-kasa's EmeterStatus converts those when one of these keys is read, so
@@ -128,7 +132,13 @@ def smart_energy_fields(device: Any) -> dict[str, int]:
         modules = getattr(device, "modules", None)
         module = modules.get(Module.Energy) if isinstance(modules, Mapping) else None
         energy = getattr(module, "energy", None)
-    except Exception:  # an unreadable optional extra
+    except Exception:
+        logger.warning(
+            "Could not read the energy counters of %s; writing the realtime reading "
+            "without them",
+            getattr(device, "host", "unknown device"),
+            exc_info=True,
+        )
         return {}
     if not isinstance(energy, Mapping):
         return {}

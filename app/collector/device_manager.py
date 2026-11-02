@@ -363,7 +363,7 @@ class DeviceManager:
         """Tell the operator once that ``ip`` was found but had its credentials withheld.
 
         A discovered device that needs the TP-Link account but is neither listed nor
-        trusted is left unauthenticated (KASACOLLEC-99). Warn the first time only, so the
+        trusted is left unauthenticated. Warn the first time only, so the
         line does not repeat every discovery cycle.
         """
         if ip in self._unlisted_warned:
@@ -539,6 +539,9 @@ class DeviceManager:
                     ip,
                     hostname,
                 )
+        # swallowed-exceptions: every branch logs except an unlisted device refused for
+        # credentials we withheld on purpose; _warn_unlisted reports that once per address,
+        # so a repeat each discovery cycle is the expected refusal, not a lost failure.
         except Exception as e:
             error_msg = str(e)
             needs_credentials = (
@@ -554,7 +557,7 @@ class DeviceManager:
                 )
             elif needs_credentials and not allow_credentials:
                 # A new device on the LAN that wants the account credentials. We did not
-                # hand them over (KASACOLLEC-99); tell the operator once how to opt it in.
+                # hand them over; tell the operator once how to opt it in.
                 self._warn_unlisted(ip)
             elif "challenge" in error_msg.lower():
                 self.logger.exception(

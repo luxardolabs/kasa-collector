@@ -1,4 +1,4 @@
-# luxarch:logging asset v6 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit logging`.
+# luxarch:logging asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit logging`.
 """The fleet's ONE logging setup: standard-library `logging`, one JSON line per record on stdout.
 
 Why the standard library (sources in `luxarch --playbook logging`): every log platform the fleet might
@@ -44,6 +44,25 @@ the line as a dict and returns the dict to write. It sees the message, the bound
 `extra=` field and the traceback, in JSON and text mode alike. If it raises, the line is written with
 its fixed fields only and a `redaction_error`: never the unscrubbed content, never lost.
 
+Trace ids on every line logged inside a span: pass the tracing module's source,
+`configure_logging(..., trace_ids=current_trace_ids)` (`luxarch --emit telemetry`), and each record made
+while a span is current carries `trace_id` and `span_id`; outside a span, neither. The source is called
+when the record is made, in the caller's context, so a line formatted later still names its own span. A
+source that raises costs the line its ids, never the line.
+
+No character in a record stops it being written, and every line is text UTF-8 can carry. A lone
+surrogate (a `str` UTF-8 cannot encode, which a client reaches by naming a form charset such as
+`unicode_escape`) is written as the six characters of its escape, `\\ud800`, in JSON and text mode alike: a JSON line parses to that text, never to a
+character, so two lone surrogates cannot be read back as the emoji their pair would spell. A request
+field a security line quotes therefore cannot stop that line being written, nor make the stream
+invalid UTF-8. A JSON record is one line by any reader's count: U+0085, U+2028 and U+2029, which some
+readers split lines on and JSON may carry raw, are written as JSON escapes. In text mode every control
+character but a tab in the message or a field is written as its escape (`\\n`, `\\x1b`, `\\u2028`),
+so a field can neither add a line nor drive the terminal; a traceback follows on lines of its own,
+each indented and escaped the same way, so not even an exception message can start a line that
+reads as a record. Every other character is written as itself. The escape is text: a client who
+types the six characters `\\ud800` is logged the same way as one who sent the surrogate.
+
 `LOG_LEVEL` sets the root level (default INFO). Per-logger levels: pass
 `configure_logging(..., levels={"sqlalchemy.engine": "WARNING"})` for the code's defaults, and set
 `LOG_MODULE_LEVELS='{"app.services.ingest": "DEBUG"}'` to override one at runtime. `LOG_FORMAT=text` gives a plain human-readable line for
@@ -60,6 +79,7 @@ import contextvars
 import json
 import logging
 import os
+import re
 import sys
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
@@ -120,6 +140,9 @@ _SysExcInfo = (
 # envelope and on `attributes`, so it sees every caller field under its own name, never nested.
 # See `configure_logging(redact=)`.
 Redactor = Callable[[dict[str, Any]], Mapping[str, Any]]
+# The current span's (trace id, span id) as hex, or None outside a span. See `configure_logging(trace_ids=)`.
+TraceIds = Callable[[], tuple[str, str] | None]
+_trace_ids: list[TraceIds | None] = [None]
 # What survives a redactor that raised: only fields the module itself wrote and no caller controls.
 _SAFE_ON_FAILURE = ("timestamp", "level", "logger", "service", "version", "environment")
 
@@ -182,6 +205,19 @@ def _make_record(
     )
     names: dict[str, str] = {}
     record.__dict__[_FIELD_KEYS] = names
+    source = _trace_ids[0]
+    if source is not None:
+        # Any exception, not a list: a tracing defect must never cost the application its log line.
+        try:
+            ids = cast(object, source())
+        except Exception:
+            ids = None
+        if (
+            isinstance(ids, tuple)
+            and len(ids) == 2
+            and all(isinstance(i, str) for i in ids)
+        ):
+            record.__dict__["otelTraceID"], record.__dict__["otelSpanID"] = ids
     for key, value in (extra or {}).items():
         free = _free_key(key, record.__dict__)
         record.__dict__[free] = value
@@ -245,7 +281,7 @@ class JsonFormatter(logging.Formatter):
         if attributes:
             line["attributes"] = attributes
         try:
-            return json.dumps(line, default=str, ensure_ascii=False, allow_nan=False)
+            text = json.dumps(line, default=str, ensure_ascii=False, allow_nan=False)
         except _VALUE_ERRORS:
             # A circular structure, a non-string key, NaN/Infinity, or a value whose str() raises:
             # stock logging would still print this record, so it must not be lost here either.
@@ -254,7 +290,8 @@ class JsonFormatter(logging.Formatter):
                 safe["attributes"] = {
                     str(k): _plain(v) for k, v in line["attributes"].items()
                 }
-            return json.dumps(safe, ensure_ascii=False)
+            text = json.dumps(safe, ensure_ascii=False)
+        return _encodable(text)
 
 
 class _Handler(logging.StreamHandler[TextIO]):
@@ -297,12 +334,54 @@ class TextFormatter(logging.Formatter):
             line["exception"] = self.formatException(record.exc_info)
         if record.stack_info:
             line["stack"] = self.formatStack(record.stack_info)
-        line, attributes = _redacted(line, {**_bound(), **_extras(record)}, self.redact)
-        message = line.pop("message", "")
-        trace = [str(line.pop(k)) for k in ("exception", "stack") if k in line]
-        head = f"{self.formatTime(record)} {record.levelname} {record.name} {message}"
-        tail = " ".join(f"{k}={v}" for k, v in {**line, **attributes}.items())
-        return "\n".join([f"{head} {tail}" if tail else head, *trace])
+        extras = _extras(record)
+        for otel, ours in _TRACE_FIELDS.items():
+            if otel in extras:
+                line[ours] = extras.pop(otel)
+        line, attributes = _redacted(line, {**_bound(), **extras}, self.redact)
+        message = _one_line(str(line.pop("message", "")))
+        # A traceback keeps its own lines, each indented under the record's head and with its
+        # control characters escaped, so an exception message cannot start a line of its own.
+        trace = [
+            f"    {_one_line(part)}"
+            for k in ("exception", "stack")
+            if k in line
+            for part in str(line.pop(k)).split("\n")
+        ]
+        head = (
+            f"{self.formatTime(record)} {_one_line(str(record.levelname))} "
+            f"{_one_line(str(record.name))} {message}"
+        )
+        tail = " ".join(
+            f"{_one_line(str(k))}={_one_line(str(v))}"
+            for k, v in [*line.items(), *attributes.items()]
+        )
+        text = "\n".join([f"{head} {tail}" if tail else head, *trace])
+        return _SURROGATE.sub(lambda m: f"\\u{ord(m.group()):04x}", text)
+
+
+# The code points UTF-8 cannot encode: a `str` holds them only as lone surrogates.
+_SURROGATE = re.compile("[\ud800-\udfff]")
+# What `json.dumps` leaves raw and a line reader may still break a line at.
+_LINE_BREAKS = re.compile("[\x85\u2028\u2029]")
+# Every control character but a tab, and the two Unicode line separators: one text line holds none.
+_CONTROL = re.compile("[\x00-\x08\x0a-\x1f\x7f-\x9f\u2028\u2029]")
+
+
+def _encodable(text: str) -> str:
+    """A JSON line as UTF-8 carries it: each lone surrogate becomes an escaped backslash and `uXXXX`,
+    so the line parses to the six characters of the escape. JSON's own `\\uXXXX` would parse back to
+    the surrogate, which some readers refuse (and stop at), and a high one followed by a low one
+    would read as the single character they spell. A line separator becomes its JSON escape."""
+    text = _SURROGATE.sub(lambda m: f"\\\\u{ord(m.group()):04x}", text)
+    return _LINE_BREAKS.sub(lambda m: f"\\u{ord(m.group()):04x}", text)
+
+
+def _one_line(text: str) -> str:
+    """`text` on one line of a terminal: each control character but a tab as its escape."""
+    return _CONTROL.sub(
+        lambda m: m.group().encode("unicode_escape").decode("ascii"), text
+    )
 
 
 def _extras(record: logging.LogRecord) -> dict[str, Any]:
@@ -389,6 +468,7 @@ def configure_logging(
     levels: Mapping[str, str | int] | None = None,
     environment: str | None = None,
     redact: Redactor | None = None,
+    trace_ids: TraceIds | None = None,
 ) -> None:
     """Install the fleet's logging: JSON to stdout, the collision fix, server loggers routed through it.
 
@@ -406,11 +486,15 @@ def configure_logging(
     `extra=`, flat, under their own names); each returns the dict to write. If either raises, the line
     keeps its fixed fields and says the redaction failed; the unscrubbed content is dropped.
 
+    `trace_ids` is the tracing module's `current_trace_ids`: every record made inside a span gets
+    `trace_id` and `span_id`.
+
     Idempotent: calling it again replaces the handler instead of adding a second one.
     """
     # The documented override point (Python docs: "can be overridden in subclasses"), installed on the
     # base class so loggers created before this call, and third-party ones, are covered as well.
     setattr(logging.Logger, _OVERRIDDEN, _make_record)
+    _trace_ids[0] = trace_ids
     formatter: logging.Formatter
     if os.environ.get("LOG_FORMAT", "json").lower() == "text":
         formatter = TextFormatter(redact)

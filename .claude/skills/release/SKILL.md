@@ -3,11 +3,11 @@ name: release
 description: Cut an app release the same way every time — reconcile the tracker, write both release documents, tag vX.Y.Z, run the release function, create the GitHub Release (+ LuxPM mirror). Follow it end to end; never skip a step.
 ---
 
-<!-- luxarch:release-skill asset v10 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit release-skill`. -->
+<!-- luxarch:release-skill asset v11 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit release-skill`. -->
 
 # App release ritual
 
-The one runnable checklist for cutting a release of THIS app. Emitted from luxarch (`luxarch --emit release-skill`) so every repo has the identical one — do not hand-edit it; re-emit to update. The *rationale* for each step lives in `luxarch --doc FLEET-RELEASE-PROCESS`; this is the runnable steps. Do them in order. A skipped step is the whole point of failure this exists to prevent (a release that tagged but never built, or shipped with a stale changelog).
+The one runnable checklist for cutting a release of THIS app. Emitted from luxarch (`luxarch --emit release-skill`) so every repo has the identical one — do not hand-edit it above the repo's own region at its end (see the last section); re-emit to update. The *rationale* for each step lives in `luxarch --doc FLEET-RELEASE-PROCESS`; this is the runnable steps. Do them in order. A skipped step is the whole point of failure this exists to prevent (a release that tagged but never built, or shipped with a stale changelog).
 
 > Shipping a **guard** (luxarch/luxlint/luxaudit) uses that repo's own `release` skill, not this one.
 
@@ -39,4 +39,12 @@ The one runnable checklist for cutting a release of THIS app. Emitted from luxar
 
 ## Done when
 
-Every step above is done: `VERSION` bumped; both `{VERSION}.md` documents written from the full window and cross-checked; every issue that shipped is closed in LuxPM (none falsely); the **release gate** met (`make check` green, or every red examined + escalated + owner-approved + listed under `## Known reds`); the `vX.Y.Z` tag pushed; the image built + pushed + **deployed**; the **GitHub Release created** (with the notes) on this repo's `/releases` — **every** repo, public or private — and **mirrored to LuxPM** (the fleet index). If the tag exists but the artifact was never built/deployed, the GitHub Release was never created (a tag is not a Release — `/releases` is empty), a red is unexamined or merely deferred, or either document is missing or stale, the release is **not** done.
+Every step above is done: `VERSION` bumped; both `{VERSION}.md` documents written from the full window and cross-checked; every issue that shipped is closed in LuxPM (none falsely); the **release gate** met (`make check` green, or every red examined + escalated + owner-approved + listed under `## Known reds`); the `vX.Y.Z` tag pushed; the image built + pushed + **deployed**; the **GitHub Release created** (with the notes) on this repo's `/releases` — **every** repo, public or private — and **mirrored to LuxPM** (the fleet index). If the tag exists but the artifact was never built/deployed, the GitHub Release was never created (a tag is not a Release — `/releases` is empty), a red is unexamined or merely deferred, or either document is missing or stale, or a step in this repo's own region below was skipped, the release is **not** done.
+
+## This repo's own release steps (the region at the end of this file)
+
+The region that closes this file belongs to the repo, and no guard compares it. `repo.emitted_assets_current` reads everything above it line for line, and `luxarch --emit release-skill --update <file>` carries it across a new version. Write the repo's steps **below** its comment line, never above it.
+
+Each step there says where it runs, by the fleet step it follows or precedes ("after step 3, before step 5: pull the product docs into `docs/product/` and commit them"), and is done as part of the release like any step above. It adds to the fleet steps and never replaces one: where the region disagrees with them, the fleet text wins. A fleet step this repo needs changed is an escalation to the guard maintainer, not a region edit.
+
+<!-- --- EDIT THIS: this repo's own release steps -->

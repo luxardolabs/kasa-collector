@@ -1,9 +1,9 @@
 ---
 name: luxpm-audit
-description: Audit this repo's whole LuxPM project, not just the issues the current work touched — verify every open issue against the code and close, park, merge or comment on it with evidence, backfill a close summary on every closed issue that lacks one, then re-issue the sync receipt. Use when the receipt shows untriaged or unexplained issues, when repo.luxpm_backlog_triaged is red, or when asked to review/clean up/audit LuxPM.
+description: Audit this repo's whole LuxPM project, not just the issues the current work touched — verify every open issue against the code and close, park, merge or comment on it with evidence, backfill a close summary on every closed issue that lacks one, recover work a closed summary deferred without tracking it, then re-issue the sync receipt. Use when the receipt shows untriaged or unexplained issues, when repo.luxpm_backlog_triaged is red, or when asked to review/clean up/audit LuxPM.
 ---
 
-<!-- luxarch:luxpm-audit-skill asset v7 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit luxpm-audit-skill`. -->
+<!-- luxarch:luxpm-audit-skill asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit luxpm-audit-skill`. -->
 
 # Audit the LuxPM backlog
 
@@ -40,13 +40,28 @@ Read it fully (`luxpm_get_context`: description, comments, linked commits). Then
 | **Live and actionable**                                                                | Leave it in `backlog`/`todo`. Comment with what you checked and the next concrete step (file, function, test). A bare "still relevant" is not triage.                                                                                                                                                                                                                       |
 | **Cannot verify either way**                                                           | Leave open. Comment: what you checked and what would settle it.                                                                                                                                                                                                                                                                                                             |
 
-**Escalations are not yours to close.** An issue labelled `fleet-escalation` / `escalation`, or titled `[<guard> ESCALATION]`, is waiting on the guard maintainer; it closes when the maintainer's fix ships. Park it: `state: on_hold`, `waiting_on: <guard> maintainer`. If your pinned guard version already contains the fix (`luxarch --changelog --since <version>`), also comment that with the evidence, so the maintainer can close it. Its red stays lit while it is open.
+**An escalation is read by its `waiting_on`.** An issue labelled `fleet-escalation` / `escalation`, or titled `[<guard> ESCALATION]`, waits on whoever its `waiting_on` names. If it names a guard maintainer, park it: `state: on_hold`, keeping that `waiting_on` (`<guard> maintainer` where none is set). If it names this repo's step, the maintainer has answered: do that step as `/pin-bump` step 5 says, and close the escalation once the step verifies on the version it names. Its red stays lit while it is open.
 
 **Never** delete an issue (deleting is the owner's call — ask), use `administrative_close`, close in bulk without reading each one, bulk-edit fields to reset issues' clocks (a label or priority touched on every issue is not triage, it is gaming the count), or write a summary you did not verify.
 
-## 2. Closed issues with no summary
+## 2. Closed issues: no summary, or deferred work nobody tracks
 
 For each `done`/`cancelled` issue in this project with a blank `close_summary` (list closed issues and read the field): reconstruct what happened from its linked commits, comments and activities, and `git log --grep <KEY>`. Write a `close_summary` (`luxpm_update_issue` with only `close_summary` — the state stays) that says what was done or why it was dropped, and where the evidence is. If nothing can be found, say so honestly: "Closed before summaries were required; no linked commit, comment or code reference found (checked: …)". That is an explanation; an empty field is not.
+
+**Then read every closed summary for deferred work.** A closed issue is in no open list, so "Not built: X" or "Stated limit: Y" written only into its summary is tracked by nothing. Collect each closed issue's full summary (`luxpm_list_issues` with `state` `done`, then `cancelled`, `verbose: true`, paging until exhausted) into a JSON object `{"<KEY>": "<close summary>", …}` in your scratch directory, and run the emitted hook's checker over it:
+
+```sh
+python3 .claude/hooks/luxpm-close-tracks-deferrals.py --scan <scratch>/closed.json
+```
+
+It prints each sentence that defers work without naming another issue or `dropped`, as `<KEY>: <sentence>`. For each one:
+
+- **Read it in context.** A sentence about the ticket itself ("left open for two weeks") defers nothing: note it and move on.
+- **Check the code.** Work done since (`git log -S <symbol>`, the file it names) needs no issue.
+- **Search LuxPM** (`luxpm_semantic_search`, two phrasings). Work an open issue already covers gets a comment there naming the closed key.
+- **File the rest** as its own open issue (label `recovered-deferral`), saying where it was found. Then amend the closed summary to name the new key beside the sentence (`luxpm_update_issue` with only `close_summary`, the state unchanged).
+
+A summary that ends mid-word was stored cut off. Rebuild what is missing from the issue's comments, its commits and the changelog, and write it back whole.
 
 ## 3. Checklists and activities
 

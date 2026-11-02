@@ -3,7 +3,7 @@ name: wrap-up
 description: Close out a piece of work the fleet way before calling it done — tests written and run for what changed, every red in touched files fixed, docs updated (stale advice removed), make check green, committed in the issue's worktree, LuxPM fully closed out (issues, checklists, activities, commit links, sync receipt), then landed on the base branch, the worktree removed, and pushed as the repo declares. Every step reports evidence, not a tick.
 ---
 
-<!-- luxarch:wrap-up-skill asset v17 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit wrap-up-skill`. -->
+<!-- luxarch:wrap-up-skill asset v18 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit wrap-up-skill`. -->
 
 # Wrap up
 
@@ -85,4 +85,15 @@ A red can also be moved instead of fixed: the code goes to another layer, helper
 
 ## 8. Report
 
-One short report: what shipped (with the evidence above), what is still open and why. No effort narration.
+Two parts, in this order:
+
+1. **What this session worked on**, in a short paragraph or a few bullets of plain sentences for someone who was not watching:
+
+   - what it set out to do, and why;
+   - what it did and found along the way, including the decisions and owner rulings, anything that changed the plan, and dead ends worth knowing;
+   - where things stand;
+   - what comes next.
+
+   Name issues by key. This is a summary of the work, not of the effort: no narrating how hard it was.
+
+1. **The evidence:** what shipped (with the evidence above), and what is still open and why.

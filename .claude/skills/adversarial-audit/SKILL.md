@@ -3,7 +3,7 @@ name: adversarial-audit
 description: Attack the WHOLE platform, not just a change — take the attack surface from `luxarch --sweep attack-surface`, rank it by this repo's committed audit profile, hand each slice to an independent attacker, verify every break with a second agent, and file each confirmed break in LuxPM with its failing test. Direct it in plain words ("what changed since the last release", "just payments, go deep", "quick"); re-runs attack only what changed. Use for a first full review of an app, on the owner's schedule, or when asked to audit or red-team the platform.
 ---
 
-<!-- luxarch:adversarial-audit-skill asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit adversarial-audit-skill`. -->
+<!-- luxarch:adversarial-audit-skill asset v7 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit adversarial-audit-skill`. -->
 
 # Adversarial audit: the whole platform
 
@@ -21,7 +21,7 @@ docker run --rm -v <checkout>:/repo:ro -w /repo <luxarch image> --sweep attack-s
 
 `<checkout>` is the checkout's absolute path, written out: inside a worktree Claude Code refuses a mount computed at run time, such as `"$PWD"`.
 
-Also read the text form (the same command without `--json`). Its header lines say how many routes, jobs and entry points there are, the audit state (`attacked` / `stale` / `never` / `retired` slices), the profile state (`profile: none | current | needs re-check (<reasons>)`), and this run's `surface:` counts. Every route or job under `unresolved` is a target in its own right: a surface the guard cannot see is one nobody has checked. A route whose `auth` is `unknown` is attacked as if it were `anon`.
+Also read the text form (the same command without `--json`). Its header lines say how many routes, jobs and entry points there are, the audit state (`attacked` / `stale` / `never` / `retired` slices), the profile state (`profile: none | current | needs re-check (<reasons>)`), and this run's `surface:` counts. Every route or job under `unresolved` is a target in its own right: a surface the guard cannot see is one nobody has checked. A route whose `auth` is `unknown` is attacked as if it were `anon`. A mounted MCP server is one `TOOL` route per tool (`<mount>#<tool>`), sliced by tool module, with the mount's auth and the handler's writes (a tool's `user` is the guard's static reading of the middleware in front of the mount: attack it first, with no credential and with a forged one); `unresolved mounts: N` counts the mounted applications whose own routes the sweep could not read, and each is a whole application to attack.
 
 ## 2. The profile: set up once, re-checked when the guard says so
 
@@ -49,11 +49,12 @@ The repo's committed `.adversarial-audit.toml` holds a `[profile]`: what an atta
   webhook = 0
   mounts = 0
   jobs = 0
+  tools = 0
   ```
 
   Commit it, show it to the owner, and **stop for their review**: what counts as a crown jewel is the owner's judgment, not the code's. Attack after they confirm (or correct) it.
 
-- **`profile: needs re-check`**: the sweep lists why (older than 90 days, a new kind of surface, routes grew by a quarter, or a field missing). Re-check before attacking: edit the profile, never rewrite it; update `written`, `commit` and `[profile.surface]`; and show the owner the diff. Never remove or downgrade a crown jewel or a hot spot without the owner saying so.
+- **`profile: needs re-check`**: the sweep lists why (older than 90 days, a new kind of surface, routes grew by a quarter, or a field missing for a kind of surface the platform has). Re-check before attacking: edit the profile, never rewrite it; update `written`, `commit` and `[profile.surface]`; and show the owner the diff. Never remove or downgrade a crown jewel or a hot spot without the owner saying so.
 
 - **`profile: current`**: use it as it is.
 
@@ -135,19 +136,22 @@ not attack and why.
 
 ## 5. Verify every confirmed finding
 
-A large sweep drifts toward plausible findings that are not real. Before anything is filed, give each CONFIRMED finding to a second **independent** agent (strongest model) with only the finding, its reproduction, and the repo:
+A large sweep drifts toward plausible findings that are not real. **Merge duplicates first:** findings with the same reproduction and the same failing line are one finding, whatever their titles, routes or slices say, and are verified once. Before anything is filed, give each CONFIRMED finding to a second **independent** agent (strongest model) with only the finding, its reproduction, and the repo:
 
 ```
 Another agent claims this defect in <repo>: <finding>. Its reproduction: <test or probe>.
 Decide whether it is REAL. Run the reproduction yourself; check that it fails for the reason
 claimed and not because of the harness, a fixture, or a misread; check the control passes; look
 for the guard or test that should already have caught it. Read-only except <scratch>/verify/.
-REPORT: REAL or NOT REAL, with the run's output; for REAL, the severity and the smallest fix.
+REPORT: REAL, NOT REAL or INCONCLUSIVE, with the run's output. REAL: the severity and the smallest
+fix. NOT REAL only with a demonstrated reason: the control fails the same way, the code path cannot be
+reached, or the claimed behaviour is correct. INCONCLUSIVE when you could not decide: the reproduction
+would not run, errored or timed out, or needs a service you could not set up. Say what stopped you.
 ```
 
-Tier the verification by what is at stake. **Full verification** (the second agent above) for every critical, high or medium finding, and for any finding about security, tenancy, money or data integrity whatever its rating. **Light verification** for a low-severity correctness finding (an unhandled error that returns 500 instead of 422, a missing validation): you re-run its reproduction once yourself, with no second agent, and mark it `verified: light` in the report and the issue. A light check that does not reproduce the failure is NOT REAL, the same as a full one.
+Tier the verification by what is at stake. **Full verification** (the second agent above) for every critical, high or medium finding, and for any finding about security, tenancy, money or data integrity whatever its rating. **Light verification** for a low-severity correctness finding (an unhandled error that returns 500 instead of 422, a missing validation): you re-run its reproduction once yourself, with no second agent, and mark it `verified: light` in the report and the issue. A light check that does not reproduce the failure is NOT REAL only with a reason it cannot fail (the same as a full one); a light check that could not run is INCONCLUSIVE.
 
-Only REAL findings go on. A NOT REAL one is recorded in the run's report with its reason, never filed.
+**Uncertainty never clears a finding.** REAL findings go on. A NOT REAL one is recorded in the run's report with its demonstrated reason, never filed. An INCONCLUSIVE one, or one whose verifier never ran (an error, a timeout, a round that stopped early), is filed as an open lead with what is known and what stopped the verdict, never dropped and never counted as clean.
 
 ## 6. `deep` only: the chaining pass
 

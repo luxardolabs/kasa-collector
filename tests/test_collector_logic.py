@@ -45,6 +45,27 @@ class TestAsyncRetry:
 
         assert await ok() == 42
 
+    async def test_an_undescribable_device_is_logged_and_still_called(
+        self, monkeypatch, caplog
+    ):
+        async def broken_lookup(ip):
+            raise RuntimeError("resolver exploded")
+
+        monkeypatch.setattr("app.collector.utils.get_hostname_cached", broken_lookup)
+
+        @async_retry(max_retries=3, base_delay=0, operation_name="test")
+        async def fetch(owner, ip, device):
+            return "reading"
+
+        with caplog.at_level(logging.INFO, logger="app.collector.utils"):
+            plug = SimpleNamespace(alias="Kettle")
+            assert await fetch(None, "10.0.0.5", plug) == "reading"
+        record = next(
+            r for r in caplog.records if "Could not describe the device" in r.message
+        )
+        assert record.levelno == logging.WARNING
+        assert record.exc_info is not None
+
 
 @pytest.mark.unit
 class TestRemoveMissingDevices:
@@ -1099,6 +1120,24 @@ class TestEmeterUnits:
             "today_wh": 2900,
             "month_wh": 41250,
         }
+
+    def test_unreadable_energy_counters_are_logged_and_yield_nothing(self, caplog):
+        from app.collector.poller import smart_energy_fields
+
+        class BrokenEnergy:
+            @property
+            def energy(self):
+                raise RuntimeError("module state torn")
+
+        device = SimpleNamespace(host="10.0.0.5", modules={"Energy": BrokenEnergy()})
+        with caplog.at_level(logging.INFO, logger="KasaCollector"):
+            assert smart_energy_fields(device) == {}
+        record = next(
+            r for r in caplog.records if "Could not read the energy" in r.message
+        )
+        assert record.levelno == logging.WARNING
+        assert "10.0.0.5" in record.getMessage()
+        assert record.exc_info is not None
 
     def test_a_null_legacy_field_drops_only_itself(self):
         from kasa.emeterstatus import EmeterStatus

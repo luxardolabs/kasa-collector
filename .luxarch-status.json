@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.325.0",
+  "guard_version": "0.336.0",
   "repo": "/repo",
   "targets": [
     {
@@ -94,14 +94,36 @@
           "inert_reason": "no HTTP surface: this collector target builds no FastAPI/Starlette app that a launch surface serves, so there is no Host header to refuse",
           "fix": "",
           "example": ""
+        },
+        {
+          "rule": "fw.no_concurrent_session_use",
+          "status": "INERT",
+          "since": "0.328.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": true,
+          "inert_reason": "no function, provider or class in this app holds a SQLAlchemy session, so there is no session to share",
+          "fix": "",
+          "example": ""
+        },
+        {
+          "rule": "fw.broad_except_is_logged",
+          "status": "PASS",
+          "since": "0.330.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": false,
+          "inert_reason": "",
+          "fix": "",
+          "example": ""
         }
       ],
       "summary": {
-        "PASS": 6,
+        "PASS": 7,
         "FAIL": 0,
         "XFAIL": 0,
         "XPASS": 0,
-        "INERT": 2
+        "INERT": 3
       }
     }
   ],
@@ -207,6 +229,17 @@
         "example": ""
       },
       {
+        "rule": "repo.runtime_user_cannot_write_code",
+        "status": "PASS",
+        "since": "0.334.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
         "rule": "repo.fleet_skills_present",
         "status": "PASS",
         "since": "0.245.0",
@@ -263,13 +296,13 @@
       },
       {
         "rule": "repo.makefile_no_fixed_tmp",
-        "status": "PASS",
+        "status": "FAIL",
         "since": "0.249.0",
-        "violations": 0,
+        "violations": 2,
         "deferred": false,
         "inert": false,
         "inert_reason": "",
-        "fix": "",
+        "fix": "Use a per-run file and remove it on exit, in ONE shell: `@set -e; C=$$(mktemp); trap 'rm -f \"$$C\"' EXIT INT TERM; <cmd> > \"$$C\"; docker run -v \"$$C\":/x:ro \u2026`. A cache that must persist belongs in a gitignored path inside the repo, not /tmp. See --doc FLEET-MAKEFILE-STANDARD.",
         "example": ""
       },
       {
@@ -858,19 +891,19 @@
     ],
     "summary": {
       "PASS": 63,
-      "FAIL": 0,
+      "FAIL": 1,
       "XFAIL": 0,
       "XPASS": 0,
       "INERT": 5
     }
   },
   "summary": {
-    "PASS": 69,
-    "FAIL": 0,
+    "PASS": 70,
+    "FAIL": 1,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 7
+    "INERT": 8
   },
-  "commit": "71936b9f66156af6c8c487c7c8ef6f983ab0b4d2",
-  "generated_at": "2026-10-26T02:52:03Z"
+  "commit": "2ffc906a291a8e0c25c1b141b8cd38c20ec5b4cc",
+  "generated_at": "2026-11-02T20:37:24Z"
 }

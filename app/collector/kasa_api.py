@@ -182,7 +182,7 @@ class KasaAPI:
                 return await reclass_strip_if_needed(device)
 
             # A SmartDevice (HTTP/HTTPS, KLAP) reports no state without credentials, and
-            # the discovery object carries none (KASACOLLEC-99). Probe it as-is: a listed
+            # the discovery object carries none. Probe it as-is: a listed
             # or trusted one is then reconnected WITH credentials by the caller, so the
             # probe failing here is routine, not an error -- keep it at debug.
             elif protocol == "SmartDevice":
@@ -209,19 +209,23 @@ class KasaAPI:
 
         except Exception as e:
             error_type = type(e).__name__
-            logger.debug(
-                "Failed to verify discovered device %s: %s: %s",
-                device.host,
-                error_type,
-                e,
-            )
-            # Check if it's a connection error that we should handle differently
+            # A connection error gets the actionable network hint; anything else is
+            # reported with its type, so a device that never verifies is visible.
             if "Connect call failed" in str(e) or "Connection reset" in str(e):
                 logger.warning(
                     "Device %s appears to be discovered but not "
-                    "connectable. "
+                    "connectable (%s: %s). "
                     "It may be on a different VLAN or have firewall rules.",
                     device.host,
+                    error_type,
+                    e,
+                )
+            else:
+                logger.info(
+                    "Failed to verify discovered device %s: %s: %s",
+                    device.host,
+                    error_type,
+                    e,
                 )
             await _close_quietly(device)
             return None

@@ -1,5 +1,7 @@
 """The one local python-kasa fix left: a discovered KLAP strip is re-classed as IotStrip."""
 
+import logging
+
 import pytest
 from kasa import Discover
 from kasa.iot import IotPlug, IotStrip
@@ -99,3 +101,30 @@ class TestDiscoveredDevicePath:
         assert (
             await KasaAPI.authenticate_discovered_device(IotPlug("10.0.0.72")) is None
         )
+
+    async def test_unreachable_device_warns_with_the_network_hint(
+        self, monkeypatch, caplog
+    ):
+        async def refused(self, update_children=False):
+            raise OSError("Connect call failed")
+
+        monkeypatch.setattr(IotPlug, "update", refused)
+        with caplog.at_level(logging.INFO, logger="KasaAPI"):
+            await KasaAPI.authenticate_discovered_device(IotPlug("10.0.0.72"))
+        record = next(r for r in caplog.records if "not connectable" in r.message)
+        assert record.levelno == logging.WARNING
+        assert "OSError" in record.getMessage()
+
+    async def test_any_other_verify_failure_is_logged_at_info(
+        self, monkeypatch, caplog
+    ):
+        async def broken(self, update_children=False):
+            raise ValueError("garbled sysinfo")
+
+        monkeypatch.setattr(IotPlug, "update", broken)
+        with caplog.at_level(logging.INFO, logger="KasaAPI"):
+            result = await KasaAPI.authenticate_discovered_device(IotPlug("10.0.0.73"))
+        assert result is None
+        record = next(r for r in caplog.records if "Failed to verify" in r.message)
+        assert record.levelno == logging.INFO
+        assert "ValueError: garbled sysinfo" in record.getMessage()
