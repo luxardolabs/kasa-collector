@@ -1196,6 +1196,28 @@ class TestEmeterUnits:
         )
         assert smart_energy_fields(device) == {}
 
+    def test_an_int_subclass_counter_is_read_as_a_plain_number(self):
+        from app.collector.poller import smart_energy_fields
+
+        class DeviceInt(int):
+            def __ge__(self, other):
+                raise RuntimeError("no compare")
+
+        device = SimpleNamespace(
+            host="10.0.0.5",
+            modules={"Energy": SimpleNamespace(energy={"today_energy": DeviceInt(5)})},
+        )
+        assert smart_energy_fields(device) == {"today_wh": 5}
+
+    def test_an_int_subclass_is_judged_storable_without_walking_the_int64_range(self):
+        from app.collector.poller import _storable
+
+        class DeviceInt(int):
+            pass
+
+        assert _storable(DeviceInt(5))
+        assert not _storable(DeviceInt(2**63))
+
     def test_a_null_legacy_field_drops_only_itself(self):
         from kasa.emeterstatus import EmeterStatus
 

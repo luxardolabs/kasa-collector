@@ -60,16 +60,20 @@ class UnstorableReading(Exception):
     """
 
 
-_INT64 = range(-(2**63), 2**63)
+_INT64_MIN, _INT64_MAX = -(2**63), 2**63 - 1
 
 
 def _storable(value: Any) -> bool:
     """False for a value no InfluxDB integer field can hold: a float NaN or infinity,
-    or an integer outside int64 (InfluxDB rejects the device's whole batch for it)."""
+    or an integer outside int64 (InfluxDB rejects the device's whole batch for it).
+
+    Bounds are compared on a plain int: `x in range(...)` is constant-time only for an
+    exact int, and walks the whole range for an int subclass.
+    """
     if isinstance(value, float):
-        return math.isfinite(value) and int(value) in _INT64
+        return math.isfinite(value) and _INT64_MIN <= int(value) <= _INT64_MAX
     if isinstance(value, int):
-        return value in _INT64
+        return _INT64_MIN <= int(value) <= _INT64_MAX
     return True
 
 
@@ -146,8 +150,16 @@ def smart_energy_fields(device: Any) -> dict[str, int]:
         modules = getattr(device, "modules", None)
         module = modules.get(Module.Energy) if isinstance(modules, Mapping) else None
         reported = getattr(module, "energy", None)
-        # Copied while still guarded: a mapping whose reads raise fails here, not below.
-        energy = dict(reported) if isinstance(reported, Mapping) else None
+        if not isinstance(reported, Mapping):
+            return {}
+        # Read and converted while still guarded: a mapping whose reads raise, or a
+        # number type whose conversion raises, fails here and costs only these extras.
+        numbers: dict[str, int | float] = {}
+        for key, field in _SMART_ENERGY_FIELDS.items():
+            value = reported.get(key)
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                continue
+            numbers[field] = float(value) if isinstance(value, float) else int(value)
     except Exception:
         logger.warning(
             "Could not read the energy counters of %s; writing the realtime reading "
@@ -156,16 +168,12 @@ def smart_energy_fields(device: Any) -> dict[str, int]:
             exc_info=True,
         )
         return {}
-    if energy is None:
-        return {}
-    out: dict[str, int] = {}
-    for key, field in _SMART_ENERGY_FIELDS.items():
-        value = energy.get(key)
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            continue
-        if _storable(value) and value >= 0:
-            out[field] = round(value)
-    return out
+    # Plain int and float from here on: their comparisons cannot raise.
+    return {
+        field: round(number)
+        for field, number in numbers.items()
+        if _storable(number) and number >= 0
+    }
 
 
 class Poller:

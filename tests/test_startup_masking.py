@@ -336,3 +336,66 @@ def test_a_transport_traceback_names_no_stand_in_exception(app_log):
     out = app_log.getvalue()
     assert "RuntimeError: handshake refused" in out
     assert "Scrubbed" not in out
+
+
+SESSION_HEX = "".join(["0123456789ABCDEF", "FEDCBA9876543210"])
+
+
+def test_a_python_kasa_http_request_url_logs_no_session_token(log_with):
+    # python-kasa's HTTP client logs every request URL at DEBUG, and the AES and SSL
+    # transports put the session token in its query.
+    buffer = log_with()
+    logging.getLogger("kasa").setLevel(logging.DEBUG)
+    try:
+        logging.getLogger("kasa.httpclient").debug(
+            "Posting to %s", f"http://192.0.2.5/app?token={SESSION_HEX}"
+        )
+    finally:
+        logging.getLogger("kasa").setLevel(logging.WARNING)
+
+    out = buffer.getvalue()
+    assert "Posting to http://192.0.2.5/app?token=****" in out
+    assert SESSION_HEX[:16] not in out
+
+
+def test_an_app_logger_keeps_its_hex_device_ids(log_with):
+    buffer = log_with()
+    device_id = "".join(["8006", "A1B2C3D4E5F6", "0718293A4B5C6D7E8F90", "AB12"])
+    logging.getLogger("KasaCollector").warning("polled %s", device_id)
+
+    assert device_id in buffer.getvalue()
+
+
+def test_secrets_nested_in_fields_and_keys_are_scrubbed(log_with):
+    buffer = log_with()
+    logging.getLogger("KasaCollector").warning(
+        "payloads",
+        extra={
+            "nested": {"pw": PASSWORD},
+            "listed": [TOKEN],
+            "raw": PASSWORD.encode(),
+            PASSWORD: 1,
+        },
+    )
+
+    _assert_no_window(buffer.getvalue(), [PASSWORD, TOKEN])
+
+
+def test_a_multiline_secret_in_an_exception_group_is_scrubbed(log_with):
+    password = "".join(["Qz7#Ab", "\n", "Kp9!wXv"])
+    buffer = log_with(KASA_COLLECTOR_TPLINK_PASSWORD=password)
+    try:
+        raise ExceptionGroup("tasks failed", [RuntimeError(password)])
+    except ExceptionGroup:
+        logging.getLogger("KasaCollector").warning("failed", exc_info=True)
+
+    out = buffer.getvalue()
+    assert "Qz7#Ab" not in out and "Kp9!wXv" not in out
+
+
+def test_a_password_holding_a_lone_surrogate_still_starts_logging(log_with):
+    password = "".join(["Qz7#", "\udcff", "Kp9!"])
+    buffer = log_with(KASA_COLLECTOR_TPLINK_PASSWORD=password)
+    logging.getLogger("KasaCollector").warning("started")
+
+    assert "started" in buffer.getvalue()
