@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.336.0",
+  "guard_version": "0.339.3",
   "repo": "/repo",
   "targets": [
     {
@@ -240,6 +240,17 @@
         "example": ""
       },
       {
+        "rule": "repo.build_context_hygiene",
+        "status": "PASS",
+        "since": "0.339.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
         "rule": "repo.fleet_skills_present",
         "status": "PASS",
         "since": "0.245.0",
@@ -296,13 +307,13 @@
       },
       {
         "rule": "repo.makefile_no_fixed_tmp",
-        "status": "FAIL",
+        "status": "PASS",
         "since": "0.249.0",
-        "violations": 2,
+        "violations": 0,
         "deferred": false,
         "inert": false,
         "inert_reason": "",
-        "fix": "Use a per-run file and remove it on exit, in ONE shell: `@set -e; C=$$(mktemp); trap 'rm -f \"$$C\"' EXIT INT TERM; <cmd> > \"$$C\"; docker run -v \"$$C\":/x:ro \u2026`. A cache that must persist belongs in a gitignored path inside the repo, not /tmp. See --doc FLEET-MAKEFILE-STANDARD.",
+        "fix": "",
         "example": ""
       },
       {
@@ -890,20 +901,20 @@
       }
     ],
     "summary": {
-      "PASS": 63,
-      "FAIL": 1,
+      "PASS": 65,
+      "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
       "INERT": 5
     }
   },
   "summary": {
-    "PASS": 70,
-    "FAIL": 1,
+    "PASS": 72,
+    "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
     "INERT": 8
   },
-  "commit": "2ffc906a291a8e0c25c1b141b8cd38c20ec5b4cc",
-  "generated_at": "2026-11-02T20:37:24Z"
+  "commit": "e0b4743a792f5fb208f54fa6093898cc9d968e01",
+  "generated_at": "2026-11-04T15:12:29Z"
 }

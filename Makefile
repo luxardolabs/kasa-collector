@@ -38,13 +38,13 @@ FAKE_IMAGE := kasa-collector-fake:test
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.336.0
+LUXARCH_VERSION  := 0.339.3
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
 # same out-of-tree pattern as luxarch. Unset host → make lint/format skip gracefully.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  := 0.73.0
+LUXLINT_VERSION  := 0.74.0
 LUXLINT_IMAGE    ?= $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 # The luxlint ref the emitted gitleaks and test blocks read. Without the fleet registry it is the
 # same pinned version from the local image store, never an unversioned build.
@@ -53,7 +53,7 @@ LUXLINT = $(if $(LUXLINT_REGISTRY),$(LUXLINT_IMAGE),luxlint:$(LUXLINT_VERSION))
 # Dependency-vulnerability guard (luxaudit) — pinned; pulled via LUXAUDIT_REGISTRY (Makefile.local).
 # Scans poetry.lock against the live OSV+PyPA feed. Unset host → `make audit` skips gracefully.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  := 0.15.0
+LUXAUDIT_VERSION  := 0.16.0
 LUXAUDIT_IMAGE    ?= $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION)
 # The public image runs on other people's hardware (Raspberry Pis included), so every published
 # build is multi-arch: the image block builds the candidate once per platform and scans each.
@@ -273,7 +273,7 @@ override sq = $(if $(findstring $(IB_NL),$(1)),$(error REFUSING: a value a block
 override sqw = $(foreach w,$(1),$(call sq,$(w)))
 # luxarch:build-core end - DO NOT edit this marker line: the image block's runtime guard reads its range.
 
-# luxarch:image-block asset v21 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
+# luxarch:image-block asset v22 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
 # ── Images: ONE naming scheme, and the NAME declares what the image IS ──────────────────────────
 # Emitted by `luxarch --emit image-block`. Two axes, both readable from the name alone:
 #
@@ -1511,10 +1511,44 @@ rm -f "$$tmp.err"; cat "$$tmp" > "$$f"; \
 echo "$$f: TAG=$$t"
 endef
 
+# v22: `dev-deploy` and `dev-pin` run from the main checkout. compose takes a bind mount's source from
+# the directory it runs in, so a stack deployed from a linked worktree (an agent's
+# `.claude/worktrees/<KEY>`) mounts that worktree's files and `dev-pin` writes `TAG=` into its copy of
+# the env file; landing the worktree then removes them under the running stack. Deploy from the main
+# checkout, after landing. `DEV_DEPLOY_FROM_WORKTREE=1` on the command line or in the environment
+# deploys from a worktree anyway; set in a makefile, or to anything but `1`, it refuses. git is asked
+# with the variables that point it at a repository (GIT_DIR, GIT_WORK_TREE, …) unset, so one set
+# elsewhere cannot make a worktree read as the main checkout, and so is each superproject this
+# checkout is a submodule of: a submodule checked out inside a linked worktree is in that worktree.
+# A stated limit: a makefile is trusted code, and a recipe of its own that runs
+# `$(MAKE) dev-pin DEV_DEPLOY_FROM_WORKTREE=1` passes the value as a command line.
+override define require_main_checkout
+case $(call sq,$(origin DEV_DEPLOY_FROM_WORKTREE)) in \
+  undefined) \
+    ib_git() { env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_NAMESPACE -u GIT_CEILING_DIRECTORIES git "$$@"; }; \
+    ib_wd=$(call sq,$(CURDIR)); ib_n=0; \
+    while :; do \
+      ib_top=$$(cd "$$ib_wd" && ib_git rev-parse --show-toplevel 2>/dev/null) && \
+      ib_gd=$$(cd "$$ib_top" && ib_git rev-parse --git-dir 2>/dev/null) && ib_gc=$$(cd "$$ib_top" && ib_git rev-parse --git-common-dir 2>/dev/null) && \
+      ib_gd=$$(cd "$$ib_top" && cd "$$ib_gd" && pwd -P) && ib_gc=$$(cd "$$ib_top" && cd "$$ib_gc" && pwd -P) || { \
+        echo "REFUSING: git cannot say whether "$(call sq,$(CURDIR))" is the main checkout or a linked worktree, so nothing shows what the dev stack would mount"; exit 1; }; \
+      [ "$$ib_gd" = "$$ib_gc" ] || { \
+        echo "REFUSING: "$(call sq,$(CURDIR))" is in a linked worktree ($$ib_top, git dir $$ib_gd), not the main checkout: a stack deployed from here mounts this worktree's files, and landing it removes them under the running stack. Land, then deploy from the main checkout ($${ib_gc%/.git}). To deploy from here anyway: DEV_DEPLOY_FROM_WORKTREE=1 on the command line"; exit 1; }; \
+      ib_sp=$$(cd "$$ib_top" && ib_git rev-parse --show-superproject-working-tree 2>/dev/null) || ib_sp=; \
+      ib_n=$$((ib_n + 1)); [ -n "$$ib_sp" ] && [ "$$ib_n" -lt 16 ] || break; ib_wd=$$ib_sp; \
+    done ;; \
+  'command line'|environment) \
+    [ $(call sq,$(value DEV_DEPLOY_FROM_WORKTREE)) = 1 ] || { \
+      echo "REFUSING: DEV_DEPLOY_FROM_WORKTREE="$(call sq,$(value DEV_DEPLOY_FROM_WORKTREE))" is not 1, the one value that deploys from a linked worktree"; exit 1; } ;; \
+  *) echo "REFUSING: DEV_DEPLOY_FROM_WORKTREE is set in a makefile ("$(call sq,$(origin DEV_DEPLOY_FROM_WORKTREE))"): deploying from a linked worktree is a choice for one run, on the command line, never a setting"; exit 1 ;; \
+esac
+endef
+
 # v10: a deploy ends by probing what it deployed (`luxarch --emit smoke`, pasted below this block). A
 # deploy that restarted the stack is not one that works: the suite runs in-process and cannot see the
 # proxy, the server, the production image or a standalone entry point.
 dev-deploy: ## Build+push THIS commit (:sha-…, never the version), pin $(DEV_ENV_FILE) to it, restart the dev stack, smoke it
+	@$(if $(filter none,$(DEV_DEPLOY)),:,$(require_main_checkout))
 	@$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))$(if $(filter none,$(DEV_DEPLOY)),echo "REFUSING: "$(call sq,$(IB_NO_STACK)); exit 1,$(MAKE) --no-print-directory publish-sha)
 	@$(if $(filter none,$(DEV_DEPLOY)),:,$(MAKE) --no-print-directory dev-pin TAG=sha-$(call sq,$(COMMIT)))
 	@$(if $(filter none,$(DEV_DEPLOY)),:,$(MAKE) --no-print-directory smoke)
@@ -1676,7 +1710,7 @@ dev-pin: ## Point the dev stack (compose, or the kustomize dev overlay) at an AL
 	ib_nm=$$(awk -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" '(NR >= m && NR <= e || NR >= cm && NR <= ce) && /^override / { s = $$0; sub(/^override +(define +)?/, "", s); sub(/[ \t:=+!?].*/, "", s); printf " %s", s } END { print " " }' "$$ib_bf"); \
 	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY LUXAUDIT_IMAGE LUXAUDIT IMAGE_NAME PLATFORMS ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
 	[ -z "$$ib_bad" ] || { echo "REFUSING: make's own database (a clean evaluation with these goals) defines what the image block defines from outside the block: $${ib_bad%; }. The block's names are set inside it only."; exit 1; }; \
-	$(require_registry); $(require_images)$(require_dev_deploy); $(require_dev_env_file); $(require_pin_tag); \
+	$(require_main_checkout); $(require_registry); $(require_images)$(require_dev_deploy); $(require_dev_env_file); $(require_pin_tag); \
 	$(call image_block_each,dev_pin_check,;); \
 	$(if $(filter none,$(DEV_DEPLOY)),:,$(if $(filter kustomize,$(DEV_DEPLOY)),$(dev_kustomize),$(call pin_env_tag,$(DEV_ENV_FILE),$(TAG),$(foreach p,$(DEV_PROFILES),--profile $(p)),$(call image_block_each,img_base,)); $(dev_up)))$(ib_unchanged)
 
@@ -2108,7 +2142,7 @@ TEST_ENV := -e KASA_COLLECTOR_INFLUXDB_URL=http://kasa_test_influxdb:8086 \
             -e KASA_COLLECTOR_INFLUXDB_TOKEN=kasa-test-token \
             -e KASA_COLLECTOR_INFLUXDB_ORG=kasa -e KASA_COLLECTOR_INFLUXDB_BUCKET=kasa
 
-# luxarch:test-block asset v11 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
+# luxarch:test-block asset v12 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
 # ── Test: THE suite, in the test image, against an isolated stack of real services ───────────────
 # Emitted by `luxarch --emit test-block`; paste below the build core (`luxarch --emit build-core`, v4:
 # it builds with the core's `img_*` helpers and TEST_IMAGE, and the repo's BUILD_ARGS, and quotes every
@@ -2236,6 +2270,11 @@ TEST_ENV := -e KASA_COLLECTOR_INFLUXDB_URL=http://kasa_test_influxdb:8086 \
 #     the goals make sets from its own command line (MAKECMDGOALS at origin `default`), inline, with
 #     no variable of its own: a makefile, environment, target- or pattern-specific value, or a
 #     MAKEOVERRIDES word handed to a sub-make keeps the ratchet on, and `make test test-fast` runs it.
+#   - A HEAVY-JOB SLOT (v12): `make test` holds one of the machine's HEAVY_SLOTS (the guard-run
+#     block's `guard_slot`, v4) for the whole run, and waits, saying so, while they are all taken. A
+#     narrowed `make test-fast PYTEST_ARGS=<…>` takes none; inside `make check`, which holds one, the
+#     suite runs in the gate's slot. Stated limit: any PYTEST_ARGS that is not blank counts as
+#     narrowing (`PYTEST_ARGS=tests/` too); a blank one takes a slot.
 #   - THE [shared] OVERLAY (v7). A repo declaring `[shared]` keeps 0-byte placeholders in each app
 #     that the real shared code is mounted over; the suite runs from the read-only `/repo` mount, so
 #     it imports the placeholders unless the overlay is mounted there too. TEST_MOUNTS
@@ -2392,6 +2431,7 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	co=$(call sq,$(CURDIR)); ns=$$(readlink /proc/self/ns/pid 2>/dev/null || echo none); host=$$(hostname); \
 	machine=$$(cat /etc/machine-id 2>/dev/null); [ -n "$$machine" ] || machine=$$(ioreg -rd1 -c IOPlatformExpertDevice 2>/dev/null | sed -n 's/.*"IOPlatformUUID" = "\([^"]*\)".*/\1/p'); [ -n "$$machine" ] || machine=$$host; \
 	boot=$$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || sysctl -n kern.bootsessionuuid 2>/dev/null || echo "$$machine"); \
+	$(if $(value guard_slot),,$(error REFUSING: the suite holds a heavy-job slot from the guard-run block (v4), which this makefile does not define: paste luxarch --emit guard-run above it))if [ -n $(call sq,$(if $(filter default,$(origin MAKECMDGOALS)),$(if $(filter test,$(MAKECMDGOALS)),,$(if $(filter test-fast,$(MAKECMDGOALS)),1)))) ] && case "$${PYTEST_ARGS:-}" in (*[![:space:]]*) true;; (*) false;; esac; then :; else $(guard_slot); fi; \
 	D=$$(mktemp -d "$${TMPDIR:-/tmp}/luxarch-test.XXXXXXXXXXXX") || { echo "REFUSING: could not make this run's directory"; exit 2; }; \
 	tok=$$(basename "$$D" | sed 's/^luxarch-test\.//' | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'); \
 	[ $${#tok} -ge 8 ] || { echo "REFUSING: could not make a unique name for this run"; rm -rf "$$D"; exit 2; }; \
@@ -2500,7 +2540,7 @@ arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml)
 # `|| true` because --json exits non-zero on a red repo — the verdict is IN the JSON, and a
 # red repo still has a valid, committable status. `set -e` so a failed/empty stamp ABORTS
 # rather than printing a false "wrote". See luxarch --doc FLEET-STATUS.
-# luxarch:guard-run asset v3 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
+# luxarch:guard-run asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
 # ── GUARD_RUN: how every guard sees this checkout ───────────────────────────────────────────────────
 # Emitted by `luxarch --emit guard-run`; paste it above the targets that run the guards (`status:`, and
 # `arch:` / `lint:` / `audit:` where they run a guard image).
@@ -2545,7 +2585,104 @@ unexport CURDIR GUARD_MAIN GUARD_HERE GUARD_PWD GUARD_RUN guard_same guard_dry
 override GUARD_HERE := $(shell set -- $(foreach w,$(MAKEFILE_LIST),'$(subst ','\'',$(w))'); p=; for w do p="$${p:+$$p }$$w"; if [ -f "$$p" ]; then h=$$(cd -P -- "$$(dirname -- "$$p")" && pwd -P); fi; done; printf '%s\n' "$$h")
 override GUARD_PWD := $(shell pwd -P)
 $(if $(and $(filter command,$(origin CURDIR)),$(or $(filter 0,$(MAKELEVEL)),$(guard_dry))),,$(if $(and $(GUARD_HERE),$(call guard_same,$(GUARD_HERE),$(GUARD_PWD)),$(call guard_same,$(GUARD_HERE),$(CURDIR))),,$(if $(filter environment%,$(origin GUARD_MAIN)),$(error REFUSING: GUARD_MAIN comes from the environment, so the caller chose a tree to mount: unset it))$(error REFUSING: make runs in $(GUARD_PWD) (CURDIR $(CURDIR)), not in this makefile's directory $(or $(GUARD_HERE),(not found)), so every guard would read the wrong tree: run make -C <the makefile's directory>)))
-override GUARD_RUN = docker run --rm -v '$(subst ','\'',$(CURDIR))':/repo $(if $(GUARD_MAIN),$(if $(call guard_same,$(CURDIR),$(GUARD_MAIN)),,-v '$(subst ','\'',$(GUARD_MAIN))':'$(subst ','\'',$(GUARD_MAIN))':ro))
+override GUARD_RUN = guard_slot_run() ( $(guard_slot_body) exec "$$@" ); guard_slot_run $(guard_slot_vals) docker run --rm -v '$(subst ','\'',$(CURDIR))':/repo $(if $(GUARD_MAIN),$(if $(call guard_same,$(CURDIR),$(GUARD_MAIN)),,-v '$(subst ','\'',$(GUARD_MAIN))':'$(subst ','\'',$(GUARD_MAIN))':ro))
+#
+# ── Heavy-job slots (v5): at most HEAVY_SLOTS heavy jobs run on this machine at once ─────────────────
+# A full guard scan, the full gate (`make check`) and the full test suite each hold one slot for as long
+# as they run, counted across every checkout, session and user on the machine; the next one waits. Ten
+# parallel full scans once held 40 GiB on one host, and its timing tests failed at load 60. A slot is a
+# flock(2) lock on `<HEAVY_SLOT_DIR>/slot.<n>`, held on file descriptor 9 by the job's own processes:
+# GUARD_RUN runs the guard's `docker run` through a shell function (`guard_slot_run`, a subshell that
+# takes the slot and execs the client with it open), and the gate's and the suite's recipe shell
+# opens it, so every command they start inherits it. The kernel releases it when the last of them
+# exits, on a normal exit, Ctrl-C or kill -9 alike: there is no cleanup step and nothing goes stale.
+# It is taken with flock(1), or where there is none (macOS) with python3's fcntl.flock on the same
+# descriptor; with neither, the job is refused, naming both.
+# The slot code runs in the recipe's own shell and holds under `set -e` there, as the fleet's
+# recipes run: a held slot, a slot file another job made first or an ancestor that exits mid-walk
+# moves the job on, never ends it.
+#   - WAITING polls each second and, once it has waited a second, prints one line on stderr naming
+#     the jobs that hold the slots (each holder writes `slot.<n>.who` as it takes one, a job nested
+#     through an ancestor as its own lock is granted). A job never fails for want of a slot, and
+#     never runs without one.
+#   - TARGETED runs take none: a GUARD_RUN naming `--rule <id>` (a value holding more than blanks
+#     and commas, which luxarch drops, so `--rule ' '` runs every rule), or a flag that scans nothing
+#     (`--emit*`, `--doc`, `--docs`, `--playbook`, `--version`, `--list-rules`, `--changelog`,
+#     `--new-rules`, `--coverage-ratchet`, `--help`), and `make test-fast PYTEST_ARGS=<…>`. Every
+#     other guard run is a full scan and takes one: `--path <file>` alone too, which narrows only
+#     what is shown while every rule still reads the whole repo.
+#   - NESTED heavy jobs take no second slot: a job whose descriptor 9 is open on one of slots
+#     1..HEAVY_SLOTS and holds its lock runs inside the job that took it (`check` running `test`
+#     running a scan), so it starts at once, at HEAVY_SLOTS=1 too. So does a job one of whose
+#     ancestor processes has descriptor 9 open on such a slot while it is locked (read from /proc),
+#     which finds the holder through a process that closed the descriptors it inherited (Python's
+#     subprocess does by default). That job opens the slot on
+#     descriptor 9 itself and waits in the background to take the lock, so it keeps the slot
+#     after its ancestor exits, for as long as it runs. No variable can claim either: the descriptor and the lock are the
+#     proof.
+#   - HEAVY_SLOTS and HEAVY_SLOT_DIR are machine settings: set them in Makefile.local (`HEAVY_SLOTS :=
+#     2`, a whole number from 1 to 9999). From the environment, the command line or `--eval` they
+#     are refused, as check refuses CHECK_LEGS: a value set in passing would let one caller choose
+#     how many heavy jobs the whole machine runs. So is `-I <dir>` (outside `make -n`), from which
+#     make reads a Makefile.local this checkout lacks.
+#   - THE DIRECTORY is `/var/tmp/fleet-heavy-slots`, not under TMPDIR: TMPDIR is per user on macOS and
+#     per session in some agent harnesses, which would give each its own slots. `/var/tmp` exists,
+#     sticky and writable by every user, on Linux and macOS, and it is not where per-run scratch
+#     goes (`repo.makefile_no_fixed_tmp` reds a fixed `/tmp` path: the slots are shared on purpose).
+#     The directory is made 1777 (sticky and world-writable, as /tmp is) so every user can add a slot
+#     file, and each slot file 644 so every user can open it read-only, which is all a lock needs: two
+#     users on one machine share one cap. A slot directory or file that is a symlink, not a plain
+#     file, or unreadable is refused, naming it.
+# Stated limits: the cap counts slots 1..HEAVY_SLOTS of each caller, so a caller with a larger setting
+# (or a second makefile given with `-f` that sets one) uses more slots than one with a smaller; a
+# process a job starts that outlives it (a backgrounded daemon) keeps the descriptor, and so the slot,
+# until it exits; where there is no /proc (macOS) a job started through a process that closed its
+# descriptors is not seen as nested and waits for a slot of its own; and an ancestor shell that opens
+# a held slot file on descriptor 9 by hand makes its children read as nested in that slot. Found by
+# attack round 3 and not closed: a `--rule` substring that matches many rules (`--rule .`) is taken as
+# targeted; a job nested through an ancestor runs unlocked from the moment it finds the ancestor's
+# lock until its own background request reaches the kernel, so an ancestor that exits in that window
+# (milliseconds; not hit unloaded in 50 tries) lets a new job share its slot; a slot file removed
+# while held (`rm`; systemd-tmpfiles skips locked files) is made anew, and its next holder runs beside
+# the old one; the ancestor walk cannot read another user's /proc entries, so a job started as
+# another user through a process that closed its descriptors waits for a slot of its own (at
+# HEAVY_SLOTS=1, on its own ancestor); a user who creates a slot file others cannot read makes their
+# jobs refuse; a `slot.<n>.who` left by another user cannot be replaced, so waiters may name an
+# earlier job; and a command that unlocks its inherited descriptor 9 (`flock -u 9`) frees its job's
+# slot.
+HEAVY_SLOTS ?= 3
+HEAVY_SLOT_DIR ?= /var/tmp/fleet-heavy-slots
+unexport HEAVY_SLOTS HEAVY_SLOT_DIR guard_slot guard_slot_vals guard_slot_body
+override guard_slot_vals = $(foreach v,HEAVY_SLOTS HEAVY_SLOT_DIR,$(if $(filter environment% command,$(origin $(v))),$(error REFUSING: $(v) comes from the $(origin $(v)), so the caller chose how many heavy jobs this machine runs at once: set it in Makefile.local)))$(if $(filter --eval=%,$(MAKEFLAGS)),$(error REFUSING: --eval adds makefile text from the command line, which could choose the heavy-job slots: put it in Makefile.local))$(if $(guard_dry),,$(if $(filter -I% --include-dir%,$(filter-out $(MAKEOVERRIDES),$(MAKEFLAGS))),$(error REFUSING: -I lets make read a Makefile.local from another directory, which could choose the heavy-job slots: run without it)))'$(subst ','\'',$(HEAVY_SLOT_DIR))' '$(subst ','\'',$(HEAVY_SLOTS))' '$(subst ','\'',make $@ in $(CURDIR))'
+override guard_slot = $(if $(guard_dry),:,set -- $(guard_slot_vals); $(guard_slot_body) :)
+override guard_slot_body = gs_d=$$1 gs_n=$$2 gs_job=$$3; shift 3; \
+  case "$$gs_n" in (""|0*|*[!0-9]*|?????*) echo "REFUSING: HEAVY_SLOTS is \"$$gs_n\", not a whole number from 1 to 9999: set it in Makefile.local" >&2; exit 2;; esac; \
+  gs_x=; gs_p=; for gs_a in "$$@"; do case "$$gs_p" in (--rule) case "$$gs_a" in (*[![:space:],]*) gs_x=1;; esac;; esac; \
+    case "$$gs_a" in (--rule=*[![:space:],]*|--emit|--emit=?*|--emit-*|--doc|--doc=?*|--docs|--playbook|--playbook=?*|--version|--list-rules|--changelog|--new-rules|--coverage-ratchet|--help) gs_x=1;; esac; gs_p=$$gs_a; done; \
+  gs_who() { gs_t=$$(mktemp "$$gs_d/.who.XXXXXX") && { printf "%s\n" "$$gs_job (shell pid $$$$, user $$(id -un 2>/dev/null))" > "$$gs_t"; chmod 644 "$$gs_t"; mv -f "$$gs_t" "$$gs_f.who" 2>/dev/null || rm -f "$$gs_t"; }; }; \
+  gs_lock() { if command -v flock >/dev/null 2>&1; then flock -n -E 75 9; else python3 -I -c "import fcntl,os,sys; sys.excepthook=lambda t,v,b: os._exit(75 if t is BlockingIOError else 2); fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)"; fi; }; \
+  gs_have=; if [ -z "$$gs_x" ]; then gs_i=1; while [ "$$gs_i" -le "$$gs_n" ]; do gs_f=$$gs_d/slot.$$gs_i; \
+      if [ /dev/fd/9 -ef "$$gs_f" ] && gs_lock; then gs_have=1; break; fi; gs_i=$$((gs_i + 1)); done; \
+    gs_a=$$PPID; while [ -z "$$gs_have" ] && [ "$$gs_a" -gt 1 ] 2>/dev/null && [ -d "/proc/$$gs_a/fd" ]; do gs_i=1; \
+      while [ "$$gs_i" -le "$$gs_n" ]; do gs_f=$$gs_d/slot.$$gs_i; \
+        if [ "/proc/$$gs_a/fd/9" -ef "$$gs_f" ] && { ( exec 9<"$$gs_f"; gs_lock ); [ $$? = 75 ]; }; then gs_have=1; gs_anc=1; break; fi; gs_i=$$((gs_i + 1)); done; \
+      gs_a=$$(sed -e "s/.*) . //" -e "s/ .*//" "/proc/$$gs_a/stat" 2>/dev/null) || gs_a=; done; \
+    if [ -n "$${gs_anc:-}" ]; then exec 9<"$$gs_f"; ( if command -v flock >/dev/null 2>&1; then flock 9; else python3 -I -c "import fcntl; fcntl.flock(9, fcntl.LOCK_EX)"; fi && gs_who ) >/dev/null 2>&1 & fi; fi; \
+  if [ -z "$$gs_x$$gs_have" ]; then \
+    if [ -L "$$gs_d" ] || { [ ! -d "$$gs_d" ] && ! mkdir -m 1777 "$$gs_d" 2>/dev/null && [ ! -d "$$gs_d" ]; }; then \
+      echo "REFUSING: the heavy-job slot directory $$gs_d (HEAVY_SLOT_DIR) is not a directory this job can use" >&2; exit 2; fi; \
+    gs_w=; gs_r=75; while :; do gs_i=1; \
+      while [ "$$gs_i" -le "$$gs_n" ]; do gs_f=$$gs_d/slot.$$gs_i; \
+        if [ ! -e "$$gs_f" ] && [ ! -L "$$gs_f" ]; then gs_t=$$(mktemp "$$gs_d/.slot.XXXXXX") && { chmod 644 "$$gs_t"; ln "$$gs_t" "$$gs_f" 2>/dev/null || :; rm -f "$$gs_t"; }; fi; \
+        if [ -L "$$gs_f" ] || [ ! -f "$$gs_f" ] || [ ! -r "$$gs_f" ]; then \
+          echo "REFUSING: $$gs_f is not a plain file this job can read, so the heavy-job slots cannot be counted: remove it" >&2; exit 2; fi; \
+        exec 9<"$$gs_f"; gs_r=0; gs_lock || gs_r=$$?; [ "$$gs_r" = 75 ] || break 2; gs_i=$$((gs_i + 1)); done; \
+      if [ -z "$$gs_w" ]; then gs_w=0; elif [ "$$gs_w" = 0 ]; then gs_w=1; gs_h=; gs_i=1; while [ "$$gs_i" -le "$$gs_n" ]; do gs_o=; gs_f=$$gs_d/slot.$$gs_i.who; \
+          if [ -f "$$gs_f" ] && [ ! -L "$$gs_f" ]; then read -r gs_o < "$$gs_f" || :; fi; gs_h="$$gs_h$${gs_h:+; }$${gs_o:-slot $$gs_i: holder unknown}"; gs_i=$$((gs_i + 1)); done; \
+        echo "$$gs_job: waiting for a heavy-job slot ($$gs_n in use in $$gs_d, held by: $$gs_h)" >&2; fi; \
+      sleep 1; done; \
+    [ "$$gs_r" = 0 ] || { echo "REFUSING: could not lock the heavy-job slot $$gs_f with flock(1) or python3 (exit $$gs_r)" >&2; exit 2; }; \
+    gs_who; fi;
 # STAMP refuses a document that is not the expected guard's own (`"guard"` in every --json), so a
 # crossed or empty file can never be committed as this repo's record.
 STAMP = python3 -c 'import json,sys,os; d=json.load(open(sys.argv[1])); g=d.get("guard"); g==sys.argv[3] or sys.exit(f"status: {sys.argv[1]} holds {g!r} output, expected {sys.argv[3]!r}; refusing to stamp"); d["commit"]=os.environ["SHA"]; d["generated_at"]=os.environ["TS"]; json.dump(d,open(sys.argv[2],"w"),indent=2)'
@@ -2588,7 +2725,7 @@ test-e2e: harness-build ## Hardware-free end-to-end test: fake Kasa devices -> c
 # `check` is a GATE, not a report: Make stops at the FIRST failing step. For the full red board
 # (every red at once, phase-ordered + file-clustered) run `make plan`.
 # See luxarch --doc FLEET-MAKEFILE-STANDARD.
-# luxarch:check-gate asset v2 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit check-gate`.
+# luxarch:check-gate asset v3 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit check-gate`.
 # ── The fleet gate: every leg runs, then the gate fails naming each red leg ───────────────────────
 # Emitted by `luxarch --emit check-gate`; it replaces a hand-written `check:` line. A gate written as a
 # prerequisite list (`check: … lint mypy test arch …`) stops at the FIRST failing leg: one ruff finding
@@ -2624,6 +2761,10 @@ test-e2e: harness-build ## Hardware-free end-to-end test: fake Kasa devices -> c
 # of the makefile as far as make can tell, and a variable a leg runs that the makefile sets with `?=`
 # or never sets (an image, a tool, its arguments) takes a value from the environment; the gate can
 # tell neither from your own.
+# v3: the gate holds one of the machine's heavy-job slots (the guard-run block's `guard_slot`, v4) while
+# its legs run, so a full gate counts once against HEAVY_SLOTS and every scan and suite it starts runs
+# inside that slot instead of waiting for a second one. Its two prerequisites run before the recipe,
+# so each of their full scans takes a slot of its own for as long as it runs.
 
 # Setting: the legs, in order, set in the makefile. An app repo's are exactly these; a repo with more
 # legs (a guard's own parity suite) appends them. Removing one reds repo.makefile_canonical ----------
@@ -2632,6 +2773,7 @@ CHECK_LEGS ?= lint mypy test arch audit gitleaks
 check: override MAKEOVERRIDES :=
 check: guard-version-check honest ## THE fleet gate: runs every leg, then fails naming each red one
 	@$(foreach v,MAKEFLAGS GNUMAKEFLAGS,$(if $(filter command,$(origin $(v))),$(error REFUSING: $(v) is given as a command-line variable, so every leg would inherit flags this gate never saw: pass make's flags as flags)))$(if $(filter-out default,$(origin MAKE_COMMAND)),$(error REFUSING: MAKE_COMMAND is set by the $(origin MAKE_COMMAND), so a leg would not be make))$(if $(filter-out override,$(origin MAKEOVERRIDES)),$(error REFUSING: check's own `override MAKEOVERRIDES :=` is missing or changed, so a command-line variable would reach the legs: re-emit the gate))$(if $(subst $$(MAKE_COMMAND),,$(value MAKE)),$(error REFUSING: MAKE is $(value MAKE), not make's own $$(MAKE_COMMAND), so a leg would not be make))$(if $(and $(filter 1,$(words $(SHELL))),$(filter /bin/sh /usr/bin/sh /bin/bash /usr/bin/bash /bin/dash /usr/bin/dash /bin/zsh /usr/bin/zsh,$(SHELL))),,$(error REFUSING: SHELL is $(SHELL), not a POSIX shell that returns each leg's status))$(if $(or $(findstring i,$(filter-out -%,$(firstword $(MAKEFLAGS)))),$(findstring t,$(filter-out -%,$(firstword $(MAKEFLAGS)))),$(findstring e,$(filter-out -%,$(firstword $(MAKEFLAGS))))),$(error REFUSING: make -i ignores every failure, -t touches the legs instead of running them, and -e lets the environment override the makefile's tools (flags: $(filter-out -%,$(firstword $(MAKEFLAGS)))), so a red leg could pass: run make check without them))$(if $(findstring n,$(filter-out -%,$(firstword $(MAKEFLAGS)))),,$(if $(filter -I% --include-dir%,$(MAKEFLAGS)),$(error REFUSING: -I lets an included file (Makefile.local) come from another directory, into every leg: run make check without it))$(if $(filter --eval=%,$(MAKEFLAGS)),$(error REFUSING: --eval adds makefile text from the command line to every leg: put it in the makefile))$(if $(strip $(MAKEFILES)),$(error REFUSING: MAKEFILES ($(MAKEFILES)) reads other makefiles into every leg: unset it))$(foreach v,CHECK_LEGS MAKE MAKE_COMMAND SHELL .SHELLFLAGS,$(if $(filter environment% command,$(origin $(v))),$(error REFUSING: $(v) comes from the $(origin $(v)), so the caller chose how the legs run: set it in the makefile))))$(if $(strip $(CHECK_LEGS)),,$(error REFUSING: CHECK_LEGS is empty, so no leg would run))$(foreach v,$(filter-out PATH PPID SHELLOPTS BASHOPTS OPTIND UID EUID BASH_VERSINFO,$(.VARIABLES)),$(if $(filter command,$(origin $(v))),case '$(subst ','\'',$(v))' in ([0-9]*|*[!A-Za-z0-9_]*) ;; (*) unset '$(subst ','\'',$(v))';; esac; )) \
+	$(if $(value guard_slot),,$(error REFUSING: the gate holds a heavy-job slot from the guard-run block (v4), which this makefile does not define: paste luxarch --emit guard-run above it))$(guard_slot); \
 	failed=; for leg in $(CHECK_LEGS); do \
 	  printf '\n── make %s\n' "$$leg"; \
 	  $(MAKE) --no-print-directory "$$leg" || failed="$$failed $$leg"; \

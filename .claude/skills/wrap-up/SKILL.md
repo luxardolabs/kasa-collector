@@ -3,7 +3,7 @@ name: wrap-up
 description: Close out a piece of work the fleet way before calling it done — tests written and run for what changed, every red in touched files fixed, docs updated (stale advice removed), make check green, committed in the issue's worktree, LuxPM fully closed out (issues, checklists, activities, commit links, sync receipt), then landed on the base branch, the worktree removed, and pushed as the repo declares. Every step reports evidence, not a tick.
 ---
 
-<!-- luxarch:wrap-up-skill asset v18 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit wrap-up-skill`. -->
+<!-- luxarch:wrap-up-skill asset v19 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit wrap-up-skill`. -->
 
 # Wrap up
 
@@ -80,8 +80,9 @@ A red can also be moved instead of fixed: the code goes to another layer, helper
 - Pushing follows `.luxarch.toml`. `[agents] push = "agent"`: `land` pushes the tested HEAD to origin as it lands. If origin rejected it, origin moved: run `land` again, never `git pull --rebase` on the base. `push = "owner"`: `land` stays local; say the work is landed and ready. A repo with no declaration reds `repo.agent_push_declared`: ask the owner which it is, once, and write the answer there.
 - `ExitWorktree` with `action: "keep"`, then from the main checkout `python3 .claude/hooks/worktree.py list --prune`: it prunes the worktree and its branch now that they are landed, clean, and locked by no one else. Not `ExitWorktree` `remove`: it judges the branch against the commit the worktree was made from, so it refuses every landed branch as unmerged work, and `discard_changes: true` is never the answer to that refusal.
 - `python3 .claude/hooks/worktree.py list`: no worktree left for this issue.
+- Nothing of this unit is left on the shared machine (`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Shared machine"): its scratch subdirectory removed, every container, image tag, compose project and volume it created removed by its exact name, nothing written outside the worktree and scratch.
 
-**Evidence:** `land`'s `Landed and pushed N commit(s) on <base> at <sha>` line (`Landed N commit(s)` under `"owner"`), the `list` output, and `git status -sb` (nothing ahead under `"agent"`; the commits ahead named under `"owner"`).
+**Evidence:** `land`'s `Landed and pushed N commit(s) on <base> at <sha>` line (`Landed N commit(s)` under `"owner"`), the `list` output, and `git status -sb` (nothing ahead under `"agent"`; the commits ahead named under `"owner"`), and `docker ps -a` and `docker image ls` filtered by the issue key listing nothing.
 
 ## 8. Report
 

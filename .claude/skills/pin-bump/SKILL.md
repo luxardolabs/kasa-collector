@@ -3,7 +3,7 @@ name: pin-bump
 description: Move this repo to the latest fleet guards (luxarch, luxlint, luxaudit) the fleet way — bump the pins, read what changed, re-emit every asset whose version moved, leave new reds red, review every open guard escalation this repo filed against the new version, and regenerate and commit the status files. Use whenever guard-version-check says a pin is behind.
 ---
 
-<!-- luxarch:pin-bump-skill asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit pin-bump-skill`. -->
+<!-- luxarch:pin-bump-skill asset v6 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit pin-bump-skill`. -->
 
 # Pin bump
 
@@ -54,9 +54,9 @@ It replaces the asset in `<file>` (a whole file, or the block inside your Makefi
 A pin bump is when the guard fixes this repo was waiting on arrive. An escalation left open after its fix has shipped reads as still blocked, and the red it covered is never re-checked. `/fleet-start` brings you here between bumps too, for each escalation whose `waiting_on` names your step.
 
 - List every guard escalation this repo filed: `luxpm_list_issues` with `project` set to this repo's project and `labels` `fleet-escalation`, with **no state and no date filter** (open escalations sit in `backlog`, `todo`, `in_progress` and `on_hold`). Skip the ones already `done` or `cancelled`.
-- For each, read the body **and** the maintainer's latest reply (`luxpm_get_context`), then re-run the site it names on the new pins (`docker run … <guard image> --rule <rule id>`, or the asset's own check).
-  - **Resolved by the new version:** apply the remedy the reply names, if any (a re-emit, a setting, a code change), then close the escalation with the guard version, the rule's result on the site and the commit.
-  - **Still wrong:** comment with the version you checked and what still fails, set `waiting_on` to `<guard> maintainer: still fails on <version>: <what>`, and keep the red lit. Never close it, defer it or allowlist it.
+- For each, read the body **and** the maintainer's latest reply (`luxpm_get_context`), then run its **Verify** command on the new pins, as written, and compare the output with its "when fixed" line. An escalation with no Verify block gets one first: write the command that shows the defect, what it prints now and what it prints when fixed, add it to the issue, then run it.
+  - **Resolved by the new version:** apply the remedy the reply names, if any (a re-emit, a setting, a code change), then close the escalation with the guard version, the Verify command's output and the commit.
+  - **Still wrong:** comment with the version you checked and the Verify command's actual output, set `waiting_on` to `<guard> maintainer: still fails on <version>: <what>`, and keep the red lit. Never close it, defer it or allowlist it.
   - **Answered as working as intended:** align the code as the reply says, then close the escalation with the commit.
 
 **Evidence:** each escalation key, the version it was checked on, and its new state (closed, or open with the comment and the `waiting_on` you set).

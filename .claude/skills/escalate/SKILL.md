@@ -3,7 +3,7 @@ name: escalate
 description: Escalate a fleet guard (luxarch, luxlint, luxaudit, luxios) the fleet way when a red is genuinely wrong or a guard conflicts with a standard — search LuxPM first, file a self-contained fleet-escalation in this repo's project with a repro and numbers, and leave the red lit while it is open.
 ---
 
-<!-- luxarch:escalate-skill asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit escalate-skill`. -->
+<!-- luxarch:escalate-skill asset v6 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit escalate-skill`. -->
 
 # Escalate a guard
 
@@ -31,13 +31,14 @@ The test before filing: could the maintainer answer "apply the remedy in the fix
 - A minimal repro: the file and line, or a few lines that trigger it.
 - **Numbers**: how many sites, how many are wrong, and what you checked to know (`git show`, a grep, a run with and without the change).
 - What you tried, and why the documented remedy does not work here.
+- **Verify**: the exact command, run in this repo, that shows the defect (a targeted guard run such as `docker run … <guard image> --rule <id> --path <file>`, or the one test that fails); what it prints now; and what it will print once fixed. `/pin-bump` re-runs it on every new pin and closes the escalation when the output matches, so write it to be run as-is, with no reading between the lines.
 
 ## 3. File it in THIS repo's LuxPM project
 
 - Title `[<guard> ESCALATION] <the defect in one line>`.
 - Label **`fleet-escalation`**. An unlabelled escalation is missed by the maintainer's sweep.
 - `waiting_on: <guard> maintainer`. The maintainer replaces it with your next step when they answer, and `/fleet-start` shows you every escalation whose `waiting_on` names you.
-- Self-contained: the maintainer reads it cold, so include the repro, numbers and evidence above, a suggested fix if you have one, and what this repo did meanwhile.
+- Self-contained: the maintainer reads it cold, so include the repro, numbers, evidence and **Verify** block above, a suggested fix if you have one, and what this repo did meanwhile.
 - **Never a GitHub issue.** There is no fallback.
 
 ## 4. Leave the red lit

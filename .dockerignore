@@ -3,11 +3,11 @@
 # or would bust the build cache.
 
 # Git
-.git
+**/.git
 .gitignore
 
-# Python / caches. `**/`: a bare pattern matches only at the context ROOT, so the host's
-# app/**/__pycache__ (and app/.DS_Store) shipped in every image until this was anchored.
+# Python / caches. `**/`: a bare pattern matches only at the context ROOT, and `COPY app`
+# takes app/ whole, so anything that must stay out at depth is anchored with `**/`.
 **/__pycache__
 **/*.py[cod]
 *.so
@@ -22,10 +22,16 @@ ENV/
 .coverage
 htmlcov/
 
-# Secrets / env — must NEVER enter the image (only .env.example is harmless), at any depth:
-# `COPY app` takes app/ whole, and the clean-tree gate never sees a gitignored file.
+# Secrets / env / keys — must NEVER enter the image (only .env.example is harmless), at any
+# depth: `COPY app` takes app/ whole, and the clean-tree gate never sees a gitignored file.
 **/.env
 **/.env.*
+**/*.env
+**/*credentials.json
+**/*.pem
+**/id_rsa*
+**/id_ecdsa*
+**/id_ed25519*
 !.env.example
 
 # Runtime output (bind-mounted at runtime, never baked)

@@ -1,0 +1,13 @@
+# Fake-device image build context. The Dockerfile COPYs only fake_kasa.py; keep bytecode,
+# dotenv, credential, key and git files out at any depth all the same.
+**/__pycache__/
+**/*.py[cod]
+**/.env
+**/.env.*
+**/*.env
+**/*credentials.json
+**/*.pem
+**/id_rsa*
+**/id_ecdsa*
+**/id_ed25519*
+**/.git
