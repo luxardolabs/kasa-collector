@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+import json
 import logging
 from unittest.mock import AsyncMock
 
@@ -197,3 +198,56 @@ def test_a_traceback_outside_the_transports_keeps_its_own_field(app_log):
     out = app_log.getvalue()
     assert "energy module torn" in out
     assert "Traceback" in out
+
+
+# A configured password holding a 32-hex run between other characters, assembled so the
+# secret scan never sees a credential-shaped literal.
+HEX_CORE_PASSWORD = "".join(["Zq9#", "0123456789abcdef" * 2, "!Wv7"])
+
+
+@pytest.fixture(params=["text", "json"])
+def hex_secret_log(request, monkeypatch, credentials):
+    monkeypatch.setattr(Config, "KASA_COLLECTOR_TPLINK_PASSWORD", HEX_CORE_PASSWORD)
+    monkeypatch.setenv("LOG_FORMAT", request.param)
+    configure_app_logging()
+    buffer = io.StringIO()
+    (handler,) = logging.getLogger().handlers
+    handler.setStream(buffer)
+    return request.param, buffer
+
+
+def _log_transport_failure(text):
+    try:
+        raise RuntimeError(text)
+    except RuntimeError:
+        logging.getLogger("kasa.transports.sslaestransport").warning(
+            "login failed", exc_info=True
+        )
+
+
+def test_a_secret_holding_a_hex_run_is_redacted_whole_in_a_transport_traceback(
+    hex_secret_log,
+):
+    _, buffer = hex_secret_log
+    _log_transport_failure(f"login rejected for {HEX_CORE_PASSWORD}")
+
+    out = buffer.getvalue()
+    assert "login rejected for ****" in out
+    for part in ("Zq9#", "0123456789abcdef", "!Wv7"):
+        assert part not in out, f"{part!r} logged"
+
+
+def test_a_transport_traceback_keeps_its_exception_type_and_its_own_lines(
+    hex_secret_log,
+):
+    fmt, buffer = hex_secret_log
+    _log_transport_failure("handshake refused")
+
+    out = buffer.getvalue()
+    assert "handshake refused" in out
+    if fmt == "json":
+        line = json.loads(out)
+        assert line["exception_type"] == "RuntimeError"
+        assert "handshake refused" in line["exception"]
+    else:
+        assert len(out.strip().splitlines()) > 1

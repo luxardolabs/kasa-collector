@@ -101,26 +101,42 @@ _TRANSPORT_LOGGERS = "kasa.transports"
 _HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
 
 
+class _ScrubbedTraceback(Exception):
+    """A python-kasa transport traceback, already rendered and scrubbed, standing in for
+    the exception so the formatter renders the scrubbed text instead of the original."""
+
+
 class _TransportHexFilter(logging.Filter):
     """Scrubs every long hex run from a python-kasa transport's records, in JSON and
     text format alike (the redactor sees no logger name in text format).
 
-    The message and a traceback are both scrubbed. The formatter renders a traceback
-    from ``exc_info`` itself, after every filter has run, and an exception's message can
-    carry handshake bytes, so a transport record's traceback is rendered here, scrubbed,
-    and carried in the message instead.
+    The message and a traceback are both scrubbed. Configured secrets are replaced first:
+    a secret that holds a hex run would otherwise lose only that run here, and the
+    redactor would then no longer find the rest of it. The formatter renders a traceback
+    from ``exc_info`` itself, after every filter has run, so a transport record's
+    traceback is rendered here, scrubbed, and handed back as the exception's value. The
+    exception's own type stays in ``exc_info``, so the record keeps its exception type.
     """
+
+    def __init__(self, secrets: list[str]) -> None:
+        super().__init__()
+        self._secrets = secrets
+
+    def _scrub(self, text: str) -> str:
+        for secret in self._secrets:
+            text = text.replace(secret, "****")
+        return _HEX_RUN.sub("****", text)
 
     def filter(self, record: logging.LogRecord) -> bool:
         if record.name.startswith(_TRANSPORT_LOGGERS):
-            text = record.getMessage()
-            if record.exc_info:
-                rendered = "".join(traceback.format_exception(*record.exc_info))
-                text = f"{text}\n{rendered.rstrip()}"
-                record.exc_info = None
-                record.exc_text = None
-            record.msg = _HEX_RUN.sub("****", text)
+            record.msg = self._scrub(record.getMessage())
             record.args = None
+            exc_type, exc, tb = record.exc_info or (None, None, None)
+            if exc_type is not None:
+                rendered = "".join(traceback.format_exception(exc_type, exc, tb))
+                scrubbed = _ScrubbedTraceback(self._scrub(rendered.rstrip()))
+                record.exc_info = (exc_type, scrubbed, None)
+                record.exc_text = None
         return True
 
 
@@ -389,8 +405,9 @@ def configure_app_logging() -> None:
     every python-kasa transport line of its handshake hex, so a logger turned up to DEBUG
     (python-kasa's login requests and handshakes included) cannot write one.
     """
+    secrets = _secret_values()
     configure_logging(
-        redact=_redactor(_secret_values()),
+        redact=_redactor(secrets),
         service="kasa-collector",
         version=os.getenv("KASA_COLLECTOR_VERSION", "unknown"),
         levels={
@@ -403,7 +420,7 @@ def configure_app_logging() -> None:
         },
     )
     for handler in logging.getLogger().handlers:
-        handler.addFilter(_TransportHexFilter())
+        handler.addFilter(_TransportHexFilter(secrets))
 
 
 if __name__ == "__main__":
