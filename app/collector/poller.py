@@ -145,7 +145,9 @@ def smart_energy_fields(device: Any) -> dict[str, int]:
     try:
         modules = getattr(device, "modules", None)
         module = modules.get(Module.Energy) if isinstance(modules, Mapping) else None
-        energy = getattr(module, "energy", None)
+        reported = getattr(module, "energy", None)
+        # Copied while still guarded: a mapping whose reads raise fails here, not below.
+        energy = dict(reported) if isinstance(reported, Mapping) else None
     except Exception:
         logger.warning(
             "Could not read the energy counters of %s; writing the realtime reading "
@@ -154,7 +156,7 @@ def smart_energy_fields(device: Any) -> dict[str, int]:
             exc_info=True,
         )
         return {}
-    if not isinstance(energy, Mapping):
+    if energy is None:
         return {}
     out: dict[str, int] = {}
     for key, field in _SMART_ENERGY_FIELDS.items():

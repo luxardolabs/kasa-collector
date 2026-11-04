@@ -21,11 +21,11 @@ Key Features:
 import asyncio
 import contextlib
 import hashlib
+import json
 import logging
 import os
 import re
 import signal
-import traceback
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -88,74 +88,73 @@ def _secret_values() -> list[str]:
         # Reproduces python-kasa's login hash so it can be scrubbed; it protects nothing.
         digest = hashlib.md5(password.encode(), usedforsecurity=False).hexdigest()
         found += [digest, digest.upper()]
-    kept = {s for s in found if s and len(s.strip()) >= _MIN_SCRUBBED_LEN}
+    # An exception message renders a value with repr() (a KeyError, a dict or tuple in
+    # a message), and a logged payload may carry it JSON-escaped: both forms of a secret
+    # holding a backslash or a quote differ from the literal.
+    escaped = [repr(s)[1:-1] for s in found if s] + [
+        json.dumps(s)[1:-1] for s in found if s
+    ]
+    kept = {s for s in found + escaped if s and len(s.strip()) >= _MIN_SCRUBBED_LEN}
     return sorted(kept, key=len, reverse=True)
 
 
 # python-kasa's transports log their handshakes at DEBUG with seeds, nonces and
 # challenge hashes as hex. A KLAP handshake1 line holds both seeds and the server hash
 # (sha256 over them and a hash of the TP-Link username and password), enough to guess the
-# password offline. No configured secret appears in them literally, so on those loggers
-# every run of 32 or more hex digits is scrubbed.
+# password offline. No configured secret appears in them literally, so in those loggers'
+# messages and tracebacks every run of 32 or more hex digits is scrubbed as well.
 _TRANSPORT_LOGGERS = "kasa.transports"
 _HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
+# The parts of a line the logging module renders from the record itself; the caller's
+# `extra=` fields reach the redactor separately and carry no logger.
+_RENDERED_FIELDS = ("message", "exception", "stack")
 
 
-class _ScrubbedTraceback(Exception):
-    """A python-kasa transport traceback, already rendered and scrubbed, standing in for
-    the exception so the formatter renders the scrubbed text instead of the original."""
+def _scrubbed(text: str, secrets: list[str], hex_runs: bool) -> str:
+    """`text` with every secret occurrence (and, if asked, every long hex run) as `****`.
 
-
-class _TransportHexFilter(logging.Filter):
-    """Scrubs every long hex run from a python-kasa transport's records, in JSON and
-    text format alike (the redactor sees no logger name in text format).
-
-    The message and a traceback are both scrubbed. Configured secrets are replaced first:
-    a secret that holds a hex run would otherwise lose only that run here, and the
-    redactor would then no longer find the rest of it. The formatter renders a traceback
-    from ``exc_info`` itself, after every filter has run, so a transport record's
-    traceback is rendered here, scrubbed, and handed back as the exception's value. The
-    exception's own type stays in ``exc_info``, so the record keeps its exception type.
+    All spans are found on the original text and merged where they overlap or touch, then
+    each merged span is replaced once. Replacing one pattern at a time would let the first
+    replacement break up the next match: a hex-only secret inside a handshake hex run would
+    cut the run below the length that marks it, and two overlapping secrets would leave the
+    second one's tail.
     """
-
-    def __init__(self, secrets: list[str]) -> None:
-        super().__init__()
-        self._secrets = secrets
-
-    def _scrub(self, text: str) -> str:
-        for secret in self._secrets:
-            text = text.replace(secret, "****")
-        return _HEX_RUN.sub("****", text)
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.name.startswith(_TRANSPORT_LOGGERS):
-            # A filter runs outside the handler's own error guard, so a call whose
-            # arguments do not fit its format must not raise into python-kasa here: the
-            # line is written with its format string alone.
-            try:
-                message = record.getMessage()
-            except TypeError, ValueError, KeyError:
-                message = str(record.msg)
-            record.msg = self._scrub(message)
-            record.args = None
-            exc_type, exc, tb = record.exc_info or (None, None, None)
-            if exc_type is not None:
-                rendered = "".join(traceback.format_exception(exc_type, exc, tb))
-                scrubbed = _ScrubbedTraceback(self._scrub(rendered.rstrip()))
-                record.exc_info = (exc_type, scrubbed, None)
-                record.exc_text = None
-        return True
+    spans: list[tuple[int, int]] = []
+    for secret in secrets:
+        start = text.find(secret)
+        while start != -1:
+            spans.append((start, start + len(secret)))
+            start = text.find(secret, start + 1)
+    if hex_runs:
+        spans += [m.span() for m in _HEX_RUN.finditer(text)]
+    if not spans:
+        return text
+    spans.sort()
+    merged = [list(spans[0])]
+    for start, end in spans[1:]:
+        if start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    pieces: list[str] = []
+    position = 0
+    for start, end in merged:
+        pieces += [text[position:start], "****"]
+        position = end
+    pieces.append(text[position:])
+    return "".join(pieces)
 
 
 def _redactor(secrets: list[str]) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """A log redactor that replaces each secret with `****` in every string field."""
+    """A log redactor that replaces each secret with `****` in every string field, and
+    every long hex run in a python-kasa transport line's message and traceback."""
 
     def scrub(part: dict[str, Any]) -> dict[str, Any]:
+        transport = str(part.get("logger", "")).startswith(_TRANSPORT_LOGGERS)
         out: dict[str, Any] = {}
         for key, value in part.items():
             if isinstance(value, str):
-                for secret in secrets:
-                    value = value.replace(secret, "****")
+                value = _scrubbed(value, secrets, transport and key in _RENDERED_FIELDS)
             out[key] = value
         return out
 
@@ -412,9 +411,8 @@ def configure_app_logging() -> None:
     handshake hex, so a logger turned up to DEBUG (python-kasa's login requests and
     handshakes included) cannot write one.
     """
-    secrets = _secret_values()
     configure_logging(
-        redact=_redactor(secrets),
+        redact=_redactor(_secret_values()),
         service="kasa-collector",
         version=os.getenv("KASA_COLLECTOR_VERSION", "unknown"),
         levels={
@@ -425,8 +423,6 @@ def configure_app_logging() -> None:
             "kasa": "WARNING",
         },
     )
-    for handler in logging.getLogger().handlers:
-        handler.addFilter(_TransportHexFilter(secrets))
 
 
 if __name__ == "__main__":

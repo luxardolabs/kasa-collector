@@ -1,4 +1,4 @@
-# luxarch:logging asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit logging`.
+# luxarch:logging asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit logging`.
 """The fleet's ONE logging setup: standard-library `logging`, one JSON line per record on stdout.
 
 Why the standard library (sources in `luxarch --playbook logging`): every log platform the fleet might
@@ -41,8 +41,12 @@ a script with its own `__main__`) starts with stock logging: call `configure_log
 A service that logs personal data (transcripts, prompts, emails, tokens) passes a redactor, and every
 line goes through it before it is written: `configure_logging(..., redact=scrub)`, where `scrub` takes
 the line as a dict and returns the dict to write. It sees the message, the bound context, every
-`extra=` field and the traceback, in JSON and text mode alike. If it raises, the line is written with
-its fixed fields only and a `redaction_error`: never the unscrubbed content, never lost.
+`extra=` field and the traceback, in JSON and text mode alike. The line's own part (message and
+traceback) carries the record's `logger`, so one redactor can scrub those by logger as well as by
+value; the caller's fields are a call of their own, without it. If it raises, the line is written with
+its fixed fields only and a `redaction_error`: never the unscrubbed content, never lost. The traceback
+is always rendered from the exception itself, never taken from `record.exc_text`, which any other
+handler's formatter may have filled first.
 
 Trace ids on every line logged inside a span: pass the tracing module's source,
 `configure_logging(..., trace_ids=current_trace_ids)` (`luxarch --emit telemetry`), and each record made
@@ -329,7 +333,9 @@ class TextFormatter(logging.Formatter):
         self.redact = redact
 
     def format(self, record: logging.LogRecord) -> str:
-        line: dict[str, Any] = {"message": record.getMessage()}
+        # `logger` is there for the redactor (one that scrubs by logger), as in the JSON line; the
+        # head below names the logger, so it is not repeated in the tail
+        line: dict[str, Any] = {"message": record.getMessage(), "logger": record.name}
         if record.exc_info:
             line["exception"] = self.formatException(record.exc_info)
         if record.stack_info:
@@ -339,6 +345,7 @@ class TextFormatter(logging.Formatter):
             if otel in extras:
                 line[ours] = extras.pop(otel)
         line, attributes = _redacted(line, {**_bound(), **extras}, self.redact)
+        line.pop("logger", None)
         message = _one_line(str(line.pop("message", "")))
         # A traceback keeps its own lines, each indented under the record's head and with its
         # control characters escaped, so an exception message cannot start a line of its own.
@@ -482,7 +489,7 @@ def configure_logging(
     copied out of one cluster's logs still says which one it came from.
 
     `redact` is the repo's redactor, for a service that logs personal data. It is called on the
-    envelope (message and traceback included) and, separately, on the caller's fields (context and
+    envelope (message, `logger` and traceback included) and, separately, on the caller's fields (context and
     `extra=`, flat, under their own names); each returns the dict to write. If either raises, the line
     keeps its fixed fields and says the redaction failed; the unscrubbed content is dropped.
 

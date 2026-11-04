@@ -1175,6 +1175,27 @@ class TestEmeterUnits:
         )
         assert "UnprintableDevice object at" in record.getMessage()
 
+    def test_an_energy_mapping_whose_reads_raise_yields_nothing(self):
+        from collections.abc import Mapping
+
+        from app.collector.poller import smart_energy_fields
+
+        class TornEnergy(Mapping):
+            def __getitem__(self, key):
+                raise RuntimeError("torn get")
+
+            def __iter__(self):
+                return iter(["today_energy"])
+
+            def __len__(self):
+                return 1
+
+        device = SimpleNamespace(
+            host="10.0.0.5",
+            modules={"Energy": SimpleNamespace(energy=TornEnergy())},
+        )
+        assert smart_energy_fields(device) == {}
+
     def test_a_null_legacy_field_drops_only_itself(self):
         from kasa.emeterstatus import EmeterStatus
 

@@ -253,8 +253,86 @@ def test_a_transport_traceback_keeps_its_exception_type_and_its_own_lines(
         assert len(out.strip().splitlines()) > 1
 
 
-def test_a_malformed_transport_log_call_never_raises_into_python_kasa(app_log):
-    # The format wants two arguments and gets one.
-    logging.getLogger("kasa.transports.klaptransport").warning("seed %s and %s", 1)
+def test_a_malformed_transport_log_call_never_raises_into_python_kasa(app_log, capsys):
+    # The format wants two arguments and gets one. The record goes through the installed
+    # handler alone: pytest's own capture handler re-raises logging errors by design.
+    logger = logging.getLogger("kasa.transports.klaptransport")
+    record = logger.makeRecord(
+        logger.name, logging.WARNING, __file__, 1, "seed %s and %s", (1,), None
+    )
+    (installed,) = [
+        h for h in logging.getLogger().handlers if getattr(h, "stream", None) is app_log
+    ]
 
-    assert "seed %s and %s" in app_log.getvalue()
+    installed.handle(record)
+
+    assert "Logging error in kasa.transports.klaptransport" in capsys.readouterr().err
+    assert "seed" not in app_log.getvalue()
+
+
+@pytest.fixture(params=["text", "json"])
+def log_with(request, monkeypatch, credentials):
+    """The real logging setup in each format, with the credentials the test sets."""
+
+    def install(**settings):
+        for name, value in settings.items():
+            monkeypatch.setattr(Config, name, value)
+        monkeypatch.setenv("LOG_FORMAT", request.param)
+        configure_app_logging()
+        buffer = io.StringIO()
+        (handler,) = logging.getLogger().handlers
+        handler.setStream(buffer)
+        return buffer
+
+    return install
+
+
+def test_a_hex_only_secret_inside_a_handshake_run_leaves_none_of_the_run(log_with):
+    buffer = log_with(KASA_COLLECTOR_TPLINK_PASSWORD="".join(["4", "8", "1", "5"]))
+    seed = "0123456789abcdef" + "4815" + "0123456789abcdef"
+    logging.getLogger("kasa.transports.klaptransport").warning(
+        "remote_seed is: %s", seed
+    )
+
+    out = buffer.getvalue()
+    assert "remote_seed is: ****" in out
+    assert "0123456789abcdef" not in out
+
+
+def test_overlapping_secrets_leave_no_tail(log_with):
+    username = "".join(["kq.user-", "ABCD"])
+    token = "".join(["ABCD-", "tok9xy"])
+    buffer = log_with(
+        KASA_COLLECTOR_TPLINK_USERNAME=username, KASA_COLLECTOR_INFLUXDB_TOKEN=token
+    )
+    logging.getLogger("KasaCollector").warning("cred %s", "kq.user-ABCD-tok9xy")
+
+    out = buffer.getvalue()
+    assert "cred ****" in out
+    assert "tok9xy" not in out and "kq.user" not in out
+
+
+def test_a_secret_in_its_repr_form_is_redacted(log_with):
+    password = "".join(["Qz7", "\\", "Kp9wXv"])
+    buffer = log_with(KASA_COLLECTOR_TPLINK_PASSWORD=password)
+    try:
+        {}[password]
+    except KeyError:
+        logging.getLogger("KasaAPI").warning("lookup failed", exc_info=True)
+
+    out = buffer.getvalue()
+    assert "KeyError" in out
+    assert "Kp9wXv" not in out
+
+
+def test_a_transport_traceback_names_no_stand_in_exception(app_log):
+    try:
+        raise RuntimeError("handshake refused")
+    except RuntimeError:
+        logging.getLogger("kasa.transports.klaptransport").warning(
+            "login failed", exc_info=True
+        )
+
+    out = app_log.getvalue()
+    assert "RuntimeError: handshake refused" in out
+    assert "Scrubbed" not in out
