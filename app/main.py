@@ -129,7 +129,14 @@ class _TransportHexFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if record.name.startswith(_TRANSPORT_LOGGERS):
-            record.msg = self._scrub(record.getMessage())
+            # A filter runs outside the handler's own error guard, so a call whose
+            # arguments do not fit its format must not raise into python-kasa here: the
+            # line is written with its format string alone.
+            try:
+                message = record.getMessage()
+            except TypeError, ValueError, KeyError:
+                message = str(record.msg)
+            record.msg = self._scrub(message)
             record.args = None
             exc_type, exc, tb = record.exc_info or (None, None, None)
             if exc_type is not None:

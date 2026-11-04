@@ -251,3 +251,10 @@ def test_a_transport_traceback_keeps_its_exception_type_and_its_own_lines(
         assert "handshake refused" in line["exception"]
     else:
         assert len(out.strip().splitlines()) > 1
+
+
+def test_a_malformed_transport_log_call_never_raises_into_python_kasa(app_log):
+    # The format wants two arguments and gets one.
+    logging.getLogger("kasa.transports.klaptransport").warning("seed %s and %s", 1)
+
+    assert "seed %s and %s" in app_log.getvalue()
