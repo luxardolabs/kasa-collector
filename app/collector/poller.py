@@ -122,6 +122,20 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
 _SMART_ENERGY_FIELDS = {"today_energy": "today_wh", "month_energy": "month_wh"}
 
 
+def _device_label(device: Any) -> str:
+    """The device's repr for a log line, or its type and id when the repr itself fails.
+
+    python-kasa's repr reads properties that can raise after a failed update, and a log
+    argument whose formatting raises costs the whole line.
+    """
+    # swallowed-exceptions: this labels a line that already reports the failure, and
+    # falling back to the type and id is the handling.
+    try:
+        return repr(device)
+    except Exception:
+        return object.__repr__(device)
+
+
 def smart_energy_fields(device: Any) -> dict[str, int]:
     """Today's and this month's energy in Wh for a SMART device, where it reports them.
 
@@ -133,12 +147,10 @@ def smart_energy_fields(device: Any) -> dict[str, int]:
         module = modules.get(Module.Energy) if isinstance(modules, Mapping) else None
         energy = getattr(module, "energy", None)
     except Exception:
-        # The device is formatted by logging itself, which absorbs an error raised while
-        # formatting: reading an attribute here could raise and cost the reading.
         logger.warning(
             "Could not read the energy counters of %s; writing the realtime reading "
             "without them",
-            device,
+            _device_label(device),
             exc_info=True,
         )
         return {}

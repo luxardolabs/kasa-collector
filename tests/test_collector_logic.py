@@ -1155,6 +1155,26 @@ class TestEmeterUnits:
 
         assert smart_energy_fields(TornDevice()) == {}
 
+    def test_the_warning_is_written_when_the_device_repr_raises(self, caplog):
+        from app.collector.poller import smart_energy_fields
+
+        class UnprintableDevice:
+            @property
+            def modules(self):
+                raise RuntimeError("module table torn")
+
+            def __repr__(self):
+                raise RuntimeError("repr torn")
+
+            __str__ = __repr__
+
+        with caplog.at_level(logging.INFO, logger="KasaCollector"):
+            assert smart_energy_fields(UnprintableDevice()) == {}
+        record = next(
+            r for r in caplog.records if "Could not read the energy" in r.getMessage()
+        )
+        assert "UnprintableDevice object at" in record.getMessage()
+
     def test_a_null_legacy_field_drops_only_itself(self):
         from kasa.emeterstatus import EmeterStatus
 
