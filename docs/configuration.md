@@ -77,7 +77,7 @@ Credentials are masked in the startup configuration log, and never sent in the d
 
 | Variable                                    | Default | Description                                                                                                             |
 | ------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR`   | `INFO`  | Level for the main orchestrator. One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.                                |
+| `KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR`   | `INFO`  | Level for the orchestrator and poller, and the retry helper and DNS cache (`app.collector.*`). `DEBUG` … `CRITICAL`.    |
 | `KASA_COLLECTOR_LOG_LEVEL_KASA_API`         | `INFO`  | Level for device communication. Set `DEBUG` to trace per-device protocol activity.                                      |
 | `KASA_COLLECTOR_LOG_LEVEL_INFLUXDB_STORAGE` | `INFO`  | Level for InfluxDB writes. Set `DEBUG` to trace storage operations.                                                     |
 | `LOG_FORMAT`                                | `json`  | `json`: one JSON object per line on stdout (the fleet log contract). `text`: a readable line for local runs.            |

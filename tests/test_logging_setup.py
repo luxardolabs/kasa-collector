@@ -13,7 +13,14 @@ from app.core.config import Config
 def restore_logging():
     root = logging.getLogger()
     saved = (root.level, list(root.handlers))
-    names = ("KasaCollector", "KasaAPI", "KasaCompat", "InfluxDBStorage", "kasa")
+    names = (
+        "KasaCollector",
+        "KasaAPI",
+        "KasaCompat",
+        "InfluxDBStorage",
+        "kasa",
+        "app.collector",
+    )
     levels = {n: logging.getLogger(n).level for n in names}
     yield
     root.handlers[:] = saved[1]
@@ -31,6 +38,17 @@ def test_component_levels_come_from_config(monkeypatch, restore_logging):
     assert logging.getLogger("KasaCompat").level == logging.DEBUG
     assert logging.getLogger("InfluxDBStorage").level == logging.ERROR
     assert logging.getLogger("kasa").level == logging.WARNING
+
+
+@pytest.mark.unit
+def test_the_collector_level_governs_the_collector_module_loggers(
+    monkeypatch, restore_logging
+):
+    monkeypatch.setattr(Config, "KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR", "ERROR")
+    main.configure_app_logging()
+    for name in ("KasaCollector", "app.collector.utils", "app.collector.dns_cache"):
+        assert not logging.getLogger(name).isEnabledFor(logging.WARNING), name
+    assert logging.getLogger(name).isEnabledFor(logging.ERROR)
 
 
 @pytest.mark.unit
