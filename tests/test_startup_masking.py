@@ -169,3 +169,31 @@ async def test_python_kasa_debug_klap_handshake_logs_no_crackable_hash(app_log):
     )
     for secret in (sent[0].hex(), remote_seed.hex(), server_hash.hex()):
         assert secret not in out, f"{secret[:8]}… logged"
+
+
+def test_python_kasa_transport_traceback_logs_no_hex_run(app_log):
+    # A transport error can carry handshake bytes in its message; the traceback the
+    # formatter renders must be scrubbed like the message is.
+    hex_run = "ab" * 32
+    try:
+        raise RuntimeError(f"server hash {hex_run}")
+    except RuntimeError:
+        logging.getLogger("kasa.transports.klaptransport").warning(
+            "handshake failed", exc_info=True
+        )
+
+    out = app_log.getvalue()
+    assert "handshake failed" in out
+    assert "RuntimeError" in out  # the failure itself is still reported
+    assert hex_run not in out
+
+
+def test_a_traceback_outside_the_transports_keeps_its_own_field(app_log):
+    try:
+        raise RuntimeError("energy module torn")
+    except RuntimeError:
+        logging.getLogger("KasaCollector").warning("read failed", exc_info=True)
+
+    out = app_log.getvalue()
+    assert "energy module torn" in out
+    assert "Traceback" in out

@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import signal
+import traceback
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -102,11 +103,23 @@ _HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
 
 class _TransportHexFilter(logging.Filter):
     """Scrubs every long hex run from a python-kasa transport's records, in JSON and
-    text format alike (the redactor sees no logger name in text format)."""
+    text format alike (the redactor sees no logger name in text format).
+
+    The message and a traceback are both scrubbed. The formatter renders a traceback
+    from ``exc_info`` itself, after every filter has run, and an exception's message can
+    carry handshake bytes, so a transport record's traceback is rendered here, scrubbed,
+    and carried in the message instead.
+    """
 
     def filter(self, record: logging.LogRecord) -> bool:
         if record.name.startswith(_TRANSPORT_LOGGERS):
-            record.msg = _HEX_RUN.sub("****", record.getMessage())
+            text = record.getMessage()
+            if record.exc_info:
+                rendered = "".join(traceback.format_exception(*record.exc_info))
+                text = f"{text}\n{rendered.rstrip()}"
+                record.exc_info = None
+                record.exc_text = None
+            record.msg = _HEX_RUN.sub("****", text)
             record.args = None
         return True
 
