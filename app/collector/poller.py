@@ -133,10 +133,12 @@ def smart_energy_fields(device: Any) -> dict[str, int]:
         module = modules.get(Module.Energy) if isinstance(modules, Mapping) else None
         energy = getattr(module, "energy", None)
     except Exception:
+        # The device is formatted by logging itself, which absorbs an error raised while
+        # formatting: reading an attribute here could raise and cost the reading.
         logger.warning(
             "Could not read the energy counters of %s; writing the realtime reading "
             "without them",
-            getattr(device, "host", "unknown device"),
+            device,
             exc_info=True,
         )
         return {}

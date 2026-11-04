@@ -1139,6 +1139,22 @@ class TestEmeterUnits:
         assert "10.0.0.5" in record.getMessage()
         assert record.exc_info is not None
 
+    def test_a_device_whose_host_raises_still_yields_nothing(self):
+        from app.collector.poller import smart_energy_fields
+
+        class Raises:
+            def __init__(self, exc):
+                self.exc = exc
+
+            def __get__(self, obj, owner):
+                raise self.exc
+
+        class TornDevice:
+            modules = Raises(RuntimeError("module table torn"))
+            host = Raises(RuntimeError("transport gone"))
+
+        assert smart_energy_fields(TornDevice()) == {}
+
     def test_a_null_legacy_field_drops_only_itself(self):
         from kasa.emeterstatus import EmeterStatus
 
