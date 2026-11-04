@@ -406,11 +406,11 @@ def configure_app_logging() -> None:
 
     JSON lines on stdout, or a readable line with LOG_FORMAT=text. The per-component
     KASA_COLLECTOR_LOG_LEVEL_* settings are the code's defaults; LOG_MODULE_LEVELS overrides
-    any logger at runtime. The collector's level also covers the `app.collector` module
-    loggers (the retry helper, the DNS cache). python-kasa stays at WARNING unless
-    LOG_MODULE_LEVELS turns it up. Every line is scrubbed of the configured secrets, and
-    every python-kasa transport line of its handshake hex, so a logger turned up to DEBUG
-    (python-kasa's login requests and handshakes included) cannot write one.
+    any logger at runtime, and LOG_LEVEL governs every logger they do not name.
+    python-kasa stays at WARNING unless LOG_MODULE_LEVELS turns it up. Every line is
+    scrubbed of the configured secrets, and every python-kasa transport line of its
+    handshake hex, so a logger turned up to DEBUG (python-kasa's login requests and
+    handshakes included) cannot write one.
     """
     secrets = _secret_values()
     configure_logging(
@@ -419,7 +419,6 @@ def configure_app_logging() -> None:
         version=os.getenv("KASA_COLLECTOR_VERSION", "unknown"),
         levels={
             "KasaCollector": Config.KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR,
-            "app.collector": Config.KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR,
             "KasaAPI": Config.KASA_COLLECTOR_LOG_LEVEL_KASA_API,
             "KasaCompat": Config.KASA_COLLECTOR_LOG_LEVEL_KASA_API,
             "InfluxDBStorage": Config.KASA_COLLECTOR_LOG_LEVEL_INFLUXDB_STORAGE,

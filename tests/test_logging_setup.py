@@ -13,14 +13,7 @@ from app.core.config import Config
 def restore_logging():
     root = logging.getLogger()
     saved = (root.level, list(root.handlers))
-    names = (
-        "KasaCollector",
-        "KasaAPI",
-        "KasaCompat",
-        "InfluxDBStorage",
-        "kasa",
-        "app.collector",
-    )
+    names = ("KasaCollector", "KasaAPI", "KasaCompat", "InfluxDBStorage", "kasa", "app")
     levels = {n: logging.getLogger(n).level for n in names}
     yield
     root.handlers[:] = saved[1]
@@ -41,14 +34,26 @@ def test_component_levels_come_from_config(monkeypatch, restore_logging):
 
 
 @pytest.mark.unit
-def test_the_collector_level_governs_the_collector_module_loggers(
+def test_loggers_no_component_setting_names_follow_log_level(
     monkeypatch, restore_logging
 ):
-    monkeypatch.setattr(Config, "KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR", "ERROR")
+    # The retry helper and the DNS cache log on their module names, which no
+    # KASA_COLLECTOR_LOG_LEVEL_* setting names: LOG_LEVEL governs them.
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.delenv("LOG_MODULE_LEVELS", raising=False)
     main.configure_app_logging()
-    for name in ("KasaCollector", "app.collector.utils", "app.collector.dns_cache"):
-        assert not logging.getLogger(name).isEnabledFor(logging.WARNING), name
-    assert logging.getLogger(name).isEnabledFor(logging.ERROR)
+    for name in ("app.collector.utils", "app.collector.dns_cache"):
+        assert logging.getLogger(name).isEnabledFor(logging.DEBUG), name
+
+
+@pytest.mark.unit
+def test_a_parent_module_level_reaches_the_collector_modules(
+    monkeypatch, restore_logging
+):
+    monkeypatch.setenv("LOG_MODULE_LEVELS", '{"app": "DEBUG"}')
+    main.configure_app_logging()
+    for name in ("app.collector.utils", "app.collector.dns_cache"):
+        assert logging.getLogger(name).isEnabledFor(logging.DEBUG), name
 
 
 @pytest.mark.unit
