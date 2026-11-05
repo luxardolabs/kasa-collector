@@ -49,3 +49,5 @@ docker run --rm -e KASA_FAKE_MODEL="KP115(US)" -e KASA_FAKE_ALIAS="Bench Plug" \
 ## The SMART strip (`fake_smart.py`)
 
 Run with `python3 /fake_smart.py` (the e2e `kasa_fake_p316m` service). It accepts the TP-Link account given by `KASA_FAKE_USERNAME` / `KASA_FAKE_PASSWORD` and refuses any other. `KASA_FAKE_ALIAS`, `KASA_FAKE_MODEL` (default `P316M(US)`), `KASA_FAKE_OUTLETS` (default 6), `KASA_FAKE_BASE_W` (the first outlet's watts, default 20; each next one draws 5 W more) and `KASA_FAKE_HTTP_PORT` (default 80) configure it.
+
+With `KASA_FAKE_PROTOCOL=iot` it is an IOT device behind KLAP instead, as an HS300 on firmware 1.1.2 is: discovered on UDP 20002 as `IOT.SMARTPLUGSWITCH` over KLAP v2, answering IOT requests from `fake_kasa`'s handler, configured by the `fake_kasa` variables above (the e2e `kasa_fake_klap_hs300`). python-kasa's discovery builds it as an `IotPlug`, which the collector re-classes as an `IotStrip` (`app/collector/kasa_compat.py`).

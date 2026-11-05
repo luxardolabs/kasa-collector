@@ -36,6 +36,9 @@ from app.core.config import Config
 
 logger = logging.getLogger("KasaAPI")
 
+# Seconds a hostname lookup may take before the connection attempt gives up.
+RESOLVE_TIMEOUT = 5.0
+
 
 class InsecureLoginRefused(Exception):
     """The device would receive the TP-Link password in a recoverable form.
@@ -293,10 +296,14 @@ class KasaAPI:
         """
         try:
             # Resolve hostname to IP if necessary using async DNS resolution
+            # Bounded: a resolver that never answers must not hold the caller's pass.
             loop = asyncio.get_running_loop()
-            result = await loop.getaddrinfo(ip_or_hostname, None, family=socket.AF_INET)
+            async with asyncio.timeout(RESOLVE_TIMEOUT):
+                result = await loop.getaddrinfo(
+                    ip_or_hostname, None, family=socket.AF_INET
+                )
             ip = str(result[0][4][0])  # Extract IP address (sockaddr[0]) from result
-        except socket.gaierror:
+        except socket.gaierror, TimeoutError:
             logger.exception("Failed to resolve hostname: %s", ip_or_hostname)
             raise
 
@@ -327,7 +334,9 @@ class KasaAPI:
                     device.alias if device.alias else device.model,
                     ip,
                 )
-                return device
+                # discover_single classes an IOT device by family, as broadcast
+                # discovery does: a KLAP strip arrives as an IotPlug here too.
+                return await reclass_strip_if_needed(device)
         except InsecureLoginRefused:
             raise
         # swallowed-exceptions: HANDLED by a real fallback -- discovery is strategy 1 of 3

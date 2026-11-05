@@ -159,3 +159,18 @@ async def test_a_resolver_that_never_answers_is_bounded(monkeypatch):
 
     with pytest.raises(OSError):
         await dm_mod.resolve_ipv4s("plug.lan")
+
+
+async def test_get_devices_own_lookup_is_bounded(monkeypatch):
+    import asyncio
+
+    from app.collector import kasa_api
+
+    async def hang(*args, **kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(kasa_api, "RESOLVE_TIMEOUT", 0.05)
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", hang)
+
+    with pytest.raises(TimeoutError):
+        await kasa_api.KasaAPI.get_device("plug.lan")

@@ -13,6 +13,8 @@ two types. Every key not named here is written as text.
 A device's coordinates are never written. Real devices send them as a float in degrees
 (IOT ``latitude``) or as a scaled int (SMART), so no one type fits, and python-kasa's
 fixtures zero them. No dashboard reads them, and they are the owner's home location.
+Nor is the Wi-Fi network's name (``ssid``, ``bssid``), for the same reason: no
+dashboard reads it, and python-kasa blanks it from its own fixtures too.
 """
 
 import math
@@ -104,7 +106,9 @@ BOOL_KEYS = frozenset(
 
 FLOAT_KEYS = frozenset({"current_temp", "target_temp"})
 
-DROPPED_KEYS = frozenset({"latitude", "latitude_i", "longitude", "longitude_i"})
+DROPPED_KEYS = frozenset(
+    {"latitude", "latitude_i", "longitude", "longitude_i", "ssid", "bssid"}
+)
 
 
 def _as_text(value: Any) -> str:

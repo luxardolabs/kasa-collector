@@ -36,6 +36,7 @@ from app.collector.utils import (
     DeviceContext,
     async_retry,
     energy_status,
+    get_device_name,
     has_outlet_energy,
 )
 from app.core.config import Config
@@ -194,6 +195,19 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
 # monitoring v1) or `energy_wh` (v2); python-kasa reads no lifetime counter
 # (`consumption_total` is always None), so these are the energy figures it has.
 _SMART_ENERGY_FIELDS = {"today_energy": "today_wh", "month_energy": "month_wh"}
+
+
+def _outlet_position(outlet: Any, index: int) -> int:
+    """A SMART outlet's own position on its strip, or its index when it reports none.
+
+    python-kasa re-creates an outlet that was missing from one child-list reply at the
+    end of the strip's children, so the index alone can move an outlet's readings into
+    another outlet's series.
+    """
+    position = (getattr(outlet, "sys_info", None) or {}).get("position")
+    if isinstance(position, int) and not isinstance(position, bool) and position > 0:
+        return int.__int__(position)
+    return index
 
 
 def _device_label(device: Any) -> str:
@@ -644,25 +658,28 @@ class Poller:
         tagging to identify it as part of the parent strip. This allows
         for both aggregate and per-plug analysis in Grafana.
         """
-        # Every outlet is read and every reading converted BEFORE anything is written.
-        # The strip already answered, so an outlet that does not, or a malformed
-        # payload, is a device fault (UnstorableReading: counted once, the strip still
-        # reachable, never retried) and leaves no partly-written strip behind. Nothing
-        # here is retried: a re-run would write the strip's points again.
+        # Every outlet is read and every reading converted BEFORE anything is written,
+        # and nothing here is retried: a re-run would write the strip's points again.
+        # An IOT strip is read in full or not at all: an outlet that does not answer,
+        # or a malformed payload, is a device fault (UnstorableReading: counted once,
+        # the strip still reachable) and leaves no partly-written strip behind. A SMART
+        # strip read every outlet in one update(), and python-kasa keeps one outlet's
+        # energy error on that outlet (for its retry backoff, or for good once it gives
+        # up on the module): that outlet is left out, and the rest are written.
         try:
             dns_name = await get_hostname_cached(ip)
-            # The strip's id, and each outlet's position on it (the order of
-            # sys_info["children"], so it matches the sysinfo_child plug_id), are read
-            # off the strip as polled: an outlet's alias is user-set and may repeat, and
-            # the sysinfo cache may not hold this strip yet.
+            # The strip's id and each outlet's position are read off the strip as
+            # polled: an outlet's alias is user-set and may repeat, and the sysinfo
+            # cache may not hold this strip yet.
             device_id = device_id_of(smart_strip.sys_info)
             iot = not isinstance(smart_strip, SmartDevice)
+            strip_name = get_device_name(smart_strip)
             totals = []
             if iot or smart_strip.has_emeter:
                 totals.append(
                     {
                         "emeter": self._reading(smart_strip, iot),
-                        "alias": smart_strip.alias,
+                        "alias": strip_name,
                         "device_id": device_id,
                         "dns_name": dns_name,
                         "ip": ip,
@@ -673,20 +690,29 @@ class Poller:
             for index, child in enumerate(smart_strip.children, start=1):
                 if iot:
                     await child.update()
-                elif not child.has_emeter:
-                    continue
+                    reading = self._reading(child, iot)
+                    plug_id = index
+                else:
+                    if not child.has_emeter:
+                        continue
+                    reading = self._outlet_reading(ip, child)
+                    if reading is None:
+                        continue
+                    plug_id = _outlet_position(child, index)
                 outlets.append(
                     {
-                        "emeter": self._reading(child, iot),
-                        "alias": smart_strip.alias,
-                        "plug_alias": f"{child.alias}",
-                        "plug_id": str(index),
+                        "emeter": reading,
+                        "alias": strip_name,
+                        "plug_alias": child.alias or f"Plug {plug_id}",
+                        "plug_id": str(plug_id),
                         "device_id": device_id,
                         "dns_name": dns_name,
                         "ip": ip,
                         "equipment_type": "plug",
                     }
                 )
+            if not iot and not totals and not outlets:
+                raise ValueError(f"no outlet of {ip} gave a storable reading")
         except Exception as e:
             self.logger.exception("Error reading smart strip data for %s: %s", ip, e)
             raise UnstorableReading(str(e)) from e
@@ -699,6 +725,21 @@ class Poller:
         return await self.storage.process_emeter_entries(
             [(ip, point) for point in totals + outlets]
         )
+
+    def _outlet_reading(self, ip: str, outlet: Any) -> dict[str, int] | None:
+        """A SMART outlet's reading, or None when that outlet's energy read failed."""
+        # swallowed-exceptions: one outlet's energy error is that outlet's, logged here;
+        # the strip's other outlets are still written.
+        try:
+            return self._reading(outlet, False)
+        except Exception as e:
+            self.logger.warning(
+                "Outlet %r of %s gave no reading this cycle: %s",
+                outlet.alias or "?",
+                ip,
+                e,
+            )
+            return None
 
     @staticmethod
     def _reading(device: Any, iot: bool) -> dict[str, int]:

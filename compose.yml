@@ -226,6 +226,26 @@ services:
       KASA_FAKE_PASSWORD: e2e-fake-device-login
     restart: unless-stopped
 
+  # An HS300 behind KLAP, as firmware 1.1.2 serves it: no XOR listener, discovered on
+  # UDP 20002 as IOT.SMARTPLUGSWITCH over KLAP v2. python-kasa's discovery builds it as
+  # an IotPlug; e2e proves the collector's re-class still collects every outlet.
+  kasa_fake_klap_hs300:
+    profiles: [e2e]
+    oom_score_adj: 500
+    image: kasa-collector-fake:test
+    command: ["python3", "/fake_smart.py"]
+    environment:
+      KASA_FAKE_PROTOCOL: iot
+      KASA_FAKE_KIND: strip
+      KASA_FAKE_MODEL: HS300(US)
+      KASA_FAKE_ALIAS: Fake KLAP HS300
+      KASA_FAKE_MAC: "50:C7:BF:00:00:17"
+      KASA_FAKE_BASE_W: "25"
+      KASA_FAKE_OUTLETS: "6"
+      KASA_FAKE_USERNAME: e2e-account@example.invalid
+      KASA_FAKE_PASSWORD: e2e-fake-device-login
+    restart: unless-stopped
+
   # Deaf to broadcast discovery, reachable by direct query -- the KASACOLLEC-70 shape.
   # e2e only: it exists to prove a device that discovery stops seeing keeps collecting.
   kasa_fake_deaf:
@@ -371,6 +391,8 @@ services:
       kasa_fake_legacy:
         condition: service_started
       kasa_fake_p316m:
+        condition: service_started
+      kasa_fake_klap_hs300:
         condition: service_started
 
 volumes:

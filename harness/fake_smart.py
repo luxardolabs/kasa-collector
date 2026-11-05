@@ -13,6 +13,12 @@ monitoring) as python-kasa 0.11 talks to it:
 
 Every outlet draws its own power, so an e2e run can tell their series apart.
 
+With ``KASA_FAKE_PROTOCOL=iot`` it is instead an IOT device behind KLAP, as an HS300
+on firmware 1.1.2 is: discovered on UDP 20002 as ``IOT.SMARTPLUGSWITCH`` over KLAP v2,
+answering IOT JSON requests from ``fake_kasa``'s handler (set ``KASA_FAKE_KIND`` and
+the other ``fake_kasa`` variables for it). python-kasa's discovery builds such a
+device as an IotPlug; it takes the collector's re-class to collect its outlets.
+
 Standard library only, like ``fake_kasa``: AES is implemented here. It is a test
 fixture, never a cipher to protect anything.
 
@@ -24,6 +30,7 @@ Environment:
     KASA_FAKE_USERNAME  TP-Link account the device accepts
     KASA_FAKE_PASSWORD  its password
     KASA_FAKE_HTTP_PORT HTTP port                (default 80)
+    KASA_FAKE_PROTOCOL  smart | iot              (default smart)
 """
 
 from __future__ import annotations
@@ -274,7 +281,6 @@ def _device_info(**extra: Any) -> dict[str, Any]:
         "hw_ver": "1.6",
         "mac": MAC,
         "nickname": _b64(ALIAS),
-        "device_on": True,
         "on_time": int(time.monotonic() - STARTED),
         "rssi": -48,
         "signal_level": 3,
@@ -298,6 +304,7 @@ def _device_info(**extra: Any) -> dict[str, Any]:
 
 def _outlet_info(n: int) -> dict[str, Any]:
     return _device_info(
+        device_on=True,
         device_id=outlet_id(n),
         nickname=_b64(f"{ALIAS} Outlet {n}"),
         category="plug.powerstrip.sub-plug",
@@ -335,7 +342,8 @@ def parent_methods() -> dict[str, Any]:
             "start_index": 0,
             "sum": OUTLETS,
         },
-        **_energy_methods(sum(outlet_watts(n) for n in outlets)),
+        # A real P316M's own device_info carries no device_on, so python-kasa reads no
+        # energy for the strip itself: only its outlets measure.
     }
 
 
@@ -372,16 +380,44 @@ def answer(request: dict[str, Any], methods: dict[str, Any]) -> dict[str, Any]:
     return {"error_code": _UNKNOWN_METHOD}
 
 
+PROTOCOL = os.getenv("KASA_FAKE_PROTOCOL", "smart")
+
+
+def _iot_emulator() -> Any:
+    """``fake_kasa``, beside this file, as the IOT device behind KLAP."""
+    import importlib.util
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_kasa.py")
+    spec = importlib.util.spec_from_file_location("fake_kasa", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+IOT = _iot_emulator() if PROTOCOL == "iot" else None
+
+
+def reply_to(request: dict[str, Any]) -> dict[str, Any]:
+    """The device's reply to one decrypted request, in its protocol."""
+    if IOT is not None:
+        reply: dict[str, Any] = IOT.handle(request)
+        return reply
+    return answer(request, parent_methods())
+
+
 def discovery_reply(ip: str) -> bytes:
     """The UDP 20002 discovery answer: a 16-byte header, then the JSON result."""
+    iot = IOT is not None
     result = {
-        "device_id": DEVICE_ID,
-        "device_model": MODEL,
-        "device_type": "SMART.TAPOPLUG",
+        "device_id": IOT.DEVICE_ID if iot else DEVICE_ID,
+        "device_model": IOT.MODEL if iot else MODEL,
+        "device_type": "IOT.SMARTPLUGSWITCH" if iot else "SMART.TAPOPLUG",
         "factory_default": False,
         "ip": ip,
         "is_support_iot_cloud": True,
-        "mac": MAC,
+        "mac": IOT.MAC.replace(":", "-") if iot else MAC,
         "mgt_encrypt_schm": {
             "encrypt_type": "KLAP",
             "http_port": HTTP_PORT,
@@ -434,7 +470,7 @@ class KlapServer:
                 return 403, b"", {}
             seq = int(query.get("seq", "0"))
             request = json.loads(session.decrypt(body, seq))
-            reply = json.dumps(answer(request, parent_methods())).encode()
+            reply = json.dumps(reply_to(request)).encode()
             return 200, session.encrypt(reply, seq), {}
         return 404, b"", {}
 
@@ -498,11 +534,25 @@ async def start_http(host: str, port: int) -> asyncio.Server:
 
 async def serve(http_port: int = HTTP_PORT, discovery_port: int = 20002) -> None:
     loop = asyncio.get_running_loop()
-    await loop.create_datagram_endpoint(
+    discovery, _ = await loop.create_datagram_endpoint(
         _Discovery, local_addr=("0.0.0.0", discovery_port), allow_broadcast=True
     )
+    try:
+        await _serve_http(http_port)
+    finally:
+        discovery.close()
+
+
+async def _serve_http(http_port: int) -> None:
     http = await start_http("0.0.0.0", http_port)
-    print(f"fake SMART strip {ALIAS!r} ({MODEL}, {OUTLETS} outlets) on :{http_port}")
+    if IOT is not None:
+        print(
+            f"fake IOT device {IOT.ALIAS!r} ({IOT.MODEL}) behind KLAP on :{http_port}"
+        )
+    else:
+        print(
+            f"fake SMART strip {ALIAS!r} ({MODEL}, {OUTLETS} outlets) on :{http_port}"
+        )
     async with http:
         await http.serve_forever()
 

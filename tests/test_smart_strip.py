@@ -79,9 +79,7 @@ async def test_a_smart_strip_is_read_as_one_with_outlet_energy(strip):
     assert measures_energy(strip)
 
 
-async def test_a_smart_strip_writes_its_total_and_one_point_per_outlet(
-    strip, monkeypatch
-):
+async def test_a_smart_strip_writes_one_point_per_outlet(strip, monkeypatch):
     async def hostname(ip):
         return "strip.lan"
 
@@ -98,15 +96,15 @@ async def test_a_smart_strip_writes_its_total_and_one_point_per_outlet(
 
     assert await poller.process_smart_strip_data("127.0.0.1", strip)
 
-    total, *outlets = written
-    assert total["equipment_type"] == "device"
-    assert total["emeter"]["power_mw"] == sum(20_000 + 5_000 * n for n in range(6))
+    # Like a real P316M, the strip itself measures nothing: only its outlets.
+    outlets = written
     assert [o["plug_id"] for o in outlets] == ["1", "2", "3", "4", "5", "6"]
     assert [o["emeter"]["power_mw"] for o in outlets] == [
         20_000 + 5_000 * n for n in range(6)
     ]
     assert {o["equipment_type"] for o in outlets} == {"plug"}
-    assert {o["device_id"] for o in written} == {total["device_id"]}
+    assert len({o["device_id"] for o in outlets}) == 1
+    assert None not in {o["device_id"] for o in outlets}
     assert outlets[0]["plug_alias"] == "Bench Strip Outlet 1"
 
 
@@ -128,3 +126,52 @@ async def test_the_fake_refuses_a_wrong_login(fake):
             await Device.connect(config=config)
     finally:
         server.close()
+
+
+async def test_an_hs300_behind_klap_is_collected_as_a_strip(monkeypatch):
+    # The firmware-1.1.2 HS300: IOT.SMARTPLUGSWITCH over KLAP v2. python-kasa's
+    # discovery builds an IotPlug for it; the collector's re-class must hand back an
+    # IotStrip with every outlet, or its outlets are never collected.
+    import asyncio
+
+    from kasa import Discover
+
+    from app.collector.kasa_api import KasaAPI
+
+    for name, value in {
+        "KASA_FAKE_USERNAME": USERNAME,
+        "KASA_FAKE_PASSWORD": PASSWORD,
+        "KASA_FAKE_PROTOCOL": "iot",
+        "KASA_FAKE_KIND": "strip",
+        "KASA_FAKE_ALIAS": "KLAP Strip",
+        "KASA_FAKE_HTTP_PORT": "18080",
+    }.items():
+        monkeypatch.setenv(name, value)
+    spec = importlib.util.spec_from_file_location("fake_smart_iot", FAKE)
+    assert spec is not None and spec.loader is not None
+    fake = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fake)
+
+    server = asyncio.create_task(fake.serve())
+    try:
+        await asyncio.sleep(0.2)
+        found = await Discover.discover_single(
+            "127.0.0.1", credentials=Credentials(USERNAME, PASSWORD), timeout=5
+        )
+        assert type(found).__name__ == "IotPlug"  # the discovery path's class
+
+        ready = await KasaAPI.authenticate_discovered_device(found, USERNAME, PASSWORD)
+
+        assert type(ready).__name__ == "IotStrip"
+        assert len(ready.children) == 6
+        await ready.disconnect()
+
+        # The credentialed connection the device manager falls back to, which is how a
+        # discovered KLAP strip is actually reached: discovery enumerates without the
+        # account, so the probe of the discovered object cannot log in.
+        connected = await KasaAPI.get_device("127.0.0.1", USERNAME, PASSWORD)
+        assert type(connected).__name__ == "IotStrip"
+        assert len(connected.children) == 6
+        await connected.disconnect()
+    finally:
+        server.cancel()
