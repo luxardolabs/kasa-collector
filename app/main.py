@@ -70,6 +70,26 @@ def _strip_userinfo(url: str) -> str:
     return urlunsplit(parts._replace(netloc="****@" + parts.netloc.rsplit("@", 1)[1]))
 
 
+_PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
+
+
+def _escaped_forms(secret: str) -> list[str]:
+    """``secret`` as repr() and JSON write it, as text and as UTF-8 bytes.
+
+    repr picks its quote by what the whole string holds, so a secret beside a ``"`` has
+    its own ``'`` written ``\\'``: each form is taken from ``secret`` followed by a ``"``
+    as well as on its own. A non-ASCII secret inside bytes is written ``\\xNN``.
+    """
+    raw = secret.encode("utf-8", "surrogateescape")
+    reprs = [
+        repr(secret)[1:-1],
+        repr(secret + '"')[1:-2],
+        repr(raw)[2:-1],
+        repr(raw + b'"')[2:-2],
+    ]
+    return reprs + [json.dumps(form)[1:-1] for form in [secret, *reprs]]
+
+
 def _secret_values() -> list[str]:
     """Every configured secret as it could appear in a log line, longest first.
 
@@ -84,8 +104,12 @@ def _secret_values() -> list[str]:
         Config.KASA_COLLECTOR_INFLUXDB_TOKEN,
         urlsplit(Config.KASA_COLLECTOR_INFLUXDB_URL or "").password,
     ]
-    # The URL's password as written is percent-encoded; the client sends it decoded.
-    found.append(unquote(found[-1]) if found[-1] else None)
+    # The URL's password as written is percent-encoded; the client sends it decoded, and
+    # yarl writes it back with its escapes in uppercase.
+    url_password = found[-1]
+    if url_password:
+        found.append(unquote(url_password))
+        found.append(_PERCENT_ESCAPE.sub(lambda m: m.group().upper(), url_password))
     if password:
         # Reproduces python-kasa's login hash so it can be scrubbed; it protects nothing.
         # surrogateescape: a setting read from undecodable environment bytes holds lone
@@ -98,7 +122,7 @@ def _secret_values() -> list[str]:
     # holding a backslash or a quote differ from the literal. A traceback prefixes each
     # line of a multi-line value (an ExceptionGroup's `| `), so each line is kept too.
     present = [s for s in found if s]
-    escaped = [repr(s)[1:-1] for s in present] + [json.dumps(s)[1:-1] for s in present]
+    escaped = [form for s in present for form in _escaped_forms(s)]
     lines = [line for s in present for line in s.splitlines()]
     candidates = present + escaped + lines
     kept = {s for s in candidates if len(s.strip()) >= _MIN_SCRUBBED_LEN}
@@ -113,13 +137,17 @@ def _secret_values() -> list[str]:
 # digits is scrubbed as well. The app's own loggers keep theirs: device ids are hex.
 _LIBRARY_LOGGER = "kasa"
 _HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
+# The session token's value in a request URL, whatever its shape: in the query
+# (`token=`, the AES and SSL transports) or in the path (`/stok=…/`, the camera path).
+_SESSION_TOKEN = re.compile(r"(?:\btoken|\bstok)=([^&/\s'\"<>;,)]+)")
 # The parts of a line the logging module renders from the record itself; the caller's
 # `extra=` fields reach the redactor separately and carry no logger.
 _RENDERED_FIELDS = ("message", "exception", "stack")
 
 
 def _scrubbed(text: str, secrets: list[str], hex_runs: bool) -> str:
-    """`text` with every secret occurrence (and, if asked, every long hex run) as `****`.
+    """`text` with every secret occurrence as `****`; with ``hex_runs`` (a python-kasa
+    line), every long hex run and every session token value as well.
 
     All spans are found on the original text and merged where they overlap or touch, then
     each merged span is replaced once. Replacing one pattern at a time would let the first
@@ -127,6 +155,8 @@ def _scrubbed(text: str, secrets: list[str], hex_runs: bool) -> str:
     cut the run below the length that marks it, and two overlapping secrets would leave the
     second one's tail.
     """
+    # A str subclass's own methods never run: the formatter must write plain text.
+    text = str.__str__(text)
     spans: list[tuple[int, int]] = []
     for secret in secrets:
         start = text.find(secret)
@@ -135,6 +165,7 @@ def _scrubbed(text: str, secrets: list[str], hex_runs: bool) -> str:
             start = text.find(secret, start + 1)
     if hex_runs:
         spans += [m.span() for m in _HEX_RUN.finditer(text)]
+        spans += [m.span(1) for m in _SESSION_TOKEN.finditer(text)]
     if not spans:
         return text
     spans.sort()
@@ -153,30 +184,60 @@ def _scrubbed(text: str, secrets: list[str], hex_runs: bool) -> str:
     return "".join(pieces)
 
 
-# Past this depth a field is written as its scrubbed repr: a self-referencing or very
+# Past this depth a field is written as its scrubbed text: a self-referencing or very
 # deep structure would otherwise make the redactor raise, and the line be lost.
 _MAX_FIELD_DEPTH = 20
+# Past this many values walked in one field, the rest are written as a placeholder: a
+# structure sharing its children (`[x] * 3`, twenty deep) is small in memory but would
+# take hours to walk.
+_MAX_FIELD_NODES = 10_000
+_ELIDED = "<…>"
 
 
-def _unique_key(key: str, taken: Mapping[str, Any]) -> str:
-    """`key`, or `key#2`, `key#3` …: two keys that scrub alike must not drop a value."""
-    candidate, n = key, 1
-    while candidate in taken:
-        n += 1
-        candidate = f"{key}#{n}"
-    return candidate
+class _KeyMaker:
+    """Text keys for one mapping: ``key``, or ``key#2``, ``key#3`` … when two keys scrub
+    alike, so neither value is dropped. Each base remembers its last number, so many keys
+    that scrub alike take linear time."""
+
+    def __init__(self, secrets: list[str]) -> None:
+        self.secrets = secrets
+        self.taken: set[str] = set()
+        self.last: dict[str, int] = {}
+
+    def __call__(self, key: Any) -> str:
+        base = _scrubbed(_plain_text(key), self.secrets, hex_runs=False)
+        candidate, n = base, self.last.get(base, 1)
+        if n > 1:
+            candidate = f"{base}#{n}"
+        while candidate in self.taken:
+            n += 1
+            candidate = f"{base}#{n}"
+        self.last[base] = n
+        self.taken.add(candidate)
+        return candidate
 
 
 def _scrubbed_value(
-    value: Any, secrets: list[str], depth: int = 0, seen: frozenset[int] = frozenset()
+    value: Any,
+    secrets: list[str],
+    depth: int = 0,
+    seen: frozenset[int] = frozenset(),
+    budget: list[int] | None = None,
 ) -> Any:
     """A field's value with every secret scrubbed, at any depth.
 
     A field the caller passes (`extra=`, bound context) may be any object, and the
     formatter writes its str, repr or JSON after the redactor has run. So only plain
     numbers, booleans and None pass as they are; containers are walked (their keys made
-    strings), bytes are decoded, and anything else is scrubbed as its text.
+    strings), bytes are decoded, and anything else is scrubbed as its text. A container
+    that cannot be walked is written as its scrubbed text, and past
+    ``_MAX_FIELD_NODES`` values the rest of the field as ``<…>``.
     """
+    if budget is None:
+        budget = [_MAX_FIELD_NODES]
+    if budget[0] <= 0:
+        return _ELIDED
+    budget[0] -= 1
     # Exact types only: a subclass's str() is its own code, and may carry anything.
     if value is None or type(value) in (bool, int, float):
         return value
@@ -188,13 +249,22 @@ def _scrubbed_value(
     walkable = isinstance(value, Mapping | list | tuple | set | frozenset)
     if walkable and depth < _MAX_FIELD_DEPTH and id(value) not in seen:
         inner = seen | {id(value)}
-        if isinstance(value, Mapping):
-            out: dict[str, Any] = {}
-            for k, v in value.items():
-                key = _unique_key(_scrubbed(str(k), secrets, hex_runs=False), out)
-                out[key] = _scrubbed_value(v, secrets, depth + 1, inner)
-            return out
-        return [_scrubbed_value(item, secrets, depth + 1, inner) for item in value]
+        # swallowed-exceptions: a container whose own iteration or item access raises is
+        # a field on a line being written, inside the redactor, which cannot log without
+        # recursing; writing its scrubbed text instead is the handling.
+        try:
+            if isinstance(value, Mapping):
+                key_for = _KeyMaker(secrets)
+                return {
+                    key_for(k): _scrubbed_value(v, secrets, depth + 1, inner, budget)
+                    for k, v in value.items()
+                }
+            return [
+                _scrubbed_value(item, secrets, depth + 1, inner, budget)
+                for item in value
+            ]
+        except Exception:
+            pass
     return _scrubbed(_plain_text(value), secrets, hex_runs=False)
 
 
@@ -224,12 +294,13 @@ def _redactor(secrets: list[str]) -> Callable[[dict[str, Any]], dict[str, Any]]:
             f"{_LIBRARY_LOGGER}."
         )
         out: dict[str, Any] = {}
+        key_for = _KeyMaker(secrets)
         for key, value in part.items():
             if isinstance(value, str) and library and key in _RENDERED_FIELDS:
                 value = _scrubbed(value, secrets, hex_runs=True)
             else:
                 value = _scrubbed_value(value, secrets)
-            out[_unique_key(_scrubbed(str(key), secrets, hex_runs=False), out)] = value
+            out[key_for(key)] = value
         return out
 
     return scrub

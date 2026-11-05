@@ -472,3 +472,137 @@ def test_a_percent_encoded_influxdb_url_password_is_scrubbed_decoded(log_with):
     out = buffer.getvalue()
     assert "auth ****" in out
     assert "urlPw9" not in out
+
+
+def test_a_quote_secret_beside_a_double_quote_is_scrubbed(log_with):
+    # repr writes the secret's ' as \' once the same string also holds a ".
+    password = "".join(["Qz7'", "Kp9wXv"])
+    buffer = log_with(KASA_COLLECTOR_TPLINK_PASSWORD=password)
+    logging.getLogger("KasaAPI").warning("said %r", f'{password} said "hi"')
+
+    out = buffer.getvalue()
+    assert "said" in out
+    assert "Kp9wXv" not in out
+
+
+def test_a_non_ascii_secret_in_logged_bytes_repr_is_scrubbed(log_with):
+    password = "".join(["Grüß", "e2026!x"])
+    buffer = log_with(KASA_COLLECTOR_TPLINK_PASSWORD=password)
+    logging.getLogger("kasa.transports.klaptransport").warning(
+        "payload %r", password.encode("utf-8")
+    )
+
+    out = buffer.getvalue()
+    assert "payload" in out
+    assert "2026!x" not in out
+
+
+def test_a_url_password_requoted_in_uppercase_is_scrubbed(log_with):
+    buffer = log_with(
+        KASA_COLLECTOR_INFLUXDB_URL="http://admin:Fake%2furlPw9@influx.invalid:8086"
+    )
+    logging.getLogger("InfluxDBStorage").warning(
+        "connecting to %s", "http://admin:Fake%2FurlPw9@influx.invalid:8086"
+    )
+
+    out = buffer.getvalue()
+    assert "connecting to" in out
+    assert "urlPw9" not in out
+
+
+def test_a_str_subclass_field_is_written_as_its_plain_text(log_with):
+    class Sneaky(str):
+        def __str__(self):
+            return PASSWORD
+
+    buffer = log_with()
+    logging.getLogger("KasaCollector").warning(
+        "note", extra={"note": Sneaky("benign-note")}
+    )
+
+    out = buffer.getvalue()
+    assert "benign-note" in out
+    _assert_no_window(out, [PASSWORD])
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://192.0.2.5/app?token=Ab3-short_TOKEN&seq=1",
+        "https://192.0.2.5:443/stok=Ab3-short_TOKEN/ds",
+    ],
+)
+def test_a_session_token_of_any_shape_is_scrubbed_from_a_request_url(log_with, url):
+    buffer = log_with()
+    logging.getLogger("kasa").setLevel(logging.DEBUG)
+    try:
+        logging.getLogger("kasa.httpclient").debug("Posting to %s", url)
+    finally:
+        logging.getLogger("kasa").setLevel(logging.WARNING)
+
+    out = buffer.getvalue()
+    assert "Posting to" in out
+    assert "short_TOKEN" not in out
+
+
+def test_a_field_key_whose_str_raises_keeps_the_line(log_with):
+    class BadKey:
+        def __str__(self):
+            raise RuntimeError("no text")
+
+        def __repr__(self):
+            return "BadKey()"
+
+    buffer = log_with()
+    logging.getLogger("KasaCollector").warning("odd", extra={"map": {BadKey(): 1}})
+
+    out = buffer.getvalue()
+    assert "odd" in out
+    assert "redactor failed" not in out
+
+
+def test_a_field_whose_iteration_raises_keeps_the_line(log_with):
+    class Broken(list):
+        def __iter__(self):
+            raise RuntimeError("cannot iterate")
+
+    buffer = log_with()
+    logging.getLogger("KasaCollector").warning(
+        "broken", extra={"items": Broken([PASSWORD])}
+    )
+
+    out = buffer.getvalue()
+    assert "broken" in out
+    assert "redactor failed" not in out
+    _assert_no_window(out, [PASSWORD])
+
+
+def test_a_field_sharing_its_children_is_walked_in_bounded_time(log_with):
+    import time
+
+    shared: object = "leaf"
+    for _ in range(20):
+        shared = [shared] * 3  # 3**20 paths, 21 distinct objects
+
+    buffer = log_with()
+    started = time.monotonic()
+    logging.getLogger("KasaCollector").warning("deep", extra={"tree": shared})
+
+    assert time.monotonic() - started < 5
+    assert "deep" in buffer.getvalue()
+
+
+def test_many_keys_that_scrub_alike_are_named_in_linear_time(log_with):
+    import time
+
+    class Same:  # distinct keys with one text, as many objects of one kind would be
+        def __str__(self):
+            return "same"
+
+    payload = {Same(): i for i in range(20_000)}
+    buffer = log_with()
+    started = time.monotonic()
+    logging.getLogger("KasaCollector").warning("keys", extra={"payload": payload})
+
+    assert time.monotonic() - started < 1
+    assert "keys" in buffer.getvalue()
