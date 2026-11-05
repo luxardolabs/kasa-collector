@@ -28,7 +28,7 @@ import re
 import signal
 from collections.abc import Callable, Mapping
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from app.collector.device_manager import DeviceManager
 from app.collector.kasa_compat import verify_still_needed
@@ -84,6 +84,8 @@ def _secret_values() -> list[str]:
         Config.KASA_COLLECTOR_INFLUXDB_TOKEN,
         urlsplit(Config.KASA_COLLECTOR_INFLUXDB_URL or "").password,
     ]
+    # The URL's password as written is percent-encoded; the client sends it decoded.
+    found.append(unquote(found[-1]) if found[-1] else None)
     if password:
         # Reproduces python-kasa's login hash so it can be scrubbed; it protects nothing.
         # surrogateescape: a setting read from undecodable environment bytes holds lone
@@ -151,24 +153,65 @@ def _scrubbed(text: str, secrets: list[str], hex_runs: bool) -> str:
     return "".join(pieces)
 
 
-def _scrubbed_value(value: Any, secrets: list[str]) -> Any:
+# Past this depth a field is written as its scrubbed repr: a self-referencing or very
+# deep structure would otherwise make the redactor raise, and the line be lost.
+_MAX_FIELD_DEPTH = 20
+
+
+def _unique_key(key: str, taken: Mapping[str, Any]) -> str:
+    """`key`, or `key#2`, `key#3` …: two keys that scrub alike must not drop a value."""
+    candidate, n = key, 1
+    while candidate in taken:
+        n += 1
+        candidate = f"{key}#{n}"
+    return candidate
+
+
+def _scrubbed_value(
+    value: Any, secrets: list[str], depth: int = 0, seen: frozenset[int] = frozenset()
+) -> Any:
     """A field's value with every secret scrubbed, at any depth.
 
-    A field the caller passes (`extra=`, bound context) may be a dict, a list, a tuple, a
-    set or bytes, and the formatter writes its repr or its JSON, keys included.
+    A field the caller passes (`extra=`, bound context) may be any object, and the
+    formatter writes its str, repr or JSON after the redactor has run. So only plain
+    numbers, booleans and None pass as they are; containers are walked (their keys made
+    strings), bytes are decoded, and anything else is scrubbed as its text.
     """
+    # Exact types only: a subclass's str() is its own code, and may carry anything.
+    if value is None or type(value) in (bool, int, float):
+        return value
     if isinstance(value, str):
         return _scrubbed(value, secrets, hex_runs=False)
     if isinstance(value, bytes | bytearray):
-        return _scrubbed(repr(bytes(value)), secrets, hex_runs=False)
-    if isinstance(value, Mapping):
-        return {
-            _scrubbed_value(k, secrets): _scrubbed_value(v, secrets)
-            for k, v in value.items()
-        }
-    if isinstance(value, list | tuple | set | frozenset):
-        return [_scrubbed_value(item, secrets) for item in value]
-    return value
+        text = bytes(value).decode("utf-8", "surrogateescape")
+        return _scrubbed(text, secrets, hex_runs=False)
+    walkable = isinstance(value, Mapping | list | tuple | set | frozenset)
+    if walkable and depth < _MAX_FIELD_DEPTH and id(value) not in seen:
+        inner = seen | {id(value)}
+        if isinstance(value, Mapping):
+            out: dict[str, Any] = {}
+            for k, v in value.items():
+                key = _unique_key(_scrubbed(str(k), secrets, hex_runs=False), out)
+                out[key] = _scrubbed_value(v, secrets, depth + 1, inner)
+            return out
+        return [_scrubbed_value(item, secrets, depth + 1, inner) for item in value]
+    return _scrubbed(_plain_text(value), secrets, hex_runs=False)
+
+
+def _plain_text(value: Any) -> str:
+    """`value` as text for a log line; an object whose str and repr both raise is named
+    by its type, so a field never costs the line."""
+    # swallowed-exceptions: the text of a field on a line being written, inside the
+    # redactor, which cannot log without recursing; falling back to repr is the handling.
+    try:
+        return str(value)
+    except Exception:
+        pass
+    # swallowed-exceptions: as above; naming the type is the last fallback.
+    try:
+        return repr(value)
+    except Exception:
+        return f"<{type(value).__qualname__}>"
 
 
 def _redactor(secrets: list[str]) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -186,7 +229,7 @@ def _redactor(secrets: list[str]) -> Callable[[dict[str, Any]], dict[str, Any]]:
                 value = _scrubbed(value, secrets, hex_runs=True)
             else:
                 value = _scrubbed_value(value, secrets)
-            out[_scrubbed(key, secrets, hex_runs=False)] = value
+            out[_unique_key(_scrubbed(str(key), secrets, hex_runs=False), out)] = value
         return out
 
     return scrub

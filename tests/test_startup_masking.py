@@ -399,3 +399,76 @@ def test_a_password_holding_a_lone_surrogate_still_starts_logging(log_with):
     logging.getLogger("KasaCollector").warning("started")
 
     assert "started" in buffer.getvalue()
+
+
+def test_a_secret_inside_an_object_field_is_scrubbed(log_with):
+    # The formatter writes an object field's str after the redactor has run.
+    buffer = log_with()
+    logging.getLogger("KasaCollector").warning(
+        "failed",
+        extra={
+            "err": RuntimeError(f"login failed for {PASSWORD}"),
+            "nested": {"err": RuntimeError(f"token {TOKEN}")},
+        },
+    )
+
+    out = buffer.getvalue()
+    assert "login failed for ****" in out
+    _assert_no_window(out, [PASSWORD, TOKEN])
+
+
+def test_a_non_ascii_secret_in_a_bytes_field_is_scrubbed(log_with):
+    password = "".join(["Grüß", "e2026!x"])
+    buffer = log_with(KASA_COLLECTOR_TPLINK_PASSWORD=password)
+    logging.getLogger("KasaCollector").warning(
+        "raw", extra={"raw": password.encode("utf-8")}
+    )
+
+    out = buffer.getvalue()
+    assert "e2026!x" not in out
+    assert "\\xc3" not in out
+
+
+def test_a_tuple_key_in_a_field_keeps_the_line(log_with):
+    buffer = log_with()
+    logging.getLogger("KasaCollector").warning(
+        "grid", extra={"cells": {(1, 2): "a", frozenset({3}): "b"}}
+    )
+
+    out = buffer.getvalue()
+    assert "grid" in out
+    assert "redactor failed" not in out
+
+
+def test_a_self_referencing_field_keeps_the_line(log_with):
+    buffer = log_with()
+    loop: dict[str, object] = {"name": "loop"}
+    loop["self"] = loop
+    logging.getLogger("KasaCollector").warning("cyclic", extra={"loop": loop})
+
+    out = buffer.getvalue()
+    assert "cyclic" in out
+    assert "redactor failed" not in out
+
+
+def test_keys_that_scrub_alike_keep_both_values(log_with):
+    buffer = log_with()
+    logging.getLogger("KasaCollector").warning(
+        "keys",
+        extra={"payload": {f"pw={PASSWORD}": "first", "pw=****": "second"}},
+    )
+
+    out = buffer.getvalue()
+    assert "first" in out and "second" in out
+
+
+def test_a_percent_encoded_influxdb_url_password_is_scrubbed_decoded(log_with):
+    decoded = "".join(["Fake@", "urlPw9"])
+    buffer = log_with(
+        KASA_COLLECTOR_INFLUXDB_URL="http://admin:Fake%40urlPw9@influx.invalid:8086"
+    )
+    logging.getLogger("InfluxDBStorage").warning("auth %s", decoded)
+
+    out = buffer.getvalue()
+    assert "auth ****" in out
+    assert "urlPw9" not in out
