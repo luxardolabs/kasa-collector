@@ -38,7 +38,7 @@ FAKE_IMAGE := kasa-collector-fake:test
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.339.5
+LUXARCH_VERSION  := 0.342.0
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
@@ -2142,7 +2142,7 @@ TEST_ENV := -e KASA_COLLECTOR_INFLUXDB_URL=http://kasa_test_influxdb:8086 \
             -e KASA_COLLECTOR_INFLUXDB_TOKEN=kasa-test-token \
             -e KASA_COLLECTOR_INFLUXDB_ORG=kasa -e KASA_COLLECTOR_INFLUXDB_BUCKET=kasa
 
-# luxarch:test-block asset v12 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
+# luxarch:test-block asset v13 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
 # ── Test: THE suite, in the test image, against an isolated stack of real services ───────────────
 # Emitted by `luxarch --emit test-block`; paste below the build core (`luxarch --emit build-core`, v4:
 # it builds with the core's `img_*` helpers and TEST_IMAGE, and the repo's BUILD_ARGS, and quotes every
@@ -2431,7 +2431,7 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	co=$(call sq,$(CURDIR)); ns=$$(readlink /proc/self/ns/pid 2>/dev/null || echo none); host=$$(hostname); \
 	machine=$$(cat /etc/machine-id 2>/dev/null); [ -n "$$machine" ] || machine=$$(ioreg -rd1 -c IOPlatformExpertDevice 2>/dev/null | sed -n 's/.*"IOPlatformUUID" = "\([^"]*\)".*/\1/p'); [ -n "$$machine" ] || machine=$$host; \
 	boot=$$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || sysctl -n kern.bootsessionuuid 2>/dev/null || echo "$$machine"); \
-	$(if $(value guard_slot),,$(error REFUSING: the suite holds a heavy-job slot from the guard-run block (v4), which this makefile does not define: paste luxarch --emit guard-run above it))if [ -n $(call sq,$(if $(filter default,$(origin MAKECMDGOALS)),$(if $(filter test,$(MAKECMDGOALS)),,$(if $(filter test-fast,$(MAKECMDGOALS)),1)))) ] && case "$${PYTEST_ARGS:-}" in (*[![:space:]]*) true;; (*) false;; esac; then :; else $(guard_slot); fi; \
+	$(if $(value guard_slot),,$(error REFUSING: the suite holds a heavy-job slot from the guard-run block (v4), which this makefile does not define: paste luxarch --emit guard-run above it))$(if $(value guard_caps),,$(error REFUSING: the suite runs under the guard-run block's memory and CPU caps (v6), which this makefile does not define: re-emit luxarch --emit guard-run above it))if [ -n $(call sq,$(if $(filter default,$(origin MAKECMDGOALS)),$(if $(filter test,$(MAKECMDGOALS)),,$(if $(filter test-fast,$(MAKECMDGOALS)),1)))) ] && case "$${PYTEST_ARGS:-}" in (*[![:space:]]*) true;; (*) false;; esac; then :; else $(guard_slot); fi; \
 	D=$$(mktemp -d "$${TMPDIR:-/tmp}/luxarch-test.XXXXXXXXXXXX") || { echo "REFUSING: could not make this run's directory"; exit 2; }; \
 	tok=$$(basename "$$D" | sed 's/^luxarch-test\.//' | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'); \
 	[ $${#tok} -ge 8 ] || { echo "REFUSING: could not make a unique name for this run"; rm -rf "$$D"; exit 2; }; \
@@ -2504,7 +2504,7 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	      [ "$$(docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' $$n)" = "$$p" ] && { net=$$n; break; }; done; \
 	    [ -n "$$net" ] || { printf 'FAIL  %s joined no network of this run'"'"'s own project (%s)\n' $(call sq,$(firstword $(call test_suite,$(s),SERVICES))) "$$p"; exit 1; }; \
 	    net="--network $$net"; fi; \
-	  bg docker run --rm --init $$lab --label "luxarch.test-block.checkout=$$co" -e TINI_KILL_PROCESS_GROUP=1 $$net $(call sqw,$(call test_suite,$(s),ENV)) -e PYTEST_ADDOPTS="$${PYTEST_ARGS:-}" -e LUXARCH_TEST_RUN="$$tok" -e LUXARCH_TEST_MIGRATIONS="$$mig" -e LUXARCH_TEST_FAST="$$fast" \
+	  bg docker run --rm --init $(guard_caps) $$lab --label "luxarch.test-block.checkout=$$co" -e TINI_KILL_PROCESS_GROUP=1 $$net $(call sqw,$(call test_suite,$(s),ENV)) -e PYTEST_ADDOPTS="$${PYTEST_ARGS:-}" -e LUXARCH_TEST_RUN="$$tok" -e LUXARCH_TEST_MIGRATIONS="$$mig" -e LUXARCH_TEST_FAST="$$fast" \
 	    -e LUXARCH_TEST_COV=$(call sq,$(call test_suite,$(s),COV)) -e LUXARCH_TEST_OMIT="$$omit" -e COVERAGE_CORE=sysmon -e COVERAGE_FILE=/out/.coverage -e PYTHONDONTWRITEBYTECODE=1 \
 	    -v $(call sq,$(CURDIR)):/repo:ro $$mnt -v "$$D/cfg":/cfg:ro -v "$$out":/out -w /repo/$(call sq,$(call test_suite,$(s),WORKDIR)) "$$img" \
 	    sh -c 'm=$${LUXARCH_TEST_MIGRATIONS:-}; o=$${LUXARCH_TEST_OMIT:-}; unset LUXARCH_TEST_DB_REFUSALS LUXARCH_TEST_DB_TARGET; p=; if [ -e luxarch_test_db ]; then PYTHONPATH="$$PWD/luxarch_test_db/children$${PYTHONPATH:+:$$PYTHONPATH}"; PYTHONPYCACHEPREFIX=/tmp/luxarch-pycache; export PYTHONPATH PYTHONPYCACHEPREFIX; p=1; fi; LUXARCH_TEST_DB_SCOPE=suite python -m coverage run --branch --source="$$LUXARCH_TEST_COV" $${o:+"--omit=$$o"} -m pytest -c /cfg/pytest.ini --rootdir=. -p no:cacheprovider $${p:+-p luxarch_test_db.identity -p luxarch_test_db.bound} $${m:+"--ignore=$$m"}; s=$$?; if [ -n "$$m" ] && [ -z "$${LUXARCH_TEST_FAST:-}" ]; then PYTEST_ADDOPTS= LUXARCH_TEST_DB_SCOPE=server python -m coverage run --append --branch --source="$$LUXARCH_TEST_COV" $${o:+"--omit=$$o"} -m pytest -c /cfg/pytest.ini --rootdir=. -p no:cacheprovider $${p:+-p luxarch_test_db.identity} --confcutdir="$$m" "$$m"; ms=$$?; [ "$$ms" = 0 ] || echo "FAIL  the migration tests in $$m failed (exit $$ms)"; [ "$$s" != 0 ] || s=$$ms; fi; python -m coverage report --show-missing --precision=2 > /out/coverage.txt; echo $$? > /out/coverage.rc; python -m coverage json -q -o - > /out/coverage.json; cat /out/coverage.txt; exit $$s'; \
@@ -2540,7 +2540,7 @@ arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml)
 # `|| true` because --json exits non-zero on a red repo — the verdict is IN the JSON, and a
 # red repo still has a valid, committable status. `set -e` so a failed/empty stamp ABORTS
 # rather than printing a false "wrote". See luxarch --doc FLEET-STATUS.
-# luxarch:guard-run asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
+# luxarch:guard-run asset v6 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
 # ── GUARD_RUN: how every guard sees this checkout ───────────────────────────────────────────────────
 # Emitted by `luxarch --emit guard-run`; paste it above the targets that run the guards (`status:`, and
 # `arch:` / `lint:` / `audit:` where they run a guard image).
@@ -2585,7 +2585,7 @@ unexport CURDIR GUARD_MAIN GUARD_HERE GUARD_PWD GUARD_RUN guard_same guard_dry
 override GUARD_HERE := $(shell set -- $(foreach w,$(MAKEFILE_LIST),'$(subst ','\'',$(w))'); p=; for w do p="$${p:+$$p }$$w"; if [ -f "$$p" ]; then h=$$(cd -P -- "$$(dirname -- "$$p")" && pwd -P); fi; done; printf '%s\n' "$$h")
 override GUARD_PWD := $(shell pwd -P)
 $(if $(and $(filter command,$(origin CURDIR)),$(or $(filter 0,$(MAKELEVEL)),$(guard_dry))),,$(if $(and $(GUARD_HERE),$(call guard_same,$(GUARD_HERE),$(GUARD_PWD)),$(call guard_same,$(GUARD_HERE),$(CURDIR))),,$(if $(filter environment%,$(origin GUARD_MAIN)),$(error REFUSING: GUARD_MAIN comes from the environment, so the caller chose a tree to mount: unset it))$(error REFUSING: make runs in $(GUARD_PWD) (CURDIR $(CURDIR)), not in this makefile's directory $(or $(GUARD_HERE),(not found)), so every guard would read the wrong tree: run make -C <the makefile's directory>)))
-override GUARD_RUN = guard_slot_run() ( $(guard_slot_body) exec "$$@" ); guard_slot_run $(guard_slot_vals) docker run --rm -v '$(subst ','\'',$(CURDIR))':/repo $(if $(GUARD_MAIN),$(if $(call guard_same,$(CURDIR),$(GUARD_MAIN)),,-v '$(subst ','\'',$(GUARD_MAIN))':'$(subst ','\'',$(GUARD_MAIN))':ro))
+override GUARD_RUN = guard_slot_run() ( $(guard_slot_body) $(guard_capped) ); guard_slot_run $(guard_slot_vals) docker run --rm $(guard_caps) -v '$(subst ','\'',$(CURDIR))':/repo $(if $(GUARD_MAIN),$(if $(call guard_same,$(CURDIR),$(GUARD_MAIN)),,-v '$(subst ','\'',$(GUARD_MAIN))':'$(subst ','\'',$(GUARD_MAIN))':ro))
 #
 # ── Heavy-job slots (v5): at most HEAVY_SLOTS heavy jobs run on this machine at once ─────────────────
 # A full guard scan, the full gate (`make check`) and the full test suite each hold one slot for as long
@@ -2652,7 +2652,23 @@ override GUARD_RUN = guard_slot_run() ( $(guard_slot_body) exec "$$@" ); guard_s
 # slot.
 HEAVY_SLOTS ?= 3
 HEAVY_SLOT_DIR ?= /var/tmp/fleet-heavy-slots
-unexport HEAVY_SLOTS HEAVY_SLOT_DIR guard_slot guard_slot_vals guard_slot_body
+# ── Heavy-job caps: how much of the machine one guard or test container may take ────────────────────
+# Every guard run (and the test block's suite) runs with `--memory=HEAVY_MEMORY` (swap included, so it
+# cannot spill). Without it one run that grows (a full scan of a large repo reached 5-7 GB) shares the
+# Docker VM's memory with the app and its database, and when the VM runs out the kernel's OOM killer
+# picks whichever it likes: on one Mac it took the app and Postgres. Capped, a run that hits its own
+# limit is the one killed, exit 137, and it says so. Machine configuration, like HEAVY_SLOTS, set in
+# Makefile.local; unset, it is two thirds of the Docker VM's memory shared among HEAVY_SLOTS (`docker
+# info`; 6 GiB on a 27 GiB Docker Desktop VM), or 6g where docker cannot say. HEAVY_CPUS, when set,
+# adds `--cpus`; unset there is no CPU cap (a suite that sizes its workers from the host's cores, as
+# pytest-xdist's `-n auto` does, would run them all inside the quota).
+# (recursive, so `docker info` runs only when a capped run expands it, never on every parse)
+HEAVY_MEMORY ?= $(or $(shell docker info --format '{{.MemTotal}}' 2>/dev/null | awk -v n='$(HEAVY_SLOTS)' '$$1 ~ /^[0-9]+$$/ { n += 0; if (n < 1) n = 3; m = int($$1 * 2 / 3 / n / 1048576); if (m < 1024) m = 1024; print m "m"; exit }'),6g)
+HEAVY_CPUS ?=
+unexport HEAVY_SLOTS HEAVY_SLOT_DIR HEAVY_MEMORY HEAVY_CPUS guard_slot guard_slot_vals guard_slot_body guard_caps guard_capped
+override guard_caps = $(foreach v,HEAVY_MEMORY HEAVY_CPUS,$(if $(filter environment% command,$(origin $(v))),$(error REFUSING: $(v) comes from the $(origin $(v)), so the caller chose how much of this machine one heavy job may take: set it in Makefile.local)))--memory='$(subst ','\'',$(HEAVY_MEMORY))' --memory-swap='$(subst ','\'',$(HEAVY_MEMORY))'$(if $(HEAVY_CPUS), --cpus='$(subst ','\'',$(HEAVY_CPUS))')
+# the run, then its exit: 137 is a SIGKILL, which for a capped container is almost always its own limit
+override guard_capped = gs_rc=0; "$$@" || gs_rc=$$?; [ "$$gs_rc" != 137 ] || echo "$$gs_job: the container was killed (exit 137), most likely at its memory cap (HEAVY_MEMORY $(HEAVY_MEMORY)): raise HEAVY_MEMORY in Makefile.local, or lower HEAVY_SLOTS so the machine has room" >&2; exit "$$gs_rc"
 override guard_slot_vals = $(foreach v,HEAVY_SLOTS HEAVY_SLOT_DIR,$(if $(filter environment% command,$(origin $(v))),$(error REFUSING: $(v) comes from the $(origin $(v)), so the caller chose how many heavy jobs this machine runs at once: set it in Makefile.local)))$(if $(filter --eval=%,$(MAKEFLAGS)),$(error REFUSING: --eval adds makefile text from the command line, which could choose the heavy-job slots: put it in Makefile.local))$(if $(guard_dry),,$(if $(filter -I% --include-dir%,$(filter-out $(MAKEOVERRIDES),$(MAKEFLAGS))),$(error REFUSING: -I lets make read a Makefile.local from another directory, which could choose the heavy-job slots: run without it)))'$(subst ','\'',$(HEAVY_SLOT_DIR))' '$(subst ','\'',$(HEAVY_SLOTS))' '$(subst ','\'',make $@ in $(CURDIR))'
 override guard_slot = $(if $(guard_dry),:,set -- $(guard_slot_vals); $(guard_slot_body) :)
 override guard_slot_body = gs_d=$$1 gs_n=$$2 gs_job=$$3; shift 3; \
