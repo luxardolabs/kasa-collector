@@ -344,9 +344,7 @@ class KasaCollector:
             # The poller reports every device that answers back to the device manager,
             # so discovery cannot prune a host we are still collecting from.
             self.poller = Poller(
-                self.logger,
-                on_reachable=self.device_manager.mark_reachable,
-                on_stale=self.device_manager.retire,
+                self.logger, on_reachable=self.device_manager.mark_reachable
             )
         except SystemExit:
             # Poller/InfluxDBStorage already logged detailed error messages
