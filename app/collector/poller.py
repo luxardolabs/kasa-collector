@@ -247,8 +247,14 @@ class Poller:
         device: Device,
         outcome: dict[str, int],
         label: str,
+        interval: float,
     ) -> None:
         """Run one device fetch, recording the outcome without aborting siblings.
+
+        The fetch, its retries included, has 80% of the cycle's ``interval``: the cycle
+        waits for every device, so one host that never answers would otherwise hold
+        every healthy device's next sample back by its whole retry backoff. A fetch
+        that runs out of time is ``failed``.
 
         Per-device failures (after ``async_retry`` is exhausted) are swallowed and
         counted, so a single unreachable device can't cancel the rest of the cycle's
@@ -263,7 +269,8 @@ class Poller:
         still reachable: the fault is the device's, not InfluxDB's.
         """
         try:
-            stored = await fetch(ip, device)
+            async with asyncio.timeout(interval * 0.8):
+                stored = await fetch(ip, device)
             # The device ANSWERED. Record that before splitting on whether the write
             # landed: `write_failed` is an InfluxDB problem, not a device problem, and
             # a device that is talking to us must not be pruned as missing.
@@ -283,6 +290,15 @@ class Poller:
             outcome["failed"] += 1
             self.logger.warning(
                 "%s polled %s but its reading could not be collected: %s", label, ip, e
+            )
+        except TimeoutError:
+            # NOT reachable: it did not answer within the cycle's time.
+            outcome["failed"] += 1
+            self.logger.warning(
+                "%s for %s did not finish within %.0f seconds",
+                label,
+                ip,
+                interval * 0.8,
             )
         except Exception as e:
             # Deliberately NOT reachable: the fetch raised after retries, so we have no
@@ -326,6 +342,7 @@ class Poller:
                                 device,
                                 outcome,
                                 "emeter fetch",
+                                Config.KASA_COLLECTOR_DATA_FETCH_INTERVAL,
                             )
                         )
             except* Exception as eg:
@@ -435,6 +452,7 @@ class Poller:
                                 device,
                                 outcome,
                                 "sysinfo fetch",
+                                Config.KASA_COLLECTOR_SYSINFO_FETCH_INTERVAL,
                             )
                         )
             except* Exception as eg:

@@ -483,7 +483,7 @@ class TestPollerReportsReachability:
         async def ok(ip, device):
             return True
 
-        await poller._fetch_counted(ok, "10.0.0.1", None, {"ok": 0}, "emeter fetch")
+        await poller._fetch_counted(ok, "10.0.0.1", None, {"ok": 0}, "emeter fetch", 15)
         assert seen == ["10.0.0.1"]
 
     async def test_influx_write_failure_still_reports_reachable(self):
@@ -499,6 +499,7 @@ class TestPollerReportsReachability:
             None,
             {"ok": 0, "write_failed": 0},
             "emeter fetch",
+            15,
         )
         assert seen == ["10.0.0.1"]
 
@@ -510,7 +511,7 @@ class TestPollerReportsReachability:
             raise ConnectionError("device unreachable")
 
         await poller._fetch_counted(
-            boom, "10.0.0.2", None, {"ok": 0, "failed": 0}, "emeter fetch"
+            boom, "10.0.0.2", None, {"ok": 0, "failed": 0}, "emeter fetch", 15
         )
         assert seen == []
 
@@ -530,11 +531,45 @@ class TestFetchCounted:
         async def boom(ip, device):
             raise ConnectionError("device unreachable")
 
-        await poller._fetch_counted(ok, "10.0.0.1", None, outcome, "emeter fetch")
+        await poller._fetch_counted(ok, "10.0.0.1", None, outcome, "emeter fetch", 15)
         # A failing device is counted, not re-raised — so siblings keep going.
-        await poller._fetch_counted(boom, "10.0.0.2", None, outcome, "emeter fetch")
+        await poller._fetch_counted(boom, "10.0.0.2", None, outcome, "emeter fetch", 15)
 
         assert outcome == {"ok": 1, "failed": 1}
+
+    async def test_a_device_that_never_answers_cannot_hold_the_cycle_back(self):
+        # The cycle waits for every device, so a dead host's retry backoff would delay
+        # every healthy device's next sample; each fetch gets 80% of the interval.
+        import asyncio
+        import time
+
+        from app.collector.poller import Poller
+
+        poller = object.__new__(Poller)
+        poller.logger = logging.getLogger("test")
+        poller.on_reachable = None
+        outcome = {"ok": 0, "failed": 0, "write_failed": 0}
+        interval = 0.5
+
+        async def healthy(ip, device):
+            return True
+
+        async def dead(ip, device):
+            await asyncio.sleep(30)  # a retry backoff that outlasts the interval
+            return True
+
+        started = time.monotonic()
+        async with asyncio.TaskGroup() as tg:
+            for fetch, ip in ((healthy, "10.0.0.1"), (dead, "10.0.0.2")):
+                tg.create_task(
+                    poller._fetch_counted(
+                        fetch, ip, None, outcome, "emeter fetch", interval
+                    )
+                )
+        elapsed = time.monotonic() - started
+
+        assert outcome == {"ok": 1, "failed": 1, "write_failed": 0}
+        assert elapsed < interval
 
 
 @pytest.mark.unit
@@ -560,7 +595,7 @@ class TestFetchCountedWriteFailures:
             return False  # polled fine, write rejected
 
         await p._fetch_counted(
-            fetch_that_stores_nothing, "10.0.0.5", object(), outcome, "emeter fetch"
+            fetch_that_stores_nothing, "10.0.0.5", object(), outcome, "emeter fetch", 15
         )
         assert outcome == {"ok": 0, "failed": 0, "write_failed": 1}
 
@@ -572,7 +607,7 @@ class TestFetchCountedWriteFailures:
             return True
 
         await p._fetch_counted(
-            fetch_that_stores, "10.0.0.5", object(), outcome, "emeter fetch"
+            fetch_that_stores, "10.0.0.5", object(), outcome, "emeter fetch", 15
         )
         assert outcome == {"ok": 1, "failed": 0, "write_failed": 0}
 
@@ -585,7 +620,7 @@ class TestFetchCountedWriteFailures:
             raise ConnectionError("device unreachable")
 
         await p._fetch_counted(
-            fetch_that_raises, "10.0.0.5", object(), outcome, "emeter fetch"
+            fetch_that_raises, "10.0.0.5", object(), outcome, "emeter fetch", 15
         )
         assert outcome == {"ok": 0, "failed": 1, "write_failed": 0}
 
@@ -627,7 +662,7 @@ class TestBadReadingsAreNotStorageFailures:
         async def fetch(ip, device):
             return await p.process_device_data(ip, device)
 
-        await p._fetch_counted(fetch, "10.0.0.5", plug, outcome, "emeter fetch")
+        await p._fetch_counted(fetch, "10.0.0.5", plug, outcome, "emeter fetch", 15)
         assert outcome == {"ok": 0, "failed": 1, "write_failed": 0}
         assert reached == ["10.0.0.5"]
         assert "InfluxDB" not in caplog.text
@@ -691,7 +726,12 @@ class TestBadReadingsAreNotStorageFailures:
         outcome = {"ok": 0, "failed": 0, "write_failed": 0}
 
         await p._fetch_counted(
-            p.fetch_and_store_emeter_data, "10.0.0.9", Strip(), outcome, "emeter fetch"
+            p.fetch_and_store_emeter_data,
+            "10.0.0.9",
+            Strip(),
+            outcome,
+            "emeter fetch",
+            15,
         )
         assert outcome == {"ok": 0, "failed": 1, "write_failed": 0}
         assert written == [] and updates == ["Lamp"] and reached == ["10.0.0.9"]
@@ -708,7 +748,7 @@ class TestBadReadingsAreNotStorageFailures:
         async def fetch(ip, device):
             return await p.process_device_data(ip, device)
 
-        await p._fetch_counted(fetch, "10.0.0.5", plug, outcome, "emeter fetch")
+        await p._fetch_counted(fetch, "10.0.0.5", plug, outcome, "emeter fetch", 15)
         assert outcome == {"ok": 0, "failed": 1, "write_failed": 0}
 
     @pytest.mark.parametrize("legacy_units", [False, True])
