@@ -22,6 +22,7 @@ import asyncio
 import logging
 import math
 from collections.abc import Awaitable, Callable, Mapping
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -61,6 +62,18 @@ class UnstorableReading(Exception):
 
 
 _INT64_MIN, _INT64_MAX = -(2**63), 2**63 - 1
+
+# The deadline on the current device's read, set by `Poller._fetch_counted`.
+_READ_DEADLINE: ContextVar[asyncio.Timeout | None] = ContextVar(
+    "_READ_DEADLINE", default=None
+)
+
+
+def _reads_done() -> None:
+    """Lift the read deadline: every reading is in hand, and the writes must finish."""
+    deadline = _READ_DEADLINE.get()
+    if deadline is not None:
+        deadline.reschedule(None)
 
 
 def _storable(value: Any) -> bool:
@@ -272,10 +285,12 @@ class Poller:
     ) -> None:
         """Run one device fetch, recording the outcome without aborting siblings.
 
-        The fetch, its retries included, has 80% of the cycle's ``interval``: the cycle
-        waits for every device, so one host that never answers would otherwise hold
-        every healthy device's next sample back by its whole retry backoff. A fetch
-        that runs out of time is ``failed``.
+        Reading the device, its retries included, has 80% of the cycle's ``interval``:
+        the cycle waits for every device, so one host that never answers would
+        otherwise hold every healthy device's next sample back by its whole retry
+        backoff. A read that runs out of time is ``failed``. Once every reading is in
+        hand, the writes run with no deadline (``_reads_done``), so a slow InfluxDB
+        never leaves a device half-written or makes it look unreachable.
 
         Per-device failures (after ``async_retry`` is exhausted) are swallowed and
         counted, so a single unreachable device can't cancel the rest of the cycle's
@@ -288,9 +303,14 @@ class Poller:
         with a reading that cannot be stored (``UnstorableReading``) is ``failed`` and
         still reachable: the fault is the device's, not InfluxDB's.
         """
+        deadline = asyncio.timeout(interval * 0.8)
         try:
-            async with asyncio.timeout(interval * 0.8):
-                stored = await fetch(ip, device)
+            async with deadline:
+                token = _READ_DEADLINE.set(deadline)
+                try:
+                    stored = await fetch(ip, device)
+                finally:
+                    _READ_DEADLINE.reset(token)
             # The device ANSWERED. Record that before splitting on whether the write
             # landed: `write_failed` is an InfluxDB problem, not a device problem, and
             # a device that is talking to us must not be pruned as missing.
@@ -311,15 +331,19 @@ class Poller:
             self.logger.warning(
                 "%s polled %s but its reading could not be collected: %s", label, ip, e
             )
-        except TimeoutError:
-            # NOT reachable: it did not answer within the cycle's time.
+        except TimeoutError as e:
+            # NOT reachable: it did not answer within the cycle's time, or python-kasa
+            # timed it out itself (its TimeoutError is one), reported as its own error.
             outcome["failed"] += 1
-            self.logger.warning(
-                "%s for %s did not finish within %.0f seconds",
-                label,
-                ip,
-                interval * 0.8,
-            )
+            if deadline.expired():
+                self.logger.warning(
+                    "%s for %s did not finish within %.0f seconds",
+                    label,
+                    ip,
+                    interval * 0.8,
+                )
+            else:
+                self.logger.warning("%s failed for %s after retries: %s", label, ip, e)
         except Exception as e:
             # Deliberately NOT reachable: the fetch raised after retries, so we have no
             # evidence the device is there and must not manufacture any.
@@ -624,6 +648,7 @@ class Poller:
         self.logger.debug(
             "Storing smart strip data for %s (IP: %s).", smart_strip.alias, ip
         )
+        _reads_done()
         stored = await self.storage.process_emeter_data({ip: smart_strip_data})
         for outlet in outlets:
             # A strip counts as stored only if the parent AND every outlet landed.
@@ -657,6 +682,7 @@ class Poller:
                 "equipment_type": "device",
             }
             self.logger.debug("Storing emeter data for %s (IP: %s).", device_alias, ip)
+            _reads_done()
             return await self.storage.process_emeter_data({ip: device_data})
         except (AttributeError, KeyError, ValueError, TypeError, OverflowError) as e:
             self.logger.exception(
@@ -699,4 +725,5 @@ class Poller:
             self.logger.debug(
                 "Storing sysinfo data for %s (IP: %s)", ctx.device_name, ip
             )
+            _reads_done()
             return await self.storage.process_sysinfo_data({ip: sysinfo_data})

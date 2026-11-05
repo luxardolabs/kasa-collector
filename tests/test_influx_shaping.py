@@ -406,12 +406,12 @@ class TestProcessSysinfo:
         rogue, rogue_child, legit, legit_child = s.captured
         assert legit._fields["rssi"] == -40
         assert legit._fields["relay_state"] == 1
-        assert legit._fields["latitude"] == 0
         assert legit_child._fields["state"] == 1
-        for key in ("rssi", "relay_state", "latitude", "on_time", "led_off"):
+        for key in ("rssi", "relay_state", "on_time", "led_off"):
             assert key not in rogue._fields, key
-        assert rogue._fields["longitude"] == 7  # an integral float fits an int field
-        assert type(rogue._fields["longitude"]) is int
+        for point in (rogue, legit):  # coordinates: no one type fits, and unread
+            assert "latitude" not in point._fields
+            assert "longitude" not in point._fields
         assert rogue._fields["model"] == "110"  # a text key stays text
         assert "state" not in rogue_child._fields
         for point in (rogue, legit):

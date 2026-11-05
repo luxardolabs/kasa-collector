@@ -137,9 +137,11 @@ def _secret_values() -> list[str]:
 # digits is scrubbed as well. The app's own loggers keep theirs: device ids are hex.
 _LIBRARY_LOGGER = "kasa"
 _HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
-# The session token's value in a request URL, whatever its shape: in the query
-# (`token=`, the AES and SSL transports) or in the path (`/stok=…/`, the camera path).
+# The session token's value, whatever its shape: in a request URL's query (`token=`, the
+# AES and SSL transports) or path (`/stok=…/`, the camera path), and as a logged reply's
+# `'token': '…'` (the SSL transport logs its login response).
 _SESSION_TOKEN = re.compile(r"(?:\btoken|\bstok)=([^&/\s'\"<>;,)]+)")
+_SESSION_TOKEN_FIELD = re.compile(r"""['"](?:token|stok)['"]\s*:\s*['"]([^'"]+)['"]""")
 # The parts of a line the logging module renders from the record itself; the caller's
 # `extra=` fields reach the redactor separately and carry no logger.
 _RENDERED_FIELDS = ("message", "exception", "stack")
@@ -166,6 +168,7 @@ def _scrubbed(text: str, secrets: list[str], hex_runs: bool) -> str:
     if hex_runs:
         spans += [m.span() for m in _HEX_RUN.finditer(text)]
         spans += [m.span(1) for m in _SESSION_TOKEN.finditer(text)]
+        spans += [m.span(1) for m in _SESSION_TOKEN_FIELD.finditer(text)]
     if not spans:
         return text
     spans.sort()

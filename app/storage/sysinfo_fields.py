@@ -9,6 +9,10 @@ therefore has one type here, and a value is converted to it or left out of the p
 The types are those python-kasa 0.11.0.1's device fixtures (IOT ``get_sysinfo`` and
 SMART ``get_device_info``, 189 devices) report for each key: no key appears there with
 two types. Every key not named here is written as text.
+
+A device's coordinates are never written. Real devices send them as a float in degrees
+(IOT ``latitude``) or as a scaled int (SMART), so no one type fits, and python-kasa's
+fixtures zero them. No dashboard reads them, and they are the owner's home location.
 """
 
 import math
@@ -48,12 +52,8 @@ INT_KEYS = frozenset(
         "jamming_rssi",
         "jamming_signal_level",
         "lastOnboardingTimestamp",
-        "latitude",
-        "latitude_i",
         "led_off",
         "length",
-        "longitude",
-        "longitude_i",
         "max_control_temp",
         "min_control_temp",
         "next_schedule_time",
@@ -104,6 +104,8 @@ BOOL_KEYS = frozenset(
 
 FLOAT_KEYS = frozenset({"current_temp", "target_temp"})
 
+DROPPED_KEYS = frozenset({"latitude", "latitude_i", "longitude", "longitude_i"})
+
 
 def _as_text(value: Any) -> str:
     if isinstance(value, str):
@@ -142,6 +144,8 @@ def _as_float(value: Any) -> float | None:
 
 def sysinfo_field(key: str, value: Any) -> int | float | bool | str | None:
     """``value`` as the type InfluxDB holds ``key`` in, or None to leave it out."""
+    if key in DROPPED_KEYS:
+        return None
     if key in INT_KEYS:
         return _as_int(value)
     if key in FLOAT_KEYS:

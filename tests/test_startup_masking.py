@@ -606,3 +606,24 @@ def test_many_keys_that_scrub_alike_are_named_in_linear_time(log_with):
 
     assert time.monotonic() - started < 1
     assert "keys" in buffer.getvalue()
+
+
+async def test_a_session_token_in_a_logged_login_reply_is_scrubbed(app_log):
+    # python-kasa's SSL transport logs its login reply at DEBUG, the token a dict value.
+    session = "".join(["ST7g", "Hq2R", "wK9p", "Lm4Z"])
+    transport = SslTransport(
+        config=DeviceConfig(
+            host="192.0.2.10", credentials=Credentials(USERNAME, PASSWORD)
+        )
+    )
+    transport._http_client.post = AsyncMock(
+        return_value=(200, {"error_code": 0, "result": {"token": session}})
+    )
+    await transport.try_login(transport._get_login_params(transport._credentials))
+    # A request after login carries the token in the URL query: the control.
+    await transport.send_request('{"method": "get_device_info"}')
+
+    out = app_log.getvalue()
+    assert "token=****" in out  # control: the URL form is scrubbed
+    assert "Response with 200" in out  # the response line was written
+    assert session not in out, [l for l in out.splitlines() if session in l]

@@ -325,7 +325,7 @@ class Config:
 
     Set False to withhold them from any device not listed in KASA_COLLECTOR_DEVICE_HOSTS:
     on a network you do not fully trust, authenticating an unknown responder is all it
-    takes for a rogue device impersonating Kasa to be handed the account's credentials
+    takes for a rogue device impersonating Kasa to be handed the account's credentials.
     Credentials are never printed in logs and never sent in the discovery
     broadcast regardless of this flag.
     """
