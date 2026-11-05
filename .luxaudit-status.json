@@ -6,7 +6,7 @@
   "source": "poetry.lock",
   "summary": {
     "PASS": 32,
-    "FAIL": 0,
+    "FAIL": 2,
     "XFAIL": 0
   },
   "vulnerable": [],
@@ -20,7 +20,28 @@
     "inert_reason": "",
     "error": "",
     "not_released": [],
-    "vulnerable": [],
+    "vulnerable": [
+      {
+        "package": "apt",
+        "installed": "3.0.3",
+        "vuln_id": "CVE-2026-109518",
+        "severity": "HIGH",
+        "layer": "os",
+        "path": "",
+        "image": "luxardolabs/kasa-collector:2026.10.5",
+        "fix": "3.0.4"
+      },
+      {
+        "package": "libapt-pkg7.0",
+        "installed": "3.0.3",
+        "vuln_id": "CVE-2026-109518",
+        "severity": "HIGH",
+        "layer": "os",
+        "path": "",
+        "image": "luxardolabs/kasa-collector:2026.10.5",
+        "fix": "3.0.4"
+      }
+    ],
     "deferred": []
   },
   "ignore_rows": {
@@ -28,6 +49,6 @@
     "expired": [],
     "unjudged": []
   },
-  "commit": "fde50f097a3666702cd00618b78308c76e088437",
-  "generated_at": "2026-11-05T00:48:24Z"
+  "commit": "86c2619143c23d2bf4aab159a2ca467297ba7c7f",
+  "generated_at": "2026-11-05T02:13:09Z"
 }
