@@ -168,7 +168,7 @@ Since 2026.10.1 the bundled `kasa_influxdb` keeps `/etc/influxdb2` (the CLI's st
 
 ### Container shows unhealthy
 
-The health check (`python -m app.health.check`) reports healthy only while **this run** of the collector is storing data. After every energy-poll cycle that stores at least one device's reading, the collector writes a heartbeat inside the container (`/tmp/kasa-collector.heartbeat`). The check needs that heartbeat to be younger than `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` (default 120s) and written by the container's current process, so a restarted container can't inherit its predecessor's verdict. File output on or off makes no difference.
+The health check (`python -m app.health.check`) reports healthy only while **this run** of the collector is storing data. After every energy-poll cycle that stores at least one device's reading, the collector writes a heartbeat inside the container (`/tmp/kasa-collector.heartbeat`). The check needs that heartbeat to be younger than `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` (default 120s, and never less than two fetch intervals) and written by the container's current process (judged by the kernel's process start times and boot id, so a wall-clock step does not affect it), so a restarted container can't inherit its predecessor's verdict. File output on or off makes no difference.
 
 Through 2026.10.1 the check trusted the newest `.jsonl` in the output directory (a persistent mount, so a file left by the previous build counted), and with file output off it was always healthy.
 
@@ -247,7 +247,7 @@ ______________________________________________________________________
 docker inspect kasa-collector | jq '.[0].State.Health'
 ```
 
-It reports unhealthy if data goes stale past `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` (default 120s) when file output is enabled.
+It reports unhealthy if no data has been stored within `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` (default 120s, never less than two `KASA_COLLECTOR_DATA_FETCH_INTERVAL`s), whether file output is on or off.
 
 ## Getting help
 

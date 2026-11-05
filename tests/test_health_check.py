@@ -34,9 +34,16 @@ def _run_check(tmp_path, **env):
     )
 
 
-def _write_heartbeat(tmp_path, started_at, age_seconds=0.0):
+def _write_heartbeat(tmp_path, start_ticks=None, boot=None, age_seconds=0.0):
+    """A heartbeat as this test process would write it, unless told otherwise."""
     path = tmp_path / "heartbeat"
-    path.write_text(json.dumps({"started_at": started_at}))
+    record = {
+        "boot_id": boot or heartbeat.boot_id(),
+        "start_ticks": heartbeat.start_ticks("self")
+        if start_ticks is None
+        else start_ticks,
+    }
+    path.write_text(json.dumps(record))
     then = time.time() - age_seconds
     os.utime(path, (then, then))
 
@@ -57,12 +64,12 @@ class TestHealthCheckVerdict:
         assert result.returncode == 1, result.stdout
 
     def test_healthy_on_a_fresh_heartbeat_from_the_running_process(self, tmp_path):
-        _write_heartbeat(tmp_path, started_at=time.time())
+        _write_heartbeat(tmp_path)
         result = _run_check(tmp_path, KASA_COLLECTOR_WRITE_TO_FILE="False")
         assert result.returncode == 0, result.stdout
 
     def test_unhealthy_on_a_stale_heartbeat(self, tmp_path):
-        _write_heartbeat(tmp_path, started_at=time.time() - 600, age_seconds=300)
+        _write_heartbeat(tmp_path, age_seconds=300)
         result = _run_check(tmp_path, KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE="120")
         assert result.returncode == 1, result.stdout
 
@@ -70,11 +77,77 @@ class TestHealthCheckVerdict:
         # Fresh mtime, but written by a process that started before the current PID 1:
         # a restarted container must not inherit its predecessor's verdict. The suite runs
         # in the Linux test image, where /proc/1 always exists.
-        started = heartbeat.pid1_started_at()
-        assert started is not None
-        _write_heartbeat(tmp_path, started_at=started - 3600)
+        pid1 = heartbeat.start_ticks("1")
+        assert pid1 is not None
+        _write_heartbeat(tmp_path, start_ticks=pid1 - 1)
         result = _run_check(tmp_path)
         assert result.returncode == 1, result.stdout
+
+    def test_unhealthy_on_a_heartbeat_from_another_boot(self, tmp_path):
+        _write_heartbeat(tmp_path, boot="00000000-0000-0000-0000-000000000000")
+        result = _run_check(tmp_path)
+        assert result.returncode == 1, result.stdout
+
+    def test_a_max_age_the_collector_accepts_never_crashes_the_check(self, tmp_path):
+        # The collector warns on "2m" and uses its default; the check must too.
+        _write_heartbeat(tmp_path)
+        result = _run_check(tmp_path, KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE="2m")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "Traceback" not in result.stderr
+
+    def test_a_long_fetch_interval_raises_the_max_age(self, tmp_path):
+        # Stored 200s ago with a 300s fetch interval: due, not stale.
+        _write_heartbeat(tmp_path, age_seconds=200)
+        result = _run_check(
+            tmp_path,
+            KASA_COLLECTOR_DATA_FETCH_INTERVAL="300",
+            KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE="120",
+        )
+        assert result.returncode == 0, result.stdout
+
+
+def _fake_proc(root, *, pid1_ticks, self_ticks, boot, btime):
+    for pid, ticks in (("1", pid1_ticks), ("self", self_ticks)):
+        (root / pid).mkdir(parents=True, exist_ok=True)
+        fields = ["S"] + ["0"] * 18 + [str(ticks), "0"]
+        (root / pid / "stat").write_text(f"{pid} (python) " + " ".join(fields))
+    (root / "sys" / "kernel" / "random").mkdir(parents=True, exist_ok=True)
+    (root / "sys" / "kernel" / "random" / "boot_id").write_text(boot + "\n")
+    (root / "stat").write_text(f"cpu 0 0 0\nbtime {btime}\n")
+
+
+@pytest.mark.unit
+class TestRunIdentity:
+    """The run is told by kernel start ticks and the boot id, never the wall clock."""
+
+    def test_a_wall_clock_step_keeps_a_collecting_run_healthy(
+        self, tmp_path, monkeypatch
+    ):
+        from app.health import check
+
+        proc = tmp_path / "proc"
+        monkeypatch.setattr(heartbeat, "PROC_ROOT", str(proc))
+        monkeypatch.setattr(heartbeat, "HEARTBEAT_FILE", str(tmp_path / "hb"))
+        _fake_proc(proc, pid1_ticks=100, self_ticks=150, boot="b1", btime=1_700_000_000)
+        heartbeat.beat()
+
+        # NTP steps the clock forward: the kernel's btime moves with it.
+        _fake_proc(proc, pid1_ticks=100, self_ticks=150, boot="b1", btime=1_700_000_030)
+
+        assert check.check_heartbeat()[0]
+
+    def test_a_beat_older_than_pid1_is_a_previous_runs(self, tmp_path, monkeypatch):
+        from app.health import check
+
+        proc = tmp_path / "proc"
+        monkeypatch.setattr(heartbeat, "PROC_ROOT", str(proc))
+        monkeypatch.setattr(heartbeat, "HEARTBEAT_FILE", str(tmp_path / "hb"))
+        _fake_proc(proc, pid1_ticks=100, self_ticks=50, boot="b1", btime=0)
+        heartbeat.beat()
+
+        ok, message = check.check_heartbeat()
+        assert not ok
+        assert "previous run" in message
 
 
 @pytest.mark.unit
@@ -83,9 +156,9 @@ class TestHeartbeatWriter:
         path = tmp_path / "hb"
         monkeypatch.setattr(heartbeat, "HEARTBEAT_FILE", str(path))
         heartbeat.beat()
-        assert (
-            json.loads(path.read_text())["started_at"] == heartbeat.PROCESS_STARTED_AT
-        )
+        record = json.loads(path.read_text())
+        assert record["boot_id"] == heartbeat.boot_id()
+        assert record["start_ticks"] == heartbeat.start_ticks("self")
         assert not list(tmp_path.glob("*.tmp"))
 
     def test_beat_survives_an_unwritable_location(self, tmp_path, monkeypatch, caplog):

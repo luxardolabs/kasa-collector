@@ -113,6 +113,25 @@ def _get_int_config(env_var: str, default: int, min_value: int | None = None) ->
     )
 
 
+def _health_check_max_age(fetch_interval: int) -> int:
+    """KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE, raised to two fetch intervals with a warning."""
+    floor = 2 * fetch_interval
+    value = _get_int_config(
+        "KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE", default=max(120, floor), min_value=1
+    )
+    if value < floor:
+        logger.warning(
+            "KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE=%s is below two "
+            "KASA_COLLECTOR_DATA_FETCH_INTERVALs (%ss): a collector storing every cycle "
+            "would read unhealthy. Using %s.",
+            value,
+            fetch_interval,
+            floor,
+        )
+        return floor
+    return value
+
+
 def _get_log_level(env_var: str, default: str = "INFO") -> str:
     """Read a log-level env var through ConfigValidator (clamp-and-warn to default)."""
     return ConfigValidator.validate_log_level(os.getenv(env_var, default), default)
@@ -344,10 +363,13 @@ class Config:
     """Maximum delay in seconds between retry attempts (for exponential backoff)."""
 
     # Health check settings
-    KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE: int = _get_int_config(
-        "KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE", default=120, min_value=1
+    KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE: int = _health_check_max_age(
+        KASA_COLLECTOR_DATA_FETCH_INTERVAL
     )
-    """Maximum age in seconds for last successful data collection before health check fails."""
+    """Maximum age in seconds of the last stored data before the health check fails.
+
+    Never less than two emeter fetch intervals: the heartbeat is written once per cycle
+    that stored data, so a shorter limit fails a collector that stores every cycle."""
 
 
 # Env vars the collector cannot start without (enforced at startup in app.main).

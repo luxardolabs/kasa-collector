@@ -4,19 +4,16 @@
 This standalone script is the container's HEALTHCHECK (`python -m app.health.check`). It is
 healthy only when THIS run of the collector is storing data: the poller writes a heartbeat
 (`app.health.heartbeat`) after every emeter cycle that stored data, and the check requires
-that heartbeat to be fresh and written by the current PID 1.
-
-It used to check something weaker. With file output off it reported healthy unconditionally,
-and with it on it trusted the newest `.jsonl` in the output directory, which is a persistent
-bind mount, so a file the previous build wrote made a new build "healthy" before it collected
-anything. `make smoke` passed a container that collected nothing that way.
+that heartbeat to be fresh and written by a process no older than the current PID 1. A data
+file in the persistent output directory is never evidence: a previous build may have left it.
 
 Exit codes:
     0 - Healthy: this process stored data within KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE
     1 - Unhealthy: no heartbeat, a stale one, or one left by a previous run
 
 Configuration:
-    KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE: Maximum heartbeat age in seconds (default: 120)
+    KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE: Maximum heartbeat age in seconds, read through
+        Config (default 120, and never less than two KASA_COLLECTOR_DATA_FETCH_INTERVALs)
     KASA_COLLECTOR_HEARTBEAT_FILE: Heartbeat path (default: /tmp/kasa-collector.heartbeat)
 """
 
@@ -25,12 +22,12 @@ import os
 import sys
 import time
 
+from app.core.config import Config
 from app.health import heartbeat
 
-MAX_AGE_SECONDS = int(os.getenv("KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE", "120"))
-# A beat's recorded start may trail PID 1's by the import time; it may never precede it by
-# more than the clock-tick rounding of /proc. Anything earlier is a previous run's file.
-_START_TOLERANCE_SECONDS = 1.0
+# Read the way the collector reads it, so a value the collector accepts never crashes the
+# check, and with the same floor of two fetch intervals.
+MAX_AGE_SECONDS = Config.KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE
 
 
 def check_heartbeat() -> tuple[bool, str]:
@@ -39,7 +36,9 @@ def check_heartbeat() -> tuple[bool, str]:
     try:
         age = time.time() - os.stat(path).st_mtime
         with open(path, encoding="utf-8") as f:
-            started_at = float(json.load(f)["started_at"])
+            record = json.load(f)
+        if not isinstance(record, dict):
+            raise ValueError("not a heartbeat record")
     except FileNotFoundError:
         return (
             False,
@@ -54,8 +53,7 @@ def check_heartbeat() -> tuple[bool, str]:
             f"last stored data {age:.0f}s ago (max allowed: {MAX_AGE_SECONDS}s)",
         )
 
-    pid1_start = heartbeat.pid1_started_at()
-    if pid1_start is not None and started_at < pid1_start - _START_TOLERANCE_SECONDS:
+    if heartbeat.written_by_a_previous_run(record):
         return False, "heartbeat was written by a previous run, not this process"
 
     return True, f"Healthy - last stored data {age:.0f}s ago"
