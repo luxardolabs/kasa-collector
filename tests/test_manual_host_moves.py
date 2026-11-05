@@ -144,3 +144,18 @@ async def test_a_re_add_onto_an_address_discovery_holds_closes_its_client(
 
     assert manager.devices["10.0.0.77"] is not discovered
     assert discovered.closed
+
+
+async def test_a_resolver_that_never_answers_is_bounded(monkeypatch):
+    import asyncio
+
+    from app.collector import device_manager as dm_mod
+
+    async def hang(*args, **kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(dm_mod, "_RESOLVE_TIMEOUT", 0.05)
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", hang)
+
+    with pytest.raises(OSError):
+        await dm_mod.resolve_ipv4s("plug.lan")

@@ -35,11 +35,18 @@ from app.collector.kasa_api import InsecureLoginRefused, KasaAPI
 from app.collector.utils import get_device_name
 from app.core.config import Config
 
+_RESOLVE_TIMEOUT = 5.0
+
 
 async def resolve_ipv4s(host: str) -> list[str]:
-    """Every IPv4 address ``host`` resolves to now, in the resolver's order."""
+    """Every IPv4 address ``host`` resolves to now, in the resolver's order.
+
+    Bounded: a resolver that does not answer costs one discovery pass at most
+    ``_RESOLVE_TIMEOUT`` seconds per name, and raises TimeoutError (an OSError).
+    """
     loop = asyncio.get_running_loop()
-    result = await loop.getaddrinfo(host, None, family=socket.AF_INET)
+    async with asyncio.timeout(_RESOLVE_TIMEOUT):
+        result = await loop.getaddrinfo(host, None, family=socket.AF_INET)
     return list(dict.fromkeys(str(entry[4][0]) for entry in result))
 
 
