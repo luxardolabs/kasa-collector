@@ -1218,6 +1218,27 @@ class TestEmeterUnits:
         assert _storable(DeviceInt(5))
         assert not _storable(DeviceInt(2**63))
 
+    def test_a_null_or_text_smart_field_drops_only_itself(self):
+        from app.collector.poller import emeter_fields
+
+        reading = {"power_mw": None, "voltage_mv": 121000, "status": "ok"}
+        assert emeter_fields(reading, legacy_units=False) == {"voltage_mv": 121000}
+
+    def test_a_number_whose_own_conversion_raises_is_read_through_its_base_type(self):
+        from app.collector.poller import _storable, emeter_fields
+
+        class DeviceFloat(float):
+            def __int__(self):
+                raise RuntimeError("no int")
+
+            def __float__(self):
+                raise RuntimeError("no float")
+
+        assert _storable(DeviceFloat(5.0))
+        assert emeter_fields({"power_mw": DeviceFloat(5.0)}, legacy_units=False) == {
+            "power_mw": 5
+        }
+
     def test_a_null_legacy_field_drops_only_itself(self):
         from kasa.emeterstatus import EmeterStatus
 

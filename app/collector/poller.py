@@ -67,14 +67,28 @@ def _storable(value: Any) -> bool:
     """False for a value no InfluxDB integer field can hold: a float NaN or infinity,
     or an integer outside int64 (InfluxDB rejects the device's whole batch for it).
 
-    Bounds are compared on a plain int: `x in range(...)` is constant-time only for an
-    exact int, and walks the whole range for an int subclass.
+    Anything that is not a number (None, a string) is not storable either: it would
+    fail the integer conversion and cost the whole reading, not just its own field.
+
+    Bounds are compared on a plain int, read through the base type so a subclass's own
+    conversion cannot run: `x in range(...)` is constant-time only for an exact int, and
+    walks the whole range for an int subclass.
     """
+    if isinstance(value, bool):
+        return True
     if isinstance(value, float):
-        return math.isfinite(value) and _INT64_MIN <= int(value) <= _INT64_MAX
+        plain = float.__float__(value)
+        return math.isfinite(plain) and _INT64_MIN <= int(plain) <= _INT64_MAX
     if isinstance(value, int):
-        return _INT64_MIN <= int(value) <= _INT64_MAX
-    return True
+        return _INT64_MIN <= int.__int__(value) <= _INT64_MAX
+    return False
+
+
+def _as_int(value: int | float) -> int:
+    """A storable number as a plain int, read through its base type."""
+    if isinstance(value, float):
+        return int(float.__float__(value))
+    return int.__int__(value)
 
 
 def _storable_reading(
@@ -102,7 +116,9 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
     infinity, an integer outside int64) drops only its own field.
     """
     if not legacy_units:
-        return {key: int(value) for key, value in realtime.items() if _storable(value)}
+        return {
+            key: _as_int(value) for key, value in realtime.items() if _storable(value)
+        }
     status = EmeterStatus(realtime)
     legacy = set(_EMETER_FIELDS.values())
     out: dict[str, int] = {}
@@ -115,7 +131,7 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
             out[field] = round(value)
     for key, value in status.items():
         if key not in _EMETER_FIELDS and key not in legacy and _storable(value):
-            out[key] = int(value)
+            out[key] = _as_int(value)
     return out
 
 
