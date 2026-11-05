@@ -64,7 +64,7 @@ async def _close_quietly(device: Device) -> None:
 
     A discovered device whose probe failed still holds an open aiohttp session; left
     to garbage collection the event loop logs ``Unclosed client session`` / ``Unclosed
-    connector`` (KASACOLLEC-107). Closing it here is cleanup on an object we are about
+    connector``. Closing it here is cleanup on an object we are about
     to drop, so a failure to close is itself nothing to act on.
     """
     try:
@@ -115,9 +115,9 @@ class KasaAPI:
         # No credentials here: this is the broadcast ENUMERATION. Passing the TP-Link
         # username and password to Discover.discover makes python-kasa run a credentialed
         # handshake with every device that answers the broadcast, which hands the account's
-        # credentials to any responder, a rogue LAN device included (KASACOLLEC-99). The
-        # credentialed handshake is done per device, only for ones the operator listed or
-        # has collected from before, by DeviceManager._authenticate_device_with_retry. IOT
+        # credentials to any responder, a rogue LAN device included. The credentialed
+        # handshake is done per device, only for ones the operator listed or trusts, by
+        # DeviceManager._authenticate_device_with_retry. IOT
         # devices need no credentials and come back fully usable from enumeration alone.
         devices: dict[str, Device] = await Discover.discover(
             discovery_timeout=discovery_timeout,

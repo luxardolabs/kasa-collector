@@ -167,8 +167,8 @@ class InfluxDBStorage:
         if self.client is not None:
             # swallowed-exceptions: best-effort teardown on the shutdown path. The client is
             # being discarded either way, so a close() failure has nothing to recover; letting
-            # it propagate would abort graceful shutdown and drop the buffered writes that
-            # KASACOLLEC-13 exists to flush. Deliberately broad: this runs while the event
+            # it propagate would abort graceful shutdown before the remaining cleanup runs.
+            # Deliberately broad: this runs while the event
             # loop is closing, where the raisable set is not enumerable in advance.
             with contextlib.suppress(Exception):
                 await self.client.close()
@@ -298,7 +298,7 @@ class InfluxDBStorage:
 
         # swallowed-exceptions: per-device boundary. One device's malformed payload must
         # not abort the whole poll cycle for every other device; the traceback survives via
-        # logger.exception (KASACOLLEC-17) and the cycle's failure count is written to the
+        # logger.exception and the cycle's failure count is written to the
         # collector_stats point. Broad by intent -- device firmware returns arbitrary shapes.
         except Exception as e:
             self.logger.exception("Error processing emeter data for InfluxDB: %s", e)
@@ -423,7 +423,7 @@ class InfluxDBStorage:
 
         # swallowed-exceptions: per-device boundary. One device's malformed payload must
         # not abort the whole poll cycle for every other device; the traceback survives via
-        # logger.exception (KASACOLLEC-17) and the cycle's failure count is written to the
+        # logger.exception and the cycle's failure count is written to the
         # collector_stats point. Broad by intent -- device firmware returns arbitrary shapes.
         except Exception as e:
             self.logger.exception("Error processing sysinfo data for InfluxDB: %s", e)
@@ -497,9 +497,8 @@ class InfluxDBStorage:
         because the two are different operational problems -- a device that won't answer
         versus a storage backend that won't accept -- and because adding a field keeps
         every existing Grafana panel's meaning intact. A device counted here is NOT
-        counted in ``succeeded``: before KASACOLLEC-63 a failed write left the device
-        reported as succeeded, so during an InfluxDB outage this point claimed everything
-        was fine while nothing landed.
+        counted in ``succeeded``, so during an InfluxDB outage this point shows that
+        nothing landed.
         """
         point = (
             Point("collector_stats")
@@ -528,9 +527,8 @@ class InfluxDBStorage:
         The whole list is handed to the async write API as one batched write.
         A failure is logged — with actionable guidance for auth/bucket problems —
         and does NOT stop the collector; the next cycle simply retries. But the
-        outcome is RETURNED so the caller can count it: a swallowed write failure
-        used to leave the cycle reporting every device as succeeded while nothing
-        landed, so the logs and the collector_stats point disagreed (KASACOLLEC-63).
+        outcome is RETURNED so the caller can count it, and the logs and the
+        collector_stats point agree on what landed.
         """
         if not points or self.write_api is None:
             return True
@@ -544,10 +542,10 @@ class InfluxDBStorage:
         except InfluxDBError as e:
             self._log_write_error(e)
             return False
-        # swallowed-exceptions: HANDLED -- the failure is now REPORTED via the return value,
-        # not dropped (KASACOLLEC-63). Still broad and still non-fatal by intent: an InfluxDB
-        # outage must not kill a long-running collector, and the next cycle retries. What
-        # changed is that the caller can no longer mistake this for a success.
+        # swallowed-exceptions: HANDLED -- the failure is REPORTED via the return value,
+        # not dropped. Broad and non-fatal by intent: an InfluxDB outage must not kill a
+        # long-running collector, and the next cycle retries. The caller cannot mistake
+        # this for a success.
         except Exception as e:
             self.logger.exception("Error sending data to InfluxDB: %s", e)
             return False

@@ -10,17 +10,12 @@ removed the legacy XOR listener for KLAP-capable clients, reporting ``IOT.SMARTP
 / ``KLAP`` / ``login_version: 2``. Strips still on ``1.0.21 Build 210524`` speak XOR and
 are unaffected.
 
-History: on python-kasa 0.10.2 this module carried three fixes. 0.11.0.1 (2026-10-04)
-shipped two of them upstream, and they were removed here after a probe of the real
-strips with NO local patches (2026-10-10):
+python-kasa 0.11.0.1 itself handles the rest: ``get_protocol`` honours
+``login_version``, so a v2 device gets ``KlapTransportV2`` and authenticates, and
+``_connect`` reads sysinfo over any transport, so ``Device.connect`` builds an
+``IotStrip`` with its outlets.
 
-- Transport selection (KASACOLLEC-58): ``get_protocol`` now honours ``login_version``,
-  so a v2 device gets ``KlapTransportV2`` and authenticates (python-kasa PR #1731).
-- Class derivation on CONNECT (KASACOLLEC-59): ``_connect`` now reads sysinfo over any
-  transport, so ``Device.connect`` builds an ``IotStrip`` with its outlets (PR #1769,
-  filed upstream as #1740; our report is #1748).
-
-What is left: DISCOVERY. ``Discover._get_device_instance()`` is synchronous and still
+What this module covers is DISCOVERY. ``Discover._get_device_instance()`` is synchronous and still
 picks the class from the family table, where ``IOT.SMARTPLUGSWITCH`` is ``IotPlug``. The
 probe saw every KLAP strip arrive from ``Discover.discover()`` as an ``IotPlug`` with no
 children, so no per-outlet emeter. ``reclass_strip_if_needed()`` corrects that after

@@ -240,7 +240,7 @@ class Poller:
             logger: Logger instance for logging operations.
             on_reachable: Called with a device's registry key each time that device
                 answers a poll. The DeviceManager uses it to avoid pruning a device it
-                is still collecting from (KASACOLLEC-70). Optional so the poller stays
+                is still collecting from. Optional so the poller stays
                 usable standalone.
 
         Raises:
@@ -281,11 +281,10 @@ class Poller:
         counted, so a single unreachable device can't cancel the rest of the cycle's
         TaskGroup. The counts feed the per-cycle collector metrics.
 
-        Three outcomes, deliberately distinct (KASACOLLEC-63): the device answered and
-        its data was stored (``ok``); the device could not be polled (``failed``); or the
-        device answered fine but the write to InfluxDB failed (``write_failed``). The
-        third used to be counted as ``ok``, so an InfluxDB outage produced a cycle
-        reporting every device as succeeded while nothing landed. A device that answered
+        Three outcomes, deliberately distinct: the device answered and its data was
+        stored (``ok``); the device could not be polled (``failed``); or the device
+        answered fine but the write to InfluxDB failed (``write_failed``), so an InfluxDB
+        outage never reads as every device succeeding. A device that answered
         with a reading that cannot be stored (``UnstorableReading``) is ``failed`` and
         still reachable: the fault is the device's, not InfluxDB's.
         """

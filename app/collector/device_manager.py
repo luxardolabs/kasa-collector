@@ -92,16 +92,13 @@ class DeviceManager:
         # Registry key -> monotonic timestamp of the last SUCCESSFUL poll. A poll that
         # returned data is direct evidence the device is present; a silent broadcast is
         # only an inference that it is not. When the two disagree the evidence wins —
-        # see remove_missing_devices (KASACOLLEC-70).
+        # see remove_missing_devices.
         self.last_poll_ok: dict[str, float] = {}
         # Addresses we have collected from before and are no longer polling, with the
-        # monotonic time they were retired. Pruning exists to stop a departed device
-        # eating the POLL budget (KASACOLLEC-60: three dead hosts dragged the cycle to
-        # 21-26s against a 15s interval). It never needed to erase the address as well —
-        # that was a side effect of using dict.pop() to stop iterating, and it is what
-        # made a device that goes quiet for 15 minutes unrecoverable without a human
-        # editing DEVICE_HOSTS. Retired devices cost one unicast probe per DISCOVERY
-        # round, off the poll path, so the original goal is preserved.
+        # monotonic time they were retired. Pruning stops a departed device eating the
+        # poll budget; it does not forget the address, so a device that goes quiet for a
+        # while comes back on its own. Retired devices cost one unicast probe per
+        # discovery round, off the poll path.
         self.retired: dict[str, float] = {}
         # Every address we have ever successfully collected from, persisted across
         # restarts. Discovery is the whole point of this collector — nobody should have
@@ -126,7 +123,7 @@ class DeviceManager:
 
         # Addresses of new, unlisted devices we have already told the operator we are not
         # authenticating, so the "add it to DEVICE_HOSTS" line is logged once, not every
-        # discovery round (KASACOLLEC-99).
+        # discovery round.
         self._unlisted_warned: set[str] = set()
 
         # Configurable retry and timeout settings for device authentication
@@ -255,7 +252,7 @@ class DeviceManager:
                 # Key on the RESOLVED address, not the configured string. get_device()
                 # resolves the hostname up front and connects on that address, so
                 # device.host is the IPv4 on every path -- which makes the `ip` tag an
-                # actual IP for manual and discovered devices alike (KASACOLLEC-64).
+                # actual IP for manual and discovered devices alike.
                 key = str(getattr(device, "host", "") or ip)
                 self.devices[key] = device
                 self.manual_addresses[ip] = key
@@ -400,7 +397,7 @@ class DeviceManager:
         True only for a device the operator listed in KASA_COLLECTOR_DEVICE_HOSTS (by its
         resolved address too), or for every device when KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES
         is set. Any other device is authenticated WITHOUT credentials, so a rogue responder
-        on the LAN is never handed the account's credentials (KASACOLLEC-99).
+        on the LAN is never handed the account's credentials.
 
         It deliberately does NOT trust `known_addresses`. A device is remembered there the
         moment it is collected from AT ALL, credentials or not, so a plain IOT responder that
@@ -481,9 +478,9 @@ class DeviceManager:
         - Network connectivity issues
         - Device-specific protocol requirements
         """
-        # Credentials are withheld from a device that is not allowed to receive them
-        # (KASACOLLEC-99): it is authenticated without them, and if it turns out to need
-        # them, it is left alone with a one-time note to the operator.
+        # Credentials are withheld from a device that is not allowed to receive them:
+        # it is authenticated without them, and if it turns out to need them, it is left
+        # alone with a one-time note to the operator.
         username = self.tplink_username if allow_credentials else None
         password = self.tplink_password if allow_credentials else None
 
@@ -518,7 +515,7 @@ class DeviceManager:
             else:
                 # A discovered SmartDevice reports no usable state without credentials,
                 # and the discovery object never carries them (discovery enumerates without
-                # credentials, KASACOLLEC-99). If we are allowed to use them (the device is
+                # credentials). If we are allowed to use them (the device is
                 # listed or trusted), fall through to the credentialed get_device() retry
                 # below -- that fresh connection DOES log in. If not, withhold them and tell
                 # the operator once, rather than retrying a device we may not authenticate.
@@ -745,7 +742,7 @@ class DeviceManager:
             try:
                 # Credentials only to a device allowed to receive them: a remembered
                 # address is re-probed either way (an IOT device needs none), but a
-                # self-promoted cred-less responder is never handed them (KASACOLLEC-99).
+                # self-promoted cred-less responder is never handed them.
                 allow = self._may_use_credentials(ip)
                 device = await KasaAPI.get_device(
                     ip,
@@ -803,12 +800,10 @@ class DeviceManager:
         removed devices based on configuration preference.
 
         A device that has answered a poll recently is NEVER pruned, whatever discovery
-        says (KASACOLLEC-70). Broadcast absence is an inference; a successful poll is
-        direct evidence. Live, these disagreed badly: five healthy devices stopped
-        answering broadcast entirely — proven on the wire, they emitted nothing while
-        eleven siblings replied — yet kept serving every poll. One was deleted three
-        seconds after its last successful reading. No miss threshold can fix that,
-        because the threshold only counts how long to trust the wrong signal.
+        says. Broadcast absence is an inference; a successful poll is direct evidence.
+        Healthy devices do stop answering broadcast while they keep serving every poll,
+        and no miss threshold can tell those apart: it only counts how long to trust the
+        wrong signal.
         """
         if Config.KASA_COLLECTOR_KEEP_MISSING_DEVICES:
             return
