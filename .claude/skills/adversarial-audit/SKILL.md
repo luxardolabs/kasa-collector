@@ -3,7 +3,7 @@ name: adversarial-audit
 description: Attack the WHOLE platform, not just a change — take the attack surface from `luxarch --sweep attack-surface`, rank it by this repo's committed audit profile, hand each slice to an independent attacker, verify every break with a second agent, and file each confirmed break in LuxPM with its failing test. Direct it in plain words ("what changed since the last release", "just payments, go deep", "quick"); re-runs attack only what changed. Use for a first full review of an app, on the owner's schedule, or when asked to audit or red-team the platform.
 ---
 
-<!-- luxarch:adversarial-audit-skill asset v7 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit adversarial-audit-skill`. -->
+<!-- luxarch:adversarial-audit-skill asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit adversarial-audit-skill`. -->
 
 # Adversarial audit: the whole platform
 
@@ -91,7 +91,7 @@ Ask the owner first only when their words conflict ("quick but everything"), whe
 
 ## 4. Attack, one slice per attacker
 
-Batch the planned slices into rounds of at most 8 attackers. Run each round as a workflow (or as parallel background agents with the Agent tool), every attacker a **general-purpose** agent on the strongest model, never a cheaper tier. A round that stops early leaves the rest for the next run: the registry records only what was attacked.
+Batch the planned slices into rounds of at most 8 attackers. Run each round as a workflow (or as parallel background agents with the Agent tool), every attacker a **general-purpose** agent on the strongest model, never a cheaper tier. The session stays where the attackers were launched until every one reports: a subagent runs in the session's current worktree, so entering another worktree mid-round leaves each attacker refused every command against its own. A round that stops early leaves the rest for the next run: the registry records only what was attacked.
 
 The attacker prompt, filled in per slice:
 

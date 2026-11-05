@@ -688,6 +688,7 @@ class Poller:
                 )
             outlets = []
             for index, child in enumerate(smart_strip.children, start=1):
+                reading: dict[str, int] | None
                 if iot:
                     await child.update()
                     reading = self._reading(child, iot)

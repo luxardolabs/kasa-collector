@@ -626,7 +626,7 @@ async def test_a_session_token_in_a_logged_login_reply_is_scrubbed(app_log):
     out = app_log.getvalue()
     assert "token=****" in out  # control: the URL form is scrubbed
     assert "Response with 200" in out  # the response line was written
-    assert session not in out, [l for l in out.splitlines() if session in l]
+    assert session not in out, [line for line in out.splitlines() if session in line]
 
 
 @pytest.mark.parametrize(

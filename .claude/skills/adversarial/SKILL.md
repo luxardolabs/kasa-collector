@@ -3,7 +3,7 @@ name: adversarial
 description: Attack a change before calling it done — an independent agent that did not write the change tries to make it wrong (security, tenant isolation, data integrity, money, the real stack), reproduces each break as a failing test or a probe, and the author fixes every confirmed break and commits the test. Run it from /wrap-up for any change touching auth, tenancy, data writes or migrations, money, secrets or personal data, deploys, or a guard-red fix.
 ---
 
-<!-- luxarch:adversarial-skill asset v4 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit adversarial-skill`. -->
+<!-- luxarch:adversarial-skill asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit adversarial-skill`. -->
 
 # Adversarial pass
 
@@ -19,7 +19,7 @@ Emitted from luxarch (`luxarch --emit adversarial-skill`); re-emit, never hand-e
 
 ## 2. Spawn the attacker
 
-Use the Agent tool with a **general-purpose** agent, on the strongest model (the session's own; never a cheaper tier for this). Run it in the background if you have other work. For a change to authentication, authorization, tenant isolation or money, spawn **two** attackers in parallel that share nothing; act on the union of their findings, and record how many each found and how many they shared. The prompt, filled in:
+Use the Agent tool with a **general-purpose** agent, on the strongest model (the session's own; never a cheaper tier for this). **Launch it with the session inside the attacked issue's worktree, and do not leave that worktree until it reports.** A subagent runs in the session's current worktree, not the one its brief names: once the session enters another worktree, Claude Code refuses every command the attacker runs against its own, and the round comes back with nothing run. Run it in the background only if your other work is in that same worktree. For a change to authentication, authorization, tenant isolation or money, spawn **two** attackers in parallel that share nothing; act on the union of their findings, and record how many each found and how many they shared. The prompt, filled in:
 
 ```
 You are attacking a change in <repo> that you did not write. Your job is to make it WRONG.
@@ -44,8 +44,13 @@ so the failure is the change's, not the harness's. A suspicion you tried and cou
 UNREPRODUCED, with why. One you could not try (the run errored or timed out, a service or harness you
 could not set up) is INCONCLUSIVE, with what stopped you: never report it as clean.
 
-CONSTRAINTS: read-only on the repo except files under <scratch dir>; no commits, pushes or tracker
-writes; never touch production.
+CONSTRAINTS: read-only on the repo except files under <scratch dir>, and one test file of your own
+in the repo's tests/ (`tests/test_adversarial_<topic>.py`) when a finding needs the repo's own test
+harness (`make test-one`): name it in your report, and the author moves it into the suite or deletes
+it. No commits, pushes or tracker writes; never touch production. Run plain commands from the
+worktree root: no `git -C <path>`, no `cd` elsewhere, no path computed at run time (`$PWD`,
+`$(...)`); write files with the file tool. A command the session or a hook refuses is INCONCLUSIVE,
+naming the refusal, never a pass.
 
 REPORT: a table of CONFIRMED findings, most severe first: behaviour, what goes wrong, the reproducing
 test or probe, the one-line fix. Then INCONCLUSIVE ones with what stopped you. Then UNREPRODUCED ones

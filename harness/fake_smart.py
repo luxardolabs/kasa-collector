@@ -38,13 +38,17 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import importlib.util
 import json
+import logging
 import os
 import secrets
 import socket
 import struct
 import time
 from typing import Any
+
+logger = logging.getLogger("fake_smart")
 
 # --------------------------------------------------------------------- AES-128-CBC
 
@@ -159,7 +163,7 @@ def aes_cbc_encrypt(key: bytes, iv: bytes, data: bytes) -> bytes:
     out, prev = bytearray(), iv
     for i in range(0, len(data), 16):
         prev = _encrypt_block(
-            bytes(a ^ b for a, b in zip(data[i : i + 16], prev)), keys
+            bytes(a ^ b for a, b in zip(data[i : i + 16], prev, strict=True)), keys
         )
         out += prev
     return bytes(out)
@@ -170,7 +174,9 @@ def aes_cbc_decrypt(key: bytes, iv: bytes, data: bytes) -> bytes:
     out, prev = bytearray(), iv
     for i in range(0, len(data), 16):
         block = data[i : i + 16]
-        out += bytes(a ^ b for a, b in zip(_decrypt_block(block, keys), prev))
+        out += bytes(
+            a ^ b for a, b in zip(_decrypt_block(block, keys), prev, strict=True)
+        )
         prev = block
     return bytes(out[: -out[-1]])
 
@@ -385,8 +391,6 @@ PROTOCOL = os.getenv("KASA_FAKE_PROTOCOL", "smart")
 
 def _iot_emulator() -> Any:
     """``fake_kasa``, beside this file, as the IOT device behind KLAP."""
-    import importlib.util
-
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_kasa.py")
     spec = importlib.util.spec_from_file_location("fake_kasa", path)
     if spec is None or spec.loader is None:
@@ -409,15 +413,19 @@ def reply_to(request: dict[str, Any]) -> dict[str, Any]:
 
 def discovery_reply(ip: str) -> bytes:
     """The UDP 20002 discovery answer: a 16-byte header, then the JSON result."""
-    iot = IOT is not None
+    if IOT is not None:
+        device_id, model, mac = IOT.DEVICE_ID, IOT.MODEL, IOT.MAC.replace(":", "-")
+        device_type = "IOT.SMARTPLUGSWITCH"
+    else:
+        device_id, model, mac, device_type = DEVICE_ID, MODEL, MAC, "SMART.TAPOPLUG"
     result = {
-        "device_id": IOT.DEVICE_ID if iot else DEVICE_ID,
-        "device_model": IOT.MODEL if iot else MODEL,
-        "device_type": "IOT.SMARTPLUGSWITCH" if iot else "SMART.TAPOPLUG",
+        "device_id": device_id,
+        "device_model": model,
+        "device_type": device_type,
         "factory_default": False,
         "ip": ip,
         "is_support_iot_cloud": True,
-        "mac": IOT.MAC.replace(":", "-") if iot else MAC,
+        "mac": mac,
         "mgt_encrypt_schm": {
             "encrypt_type": "KLAP",
             "http_port": HTTP_PORT,
@@ -546,16 +554,25 @@ async def serve(http_port: int = HTTP_PORT, discovery_port: int = 20002) -> None
 async def _serve_http(http_port: int) -> None:
     http = await start_http("0.0.0.0", http_port)
     if IOT is not None:
-        print(
-            f"fake IOT device {IOT.ALIAS!r} ({IOT.MODEL}) behind KLAP on :{http_port}"
+        logger.info(
+            "fake IOT device %r (%s) behind KLAP on :%s",
+            IOT.ALIAS,
+            IOT.MODEL,
+            http_port,
         )
     else:
-        print(
-            f"fake SMART strip {ALIAS!r} ({MODEL}, {OUTLETS} outlets) on :{http_port}"
+        logger.info(
+            "fake SMART strip %r (%s, %s outlets) on :%s",
+            ALIAS,
+            MODEL,
+            OUTLETS,
+            http_port,
         )
     async with http:
         await http.serve_forever()
 
 
 if __name__ == "__main__":
+    # The container's one output, read via `docker logs`.
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     asyncio.run(serve())
