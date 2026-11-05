@@ -819,13 +819,21 @@ class TestManualHostKeyedByResolvedAddress:
     could not be grouped or joined on (KASACOLLEC-64).
     """
 
-    def _dm(self, monkeypatch, tmp_path):
+    def _dm(self, monkeypatch, tmp_path, dns=None):
         async def fake_hostname(ip):
             return f"host-{ip}"
+
+        async def fake_resolve(host):
+            # The forward DNS a configured name resolves through; a name missing from
+            # ``dns`` does not resolve.
+            if dns is None or host not in dns:
+                raise OSError(f"{host} does not resolve")
+            return dns[host]
 
         monkeypatch.setattr(
             "app.collector.device_manager.get_hostname_cached", fake_hostname
         )
+        monkeypatch.setattr("app.collector.device_manager.resolve_ipv4", fake_resolve)
         from app.core import config
 
         # Isolate the persisted device roster (read+written at construction).
@@ -877,6 +885,82 @@ class TestManualHostKeyedByResolvedAddress:
         await dm.reconcile_manual_devices()
         await dm.reconcile_manual_devices()
         assert attempts == ["kasa-backroom-fridge.example.com"]  # attempted once
+
+    async def test_a_name_still_resolving_to_its_address_is_kept(
+        self, monkeypatch, tmp_path
+    ):
+        from app.collector import device_manager as dm_mod
+
+        attempts: list[str] = []
+
+        async def fake_get_device(entry, user, pw, **_):
+            attempts.append(entry)
+            return SimpleNamespace(
+                alias="Fridge", host="198.51.100.100", has_emeter=False
+            )
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+        dm = self._dm(monkeypatch, tmp_path, dns={"fridge.lan": "198.51.100.100"})
+        dm.device_hosts = ["fridge.lan"]
+
+        await dm.reconcile_manual_devices()
+        await dm.reconcile_manual_devices()
+
+        assert attempts == ["fridge.lan"]
+        assert dm.manual_addresses == {"fridge.lan": "198.51.100.100"}
+
+    async def test_a_manual_name_follows_a_dns_change(self, monkeypatch, tmp_path):
+        # After a DHCP move and a DNS update, the configured device is collected at its
+        # new address, and the old address is no longer polled or trusted as listed.
+        from app.collector import device_manager as dm_mod
+
+        dns = {"plug.lan": "10.0.0.50"}
+        disconnected: list[str] = []
+
+        class Plug(SimpleNamespace):
+            async def disconnect(self):
+                disconnected.append(self.host)
+
+        async def fake_get_device(entry, user, pw, **_):
+            return Plug(alias="Kettle", host=dns[entry], has_emeter=True, model="HS110")
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+        dm = self._dm(monkeypatch, tmp_path, dns=dns)
+        dm.device_hosts = ["plug.lan"]
+
+        await dm.reconcile_manual_devices()
+        assert "10.0.0.50" in dm.devices
+
+        dns["plug.lan"] = "10.0.0.77"
+        await dm.reconcile_manual_devices()
+
+        assert dm.manual_addresses == {"plug.lan": "10.0.0.77"}
+        assert "10.0.0.77" in dm.devices
+        assert "10.0.0.50" not in dm.devices
+        assert "10.0.0.50" not in dm.emeter_devices
+        assert disconnected == ["10.0.0.50"]
+        assert not dm._is_listed("10.0.0.50")
+
+    async def test_a_name_that_stops_resolving_keeps_its_device(
+        self, monkeypatch, tmp_path
+    ):
+        from app.collector import device_manager as dm_mod
+
+        dns = {"plug.lan": "10.0.0.50"}
+
+        async def fake_get_device(entry, user, pw, **_):
+            return SimpleNamespace(alias="Kettle", host=dns[entry], has_emeter=False)
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+        dm = self._dm(monkeypatch, tmp_path, dns=dns)
+        dm.device_hosts = ["plug.lan"]
+
+        await dm.reconcile_manual_devices()
+        dns.clear()  # a DNS outage
+        await dm.reconcile_manual_devices()
+
+        assert dm.manual_addresses == {"plug.lan": "10.0.0.50"}
+        assert "10.0.0.50" in dm.devices
 
     async def test_resolved_manual_host_is_still_protected_from_pruning(
         self, monkeypatch, tmp_path

@@ -23,6 +23,7 @@ import asyncio
 import json
 import logging
 import os
+import socket
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -33,6 +34,13 @@ from app.collector.dns_cache import get_hostname_cached
 from app.collector.kasa_api import InsecureLoginRefused, KasaAPI
 from app.collector.utils import get_device_name
 from app.core.config import Config
+
+
+async def resolve_ipv4(host: str) -> str:
+    """The IPv4 address ``host`` resolves to now, the way ``KasaAPI.get_device`` resolves it."""
+    loop = asyncio.get_running_loop()
+    result = await loop.getaddrinfo(host, None, family=socket.AF_INET)
+    return str(result[0][4][0])
 
 
 class DeviceManager:
@@ -155,8 +163,11 @@ class DeviceManager:
 
         Now it runs on every discovery cycle and attempts only the hosts that are not
         currently registered, so an env-listed device always converges to collected
-        without re-connecting (and re-handshaking) the ones already working.
+        without re-connecting (and re-handshaking) the ones already working. A host
+        configured by name is resolved again first: one whose name now points elsewhere
+        is dropped at its old address and re-added at the new one.
         """
+        await self._release_moved_manual_hosts()
         missing = [
             entry
             for entry in self.device_hosts
@@ -172,6 +183,48 @@ class DeviceManager:
                 ", ".join(missing),
             )
         await self._add_manual_devices(missing)
+
+    async def _release_moved_manual_hosts(self) -> None:
+        """Drop each name-configured host whose name no longer resolves to its address.
+
+        The registry is keyed by the address a DEVICE_HOSTS name resolved to. After a
+        DHCP move and a DNS update, that address belongs to something else: left in
+        place, the configured device is never collected at its new address, and
+        whatever took the old one keeps being polled, credentialed and written under
+        the configured device's name. A name that does not resolve this pass (a DNS
+        outage) keeps its registration.
+        """
+        for entry, address in list(self.manual_addresses.items()):
+            if entry == address:
+                continue  # configured by IP: there is nothing to re-resolve
+            try:
+                resolved = await resolve_ipv4(entry)
+            except OSError as e:
+                self.logger.debug(
+                    "Could not re-resolve %s, keeping %s: %s", entry, address, e
+                )
+                continue
+            if resolved == address:
+                continue
+            self.logger.warning(
+                "Configured device %s now resolves to %s, not %s: dropping the old "
+                "address and connecting at the new one.",
+                entry,
+                resolved,
+                address,
+            )
+            del self.manual_addresses[entry]
+            if (
+                address in self.manual_addresses.values()
+                or address in self.device_hosts
+            ):
+                continue  # still configured under another entry
+            device = self.devices.pop(address, None)
+            self.emeter_devices.pop(address, None)
+            self.polling_devices.pop(address, None)
+            self.last_poll_ok.pop(address, None)
+            self.discovery_misses.pop(address, None)
+            await KasaAPI.disconnect_device(device)
 
     async def _add_manual_devices(self, hosts: list[str]) -> None:
         """Connect and register the given manually configured hosts, in parallel.
