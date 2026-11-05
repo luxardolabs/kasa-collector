@@ -809,6 +809,35 @@ class DeviceManager:
             for ip in candidates:
                 tg.create_task(reclaim(ip))
 
+    def is_current(self, key: str, device: Device) -> bool:
+        """Whether ``device`` is still the client registered under ``key``."""
+        return self.devices.get(key) is device
+
+    async def connect_fresh(self, key: str) -> Device:
+        """A new, updated client for the device registered under ``key``.
+
+        Connected exactly as a reclaimed address is: credentials only where the
+        trust rules allow them, and never over a password-sending login to a device
+        that is not listed.
+        """
+        allow = self._may_use_credentials(key)
+        return await KasaAPI.get_device(
+            key,
+            self.tplink_username if allow else None,
+            self.tplink_password if allow else None,
+            require_hashed_login=not self._is_listed(key),
+        )
+
+    def swap_client(self, key: str, old: Device, new: Device) -> bool:
+        """Register ``new`` in place of ``old`` in every registry that holds it."""
+        if self.devices.get(key) is not old:
+            return False
+        self.devices[key] = new
+        for registry in (self.emeter_devices, self.polling_devices):
+            if registry.get(key) is old:
+                registry[key] = new
+        return True
+
     def mark_reachable(self, ip: str) -> None:
         """Record that a device answered a poll.
 

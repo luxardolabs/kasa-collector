@@ -21,10 +21,11 @@ issues or problematic devices.
 import asyncio
 import logging
 import math
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 
 from kasa import Device, Module
 from kasa.emeterstatus import EmeterStatus
@@ -197,17 +198,55 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
 _SMART_ENERGY_FIELDS = {"today_energy": "today_wh", "month_energy": "month_wh"}
 
 
-def _outlet_position(outlet: Any, index: int) -> int:
-    """A SMART outlet's own position on its strip, or its index when it reports none.
-
-    python-kasa re-creates an outlet that was missing from one child-list reply at the
-    end of the strip's children, so the index alone can move an outlet's readings into
-    another outlet's series.
-    """
+def _reported_position(outlet: Any) -> int | None:
+    """The position a SMART outlet reports on its strip, or None."""
     position = (getattr(outlet, "sys_info", None) or {}).get("position")
-    if isinstance(position, int) and not isinstance(position, bool) and position > 0:
-        return int.__int__(position)
-    return index
+    if isinstance(position, bool) or not isinstance(position, int):
+        return None
+    number = int.__int__(position)
+    return number if number >= 0 else None
+
+
+def _outlet_id(outlet: Any) -> str | None:
+    """A SMART outlet's own device id, which no reordering of the children changes."""
+    value = getattr(outlet, "device_id", None)
+    return value if isinstance(value, str) and value else None
+
+
+def _disabled_outlets(strip: Any) -> list[str]:
+    """The outlets whose energy module python-kasa has disabled after repeated errors.
+
+    python-kasa never re-enables a module on the client that disabled it.
+    """
+    disabled = []
+    for index, outlet in enumerate(getattr(strip, "children", None) or (), start=1):
+        modules = getattr(outlet, "modules", None)
+        module = modules.get(Module.Energy) if isinstance(modules, Mapping) else None
+        if module is not None and getattr(module, "disabled", False) is True:
+            disabled.append(str(outlet.alias or index))
+    return disabled
+
+
+class ClientRegistry(Protocol):
+    """Where the poller's devices are registered, and how one is connected afresh."""
+
+    def is_current(self, key: str, device: Device) -> bool:
+        """Whether ``device`` is still the client registered under ``key``."""
+        ...
+
+    async def connect_fresh(self, key: str) -> Device:
+        """A new, updated client for the device registered under ``key``."""
+        ...
+
+    def swap_client(self, key: str, old: Device, new: Device) -> bool:
+        """Register ``new`` in place of ``old``; False if ``old`` is no longer it."""
+        ...
+
+
+# A strip whose outlet python-kasa disabled is reconnected at most this often, the gap
+# doubling on each attempt up to the cap.
+_RECONNECT_FIRST_GAP = 60.0
+_RECONNECT_MAX_GAP = 3600.0
 
 
 def _device_label(device: Any) -> str:
@@ -260,6 +299,62 @@ def smart_energy_fields(device: Any) -> dict[str, int]:
     }
 
 
+async def _close(device: Any) -> None:
+    """Close a client the registry no longer holds."""
+    # swallowed-exceptions: closing a discarded client; a failure leaves nothing to
+    # recover, and the reconnect it ends has already succeeded.
+    try:
+        await device.disconnect()
+    except Exception as e:
+        logger.debug("Closing a replaced client failed: %s", e)
+
+
+class _ClientState:
+    """The poller's bookkeeping of clients in flight, replaced, and reconnecting."""
+
+    def __init__(self) -> None:
+        self.in_flight: dict[int, int] = {}
+        self.retiring: dict[int, Any] = {}
+        self.positions: dict[str, dict[str, int]] = {}
+        self.next_reconnect: dict[str, tuple[float, float]] = {}
+        self.tasks: dict[str, asyncio.Task[None]] = {}
+
+    def hold(self, device: Any) -> None:
+        self.in_flight[id(device)] = self.in_flight.get(id(device), 0) + 1
+
+    def release(self, device: Any) -> Any:
+        """Let go of ``device``; it, once retired and held by no fetch, else None."""
+        left = self.in_flight.get(id(device), 1) - 1
+        if left > 0:
+            self.in_flight[id(device)] = left
+            return None
+        self.in_flight.pop(id(device), None)
+        return self.retiring.pop(id(device), None)
+
+    def retire(self, device: Any) -> Any:
+        """Mark ``device`` replaced; it, if no fetch holds it now, else None."""
+        if self.in_flight.get(id(device)):
+            self.retiring[id(device)] = device
+            return None
+        return device
+
+    def reconnecting(self, key: str) -> bool:
+        task = self.tasks.get(key)
+        return task is not None and not task.done()
+
+    def may_reconnect(self, key: str) -> bool:
+        """Whether a reconnect of ``key`` is due, and if so, push the next one back."""
+        now = time.monotonic()
+        not_before, gap = self.next_reconnect.get(key, (0.0, _RECONNECT_FIRST_GAP))
+        if now < not_before:
+            return False
+        self.next_reconnect[key] = (now + gap, min(gap * 2, _RECONNECT_MAX_GAP))
+        return True
+
+    def start_reconnect(self, key: str, work: Awaitable[None]) -> None:
+        self.tasks[key] = asyncio.ensure_future(work)
+
+
 class Poller:
     """Manages periodic data collection from Kasa devices.
 
@@ -273,13 +368,15 @@ class Poller:
         on_reachable: Optional callback invoked with a device key when it answers.
     """
 
-    # Class-level default so an instance built without __init__ still has it.
+    # Class-level defaults so an instance built without __init__ still has them.
     on_reachable: Callable[[str], None] | None = None
+    registry: ClientRegistry | None = None
 
     def __init__(
         self,
         logger: logging.Logger,
         on_reachable: Callable[[str], None] | None = None,
+        registry: ClientRegistry | None = None,
     ):
         """Initialize the Poller with storage backend.
 
@@ -289,12 +386,18 @@ class Poller:
                 answers a poll. The DeviceManager uses it to avoid pruning a device it
                 is still collecting from. Optional so the poller stays
                 usable standalone.
+            registry: The device registry. With it, a fetch of a client that has
+                since been replaced is skipped, and a SMART strip whose outlet
+                python-kasa disabled is reconnected in place: polled on its old client
+                until a new one has connected, then swapped, the old one closed once
+                no fetch holds it.
 
         Raises:
             SystemExit: If storage backend initialization fails.
         """
         self.logger = logger
         self.on_reachable = on_reachable
+        self.registry = registry
         try:
             self.storage = InfluxDBStorage()
         except SystemExit:
@@ -308,7 +411,40 @@ class Poller:
         """Open the storage backend's async connection (called once at startup)."""
         await self.storage.connect()
 
+    def _clients(self) -> _ClientState:
+        """This poller's client bookkeeping, made on first use."""
+        state: _ClientState | None = getattr(self, "_client_state", None)
+        if state is None:
+            state = _ClientState()
+            self._client_state = state
+        return state
+
     async def _fetch_counted(
+        self,
+        fetch: Callable[[str, Device], Awaitable[bool | None]],
+        ip: str,
+        device: Device,
+        outcome: dict[str, int],
+        label: str,
+        interval: float,
+    ) -> None:
+        """``_fetch_held`` on a client still registered, holding it while it runs.
+
+        A client replaced since the cycle began is skipped: its successor is polled
+        from the next cycle. A replaced client is closed only once no fetch holds it.
+        """
+        if self.registry is not None and not self.registry.is_current(ip, device):
+            return
+        clients = self._clients()
+        clients.hold(device)
+        try:
+            await self._fetch_held(fetch, ip, device, outcome, label, interval)
+        finally:
+            retired = clients.release(device)
+            if retired is not None:
+                await _close(retired)
+
+    async def _fetch_held(
         self,
         fetch: Callable[[str, Device], Awaitable[bool | None]],
         ip: str,
@@ -687,6 +823,7 @@ class Poller:
                     }
                 )
             outlets = []
+            positions = {} if iot else self._outlet_positions(ip, smart_strip.children)
             for index, child in enumerate(smart_strip.children, start=1):
                 reading: dict[str, int] | None
                 if iot:
@@ -699,7 +836,9 @@ class Poller:
                     reading = self._outlet_reading(ip, child)
                     if reading is None:
                         continue
-                    plug_id = _outlet_position(child, index)
+                    if id(child) not in positions:
+                        continue
+                    plug_id = positions[id(child)]
                 outlets.append(
                     {
                         "emeter": reading,
@@ -712,6 +851,8 @@ class Poller:
                         "equipment_type": "plug",
                     }
                 )
+            if not iot and _disabled_outlets(smart_strip):
+                self._request_reconnect(ip, smart_strip)
             if not iot and not totals and not outlets:
                 raise ValueError(f"no outlet of {ip} gave a storable reading")
         except Exception as e:
@@ -726,6 +867,93 @@ class Poller:
         return await self.storage.process_emeter_entries(
             [(ip, point) for point in totals + outlets]
         )
+
+    def _outlet_positions(self, ip: str, outlets: Any) -> dict[int, int]:
+        """Each SMART outlet's plug_id this poll, by ``id()`` of the outlet object.
+
+        An outlet's reported position is its plug_id (one-based; a strip numbering
+        from 0 is shifted by one). An outlet reporting none, or one another outlet
+        already holds, keeps the position it last had on this strip, by its own device
+        id; failing that, its index if no other outlet reports or holds that number.
+        An outlet that cannot be placed is left out of this poll rather than written
+        into another outlet's series. A strip that reports no positions at all is
+        numbered by index.
+        """
+        measuring = [o for o in outlets if getattr(o, "has_emeter", False)]
+        reported = {id(o): _reported_position(o) for o in measuring}
+        valid = [p for p in reported.values() if p is not None]
+        known = self._clients().positions.setdefault(ip, {})
+        if not valid and not known:
+            return {id(o): n for n, o in enumerate(outlets, start=1) if o in measuring}
+        shift = 1 if valid and min(valid) == 0 else 0
+        claimed = {p + shift for p in valid}
+        placed: dict[int, int] = {}
+        used: set[int] = set()
+        for index, outlet in enumerate(outlets, start=1):
+            if outlet not in measuring:
+                continue
+            outlet_id = _outlet_id(outlet)
+            own = reported[id(outlet)]
+            candidates = [
+                own + shift if own is not None else None,
+                known.get(outlet_id) if outlet_id else None,
+                index if index not in claimed else None,
+            ]
+            position = next((c for c in candidates if c and c not in used), None)
+            if position is None:
+                self.logger.warning(
+                    "Outlet %r of %s has no position of its own this poll; leaving it out",
+                    outlet.alias or index,
+                    ip,
+                )
+                continue
+            placed[id(outlet)] = position
+            used.add(position)
+            if outlet_id:
+                known[outlet_id] = position
+        return placed
+
+    def _request_reconnect(self, ip: str, strip: Device) -> None:
+        """Reconnect ``strip`` in the background, at most once per back-off gap."""
+        disabled = _disabled_outlets(strip)
+        if self.registry is None:
+            self.logger.warning(
+                "%s: python-kasa stopped reading energy for outlet(s) %s; restart the "
+                "collector to read them again",
+                ip,
+                ", ".join(disabled),
+            )
+            return
+        clients = self._clients()
+        if clients.reconnecting(ip) or not clients.may_reconnect(ip):
+            return
+        self.logger.warning(
+            "%s: python-kasa stopped reading energy for outlet(s) %s after repeated "
+            "errors; connecting the strip afresh, still polling it meanwhile",
+            ip,
+            ", ".join(disabled),
+        )
+        clients.start_reconnect(ip, self._reconnect(ip, strip))
+
+    async def _reconnect(self, ip: str, old: Device) -> None:
+        """Connect ``ip`` afresh, then swap the new client in for ``old``."""
+        registry = self.registry
+        if registry is None:
+            return
+        # swallowed-exceptions: a reconnect that fails leaves the strip on its old
+        # client, still polled; it is logged and tried again after the back-off gap.
+        try:
+            new = await registry.connect_fresh(ip)
+        except Exception as e:
+            self.logger.warning("Reconnecting %s failed: %s", ip, e)
+            return
+        if not registry.swap_client(ip, old, new):
+            await _close(new)  # the old client was replaced or removed meanwhile
+            return
+        self.logger.info("Reconnected %s on a new client", ip)
+        retired = self._clients().retire(old)
+        if retired is not None:
+            await _close(retired)
 
     def _outlet_reading(self, ip: str, outlet: Any) -> dict[str, int] | None:
         """A SMART outlet's reading, or None when that outlet's energy read failed."""
