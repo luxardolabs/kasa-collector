@@ -38,7 +38,7 @@ FAKE_IMAGE := kasa-collector-fake:test
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.342.0
+LUXARCH_VERSION  := 0.343.0
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
@@ -2540,7 +2540,7 @@ arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml)
 # `|| true` because --json exits non-zero on a red repo — the verdict is IN the JSON, and a
 # red repo still has a valid, committable status. `set -e` so a failed/empty stamp ABORTS
 # rather than printing a false "wrote". See luxarch --doc FLEET-STATUS.
-# luxarch:guard-run asset v6 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
+# luxarch:guard-run asset v7 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
 # ── GUARD_RUN: how every guard sees this checkout ───────────────────────────────────────────────────
 # Emitted by `luxarch --emit guard-run`; paste it above the targets that run the guards (`status:`, and
 # `arch:` / `lint:` / `audit:` where they run a guard image).
@@ -2662,11 +2662,14 @@ HEAVY_SLOT_DIR ?= /var/tmp/fleet-heavy-slots
 # info`; 6 GiB on a 27 GiB Docker Desktop VM), or 6g where docker cannot say. HEAVY_CPUS, when set,
 # adds `--cpus`; unset there is no CPU cap (a suite that sizes its workers from the host's cores, as
 # pytest-xdist's `-n auto` does, would run them all inside the quota).
+# Each also runs at `--oom-score-adj=500`, so when the VM runs out anyway the kernel kills a guard
+# or test container before the app and its database, which compose ranks at -500
+# (`repo.compose_oom_ranked`).
 # (recursive, so `docker info` runs only when a capped run expands it, never on every parse)
 HEAVY_MEMORY ?= $(or $(shell docker info --format '{{.MemTotal}}' 2>/dev/null | awk -v n='$(HEAVY_SLOTS)' '$$1 ~ /^[0-9]+$$/ { n += 0; if (n < 1) n = 3; m = int($$1 * 2 / 3 / n / 1048576); if (m < 1024) m = 1024; print m "m"; exit }'),6g)
 HEAVY_CPUS ?=
 unexport HEAVY_SLOTS HEAVY_SLOT_DIR HEAVY_MEMORY HEAVY_CPUS guard_slot guard_slot_vals guard_slot_body guard_caps guard_capped
-override guard_caps = $(foreach v,HEAVY_MEMORY HEAVY_CPUS,$(if $(filter environment% command,$(origin $(v))),$(error REFUSING: $(v) comes from the $(origin $(v)), so the caller chose how much of this machine one heavy job may take: set it in Makefile.local)))--memory='$(subst ','\'',$(HEAVY_MEMORY))' --memory-swap='$(subst ','\'',$(HEAVY_MEMORY))'$(if $(HEAVY_CPUS), --cpus='$(subst ','\'',$(HEAVY_CPUS))')
+override guard_caps = $(foreach v,HEAVY_MEMORY HEAVY_CPUS,$(if $(filter environment% command,$(origin $(v))),$(error REFUSING: $(v) comes from the $(origin $(v)), so the caller chose how much of this machine one heavy job may take: set it in Makefile.local)))--oom-score-adj=500 --memory='$(subst ','\'',$(HEAVY_MEMORY))' --memory-swap='$(subst ','\'',$(HEAVY_MEMORY))'$(if $(HEAVY_CPUS), --cpus='$(subst ','\'',$(HEAVY_CPUS))')
 # the run, then its exit: 137 is a SIGKILL, which for a capped container is almost always its own limit
 override guard_capped = gs_rc=0; "$$@" || gs_rc=$$?; [ "$$gs_rc" != 137 ] || echo "$$gs_job: the container was killed (exit 137), most likely at its memory cap (HEAVY_MEMORY $(HEAVY_MEMORY)): raise HEAVY_MEMORY in Makefile.local, or lower HEAVY_SLOTS so the machine has room" >&2; exit "$$gs_rc"
 override guard_slot_vals = $(foreach v,HEAVY_SLOTS HEAVY_SLOT_DIR,$(if $(filter environment% command,$(origin $(v))),$(error REFUSING: $(v) comes from the $(origin $(v)), so the caller chose how many heavy jobs this machine runs at once: set it in Makefile.local)))$(if $(filter --eval=%,$(MAKEFLAGS)),$(error REFUSING: --eval adds makefile text from the command line, which could choose the heavy-job slots: put it in Makefile.local))$(if $(guard_dry),,$(if $(filter -I% --include-dir%,$(filter-out $(MAKEOVERRIDES),$(MAKEFLAGS))),$(error REFUSING: -I lets make read a Makefile.local from another directory, which could choose the heavy-job slots: run without it)))'$(subst ','\'',$(HEAVY_SLOT_DIR))' '$(subst ','\'',$(HEAVY_SLOTS))' '$(subst ','\'',make $@ in $(CURDIR))'

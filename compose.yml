@@ -46,6 +46,7 @@ services:
   # The real collector against real hardware. Host networking for UDP discovery.
   kasa-collector:
     profiles: [collector]
+    oom_score_adj: -500
     container_name: kasa-collector
     image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
     env_file:
@@ -72,6 +73,7 @@ services:
   # collector reaching these on localhost) and the demo stack (fakes on the bridge).
   kasa_influxdb:
     profiles: [bundled, demo]
+    oom_score_adj: -500
     image: influxdb:2.7
     container_name: kasa_influxdb
     environment:
@@ -98,6 +100,7 @@ services:
 
   kasa_grafana:
     profiles: [bundled, demo]
+    oom_score_adj: -500
     image: grafana/grafana:11.3.0
     container_name: kasa_grafana
     environment:
@@ -127,6 +130,7 @@ services:
   # BARE name and never pushes it, so a clean clone runs the demo with no registry.
   kasa_fake_hs110:
     profiles: [demo, e2e]
+    oom_score_adj: -500
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug
@@ -138,6 +142,7 @@ services:
 
   kasa_fake_kp115:
     profiles: [demo, e2e]
+    oom_score_adj: -500
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug
@@ -151,6 +156,7 @@ services:
   # handled cleanly and must NOT write emeter data; e2e asserts both.
   kasa_fake_hs103:
     profiles: [demo, e2e]
+    oom_score_adj: -500
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug_noemeter
@@ -161,6 +167,7 @@ services:
 
   kasa_fake_hs300:
     profiles: [demo, e2e]
+    oom_score_adj: -500
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: strip
@@ -175,6 +182,7 @@ services:
   # proves its readings are written in the dashboards' milli-units, not truncated.
   kasa_fake_legacy:
     profiles: [e2e]
+    oom_score_adj: 500
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug
@@ -189,6 +197,7 @@ services:
   # outlet still gets its own series (plug_id), not one series per alias.
   kasa_fake_twin_strip:
     profiles: [e2e]
+    oom_score_adj: 500
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: strip
@@ -204,6 +213,7 @@ services:
   # e2e only: it exists to prove a device that discovery stops seeing keeps collecting.
   kasa_fake_deaf:
     profiles: [e2e]
+    oom_score_adj: 500
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug
@@ -220,6 +230,7 @@ services:
   # a broadcast cannot reach a bridge network, so the emulators are named explicitly.
   kasa-collector-demo:
     profiles: [demo]
+    oom_score_adj: -500
     container_name: kasa-collector-demo
     image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
     env_file:
@@ -253,6 +264,7 @@ services:
   # named volume, as the bundled InfluxDB above does.
   kasa_e2e_influxdb:
     profiles: [e2e]
+    oom_score_adj: 500
     image: influxdb:2.7
     environment:
       DOCKER_INFLUXDB_INIT_MODE: setup
@@ -278,6 +290,7 @@ services:
   # tmpfs for both declared VOLUMEs, so a run leaves nothing behind.
   kasa_test_influxdb:
     profiles: [test]
+    oom_score_adj: 500
     image: influxdb:2.7
     environment:
       DOCKER_INFLUXDB_INIT_MODE: setup
@@ -299,6 +312,7 @@ services:
   # verification name: never pushed, so the test needs no registry (`<repo>-e2e:test`).
   kasa-collector-e2e:
     profiles: [e2e]
+    oom_score_adj: 500
     image: kasa-collector-e2e:test
     environment:
       # DISCOVERY, not explicit hosts. A Docker bridge is a Linux bridge and floods
