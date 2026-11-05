@@ -174,3 +174,26 @@ async def test_get_devices_own_lookup_is_bounded(monkeypatch):
 
     with pytest.raises(TimeoutError):
         await kasa_api.KasaAPI.get_device("plug.lan")
+
+
+async def test_a_retired_device_is_connected_afresh_on_the_next_pass(
+    monkeypatch, tmp_path
+):
+    # The poller hands back a device whose client can no longer read all of it; the
+    # next discovery pass must connect it with a new client and close the old one.
+    import asyncio
+
+    dns = {"plug.lan": ["10.0.0.50"]}
+    manager = _manager(monkeypatch, tmp_path, dns)
+    calls: list = []
+    _connect_as(monkeypatch, lambda e: dns[e][0] if e in dns else e, calls)
+    await manager.discover_devices()
+    old = manager.devices["10.0.0.50"]
+
+    manager.retire("10.0.0.50")
+    assert "10.0.0.50" not in manager.emeter_devices
+    await manager.discover_devices()
+    await asyncio.sleep(0)  # let the old client's close run
+
+    assert manager.devices["10.0.0.50"] is not old
+    assert old.closed

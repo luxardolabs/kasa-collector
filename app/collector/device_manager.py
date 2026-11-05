@@ -92,6 +92,8 @@ class DeviceManager:
         self.discovery_misses: dict[str, int] = {}
         # A DEVICE_HOSTS name found moved this pass -> the address to re-add it at.
         self._moved_to: dict[str, str] = {}
+        # Clients being closed after retire(), held until their disconnect finishes.
+        self._closing: set[asyncio.Task[None]] = set()
         # Configured DEVICE_HOSTS entry -> the registry key it resolved to. Devices are
         # keyed (and tagged in InfluxDB) by RESOLVED ADDRESS, so a manual host configured
         # by DNS name is indistinguishable from a discovered one in the data. This mapping
@@ -808,6 +810,25 @@ class DeviceManager:
         async with asyncio.TaskGroup() as tg:
             for ip in candidates:
                 tg.create_task(reclaim(ip))
+
+    def retire(self, ip: str) -> None:
+        """Stop polling ``ip`` on its current client, and connect it afresh next pass.
+
+        The address is kept in ``retired``, so ``reclaim_retired_devices`` re-probes it
+        on the next discovery pass and registers a new client; a configured host is
+        re-added by ``reconcile_manual_devices`` the same way. The old client is closed.
+        """
+        device = self.devices.pop(ip, None)
+        if device is None:
+            return
+        self.emeter_devices.pop(ip, None)
+        self.polling_devices.pop(ip, None)
+        self.last_poll_ok.pop(ip, None)
+        self.discovery_misses.pop(ip, None)
+        self.retired[ip] = time.monotonic()
+        task = asyncio.get_running_loop().create_task(KasaAPI.disconnect_device(device))
+        self._closing.add(task)
+        task.add_done_callback(self._closing.discard)
 
     def mark_reachable(self, ip: str) -> None:
         """Record that a device answered a poll.

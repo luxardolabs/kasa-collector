@@ -197,17 +197,36 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
 _SMART_ENERGY_FIELDS = {"today_energy": "today_wh", "month_energy": "month_wh"}
 
 
-def _outlet_position(outlet: Any, index: int) -> int:
-    """A SMART outlet's own position on its strip, or its index when it reports none.
+def _outlet_positions(outlets: Any) -> dict[int, int]:
+    """Each SMART outlet's own position on its strip, by ``id()``, or nothing.
 
     python-kasa re-creates an outlet that was missing from one child-list reply at the
     end of the strip's children, so the index alone can move an outlet's readings into
-    another outlet's series.
+    another outlet's series. The positions are used only when every outlet reports a
+    distinct positive one; otherwise every outlet keeps its index, so two outlets never
+    share a plug_id.
     """
-    position = (getattr(outlet, "sys_info", None) or {}).get("position")
-    if isinstance(position, int) and not isinstance(position, bool) and position > 0:
-        return int.__int__(position)
-    return index
+    found: dict[int, int] = {}
+    for outlet in outlets:
+        position = (getattr(outlet, "sys_info", None) or {}).get("position")
+        if isinstance(position, bool) or not isinstance(position, int):
+            return {}
+        number = int.__int__(position)
+        if number <= 0 or number in found.values():
+            return {}
+        found[id(outlet)] = number
+    return found
+
+
+def _disabled_outlets(strip: Any) -> list[str]:
+    """The outlets whose energy module python-kasa has disabled after repeated errors."""
+    disabled = []
+    for index, outlet in enumerate(getattr(strip, "children", None) or (), start=1):
+        modules = getattr(outlet, "modules", None)
+        module = modules.get(Module.Energy) if isinstance(modules, Mapping) else None
+        if module is not None and getattr(module, "disabled", False) is True:
+            disabled.append(str(outlet.alias or index))
+    return disabled
 
 
 def _device_label(device: Any) -> str:
@@ -271,15 +290,19 @@ class Poller:
         logger: Logger instance for this class.
         storage: InfluxDB storage backend for persisting data.
         on_reachable: Optional callback invoked with a device key when it answers.
+        on_stale: Optional callback invoked with a device key whose client must be
+            re-created to be collected in full again.
     """
 
-    # Class-level default so an instance built without __init__ still has it.
+    # Class-level defaults so an instance built without __init__ still has them.
     on_reachable: Callable[[str], None] | None = None
+    on_stale: Callable[[str], None] | None = None
 
     def __init__(
         self,
         logger: logging.Logger,
         on_reachable: Callable[[str], None] | None = None,
+        on_stale: Callable[[str], None] | None = None,
     ):
         """Initialize the Poller with storage backend.
 
@@ -289,12 +312,18 @@ class Poller:
                 answers a poll. The DeviceManager uses it to avoid pruning a device it
                 is still collecting from. Optional so the poller stays
                 usable standalone.
+            on_stale: Called with a device's registry key when its client can no
+                longer read all of it: a SMART outlet whose energy module python-kasa
+                has disabled after repeated errors stays disabled for the life of that
+                client. The DeviceManager retires it, so the next discovery pass
+                connects it afresh.
 
         Raises:
             SystemExit: If storage backend initialization fails.
         """
         self.logger = logger
         self.on_reachable = on_reachable
+        self.on_stale = on_stale
         try:
             self.storage = InfluxDBStorage()
         except SystemExit:
@@ -687,6 +716,7 @@ class Poller:
                     }
                 )
             outlets = []
+            positions = {} if iot else _outlet_positions(smart_strip.children)
             for index, child in enumerate(smart_strip.children, start=1):
                 reading: dict[str, int] | None
                 if iot:
@@ -699,7 +729,7 @@ class Poller:
                     reading = self._outlet_reading(ip, child)
                     if reading is None:
                         continue
-                    plug_id = _outlet_position(child, index)
+                    plug_id = positions.get(id(child), index)
                 outlets.append(
                     {
                         "emeter": reading,
@@ -712,6 +742,18 @@ class Poller:
                         "equipment_type": "plug",
                     }
                 )
+            disabled = [] if iot else _disabled_outlets(smart_strip)
+            if disabled:
+                # python-kasa never re-enables a module on this client: only a new
+                # client reads these outlets again.
+                self.logger.warning(
+                    "%s: python-kasa stopped reading energy for outlet(s) %s after "
+                    "repeated errors; reconnecting the strip",
+                    ip,
+                    ", ".join(disabled),
+                )
+                if self.on_stale is not None:
+                    self.on_stale(ip)
             if not iot and not totals and not outlets:
                 raise ValueError(f"no outlet of {ip} gave a storable reading")
         except Exception as e:
