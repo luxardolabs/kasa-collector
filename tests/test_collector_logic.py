@@ -1826,19 +1826,18 @@ def _discovered(host: str, encryption: str, login_version: int | None):
 
 
 @pytest.mark.unit
-class TestHashedLoginForUnlistedDevices:
-    """An unlisted device never gets the password over an AES login that carries it.
+class TestNoAesLoginForUnlistedDevices:
+    """An unlisted device is never logged in to over AES.
 
-    The responder's discovery reply picks the AES login version, and every version but 2
-    sends base64(password) under a session key the responder chooses. With the default
-    KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES=True, credentials still go only to a
-    discovered device whose login hashes the password, unless it is listed.
+    The responder's discovery reply picks the login. Every AES login hands it something
+    it could log in with: base64(password) on version 1, an unsalted base64(sha1) the
+    owner's AES-v2 devices accept on version 2. With the default
+    KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES=True, an unlisted device still gets the
+    credentials only over KLAP.
     """
 
-    @pytest.mark.parametrize("login_version", [None, 1])
-    async def test_get_device_refuses_a_password_sending_login(
-        self, monkeypatch, login_version
-    ):
+    @pytest.mark.parametrize("login_version", [None, 1, 2, 3])
+    async def test_get_device_refuses_every_aes_login(self, monkeypatch, login_version):
         from app.collector import kasa_api
 
         responder = _discovered("10.0.0.9", "AES", login_version)
@@ -1855,7 +1854,7 @@ class TestHashedLoginForUnlistedDevices:
 
         with pytest.raises(kasa_api.InsecureLoginRefused):
             await kasa_api.KasaAPI.get_device(
-                "10.0.0.9", "owner@x", "s3cret", require_hashed_login=True
+                "10.0.0.9", "owner@x", "s3cret", refuse_aes_login=True
             )
 
         assert responder.calls == ["disconnect"]  # no login was attempted
@@ -1863,7 +1862,7 @@ class TestHashedLoginForUnlistedDevices:
 
     @pytest.mark.parametrize(
         ("encryption", "login_version", "require"),
-        [("AES", 2, True), ("KLAP", None, True), ("AES", 1, False)],
+        [("KLAP", 2, True), ("KLAP", None, True), ("AES", 2, False), ("AES", 1, False)],
     )
     async def test_get_device_logs_in_otherwise(
         self, monkeypatch, encryption, login_version, require
@@ -1878,13 +1877,32 @@ class TestHashedLoginForUnlistedDevices:
         monkeypatch.setattr(kasa_api.Discover, "discover_single", fake_discover_single)
 
         device = await kasa_api.KasaAPI.get_device(
-            "10.0.0.9", "owner@x", "s3cret", require_hashed_login=require
+            "10.0.0.9", "owner@x", "s3cret", refuse_aes_login=require
         )
 
         assert device is responder
         assert responder.calls == ["update"]
 
-    async def test_trusted_unlisted_device_requires_a_hashed_login(
+    def test_the_camera_login_over_https_counts_as_aes(self):
+        from kasa import DeviceConfig, DeviceConnectionParameters
+        from kasa.deviceconfig import DeviceEncryptionType, DeviceFamily
+
+        from app.collector import kasa_api
+
+        camera = SimpleNamespace(
+            config=DeviceConfig(
+                host="10.0.0.9",
+                connection_type=DeviceConnectionParameters(
+                    DeviceFamily.SmartIpCamera,
+                    DeviceEncryptionType.Aes,
+                    login_version=2,
+                    https=True,
+                ),
+            )
+        )
+        assert kasa_api._logs_in_over_aes(camera)
+
+    async def test_trusted_unlisted_device_is_never_logged_in_to_over_aes(
         self, monkeypatch, tmp_path
     ):
         from app.collector import device_manager as dm_mod
@@ -1894,7 +1912,7 @@ class TestHashedLoginForUnlistedDevices:
         required: dict[str, bool] = {}
 
         async def fake_get_device(ip, username=None, password=None, **kwargs):
-            required[ip] = kwargs.get("require_hashed_login", False)
+            required[ip] = kwargs.get("refuse_aes_login", False)
             if required[ip]:
                 raise dm_mod.InsecureLoginRefused(ip)
             return SimpleNamespace(host=ip, alias="Dev", has_emeter=True, model="P110")
@@ -1913,9 +1931,9 @@ class TestHashedLoginForUnlistedDevices:
         assert required == {"10.0.0.1": False, "10.0.0.9": True}
         assert "10.0.0.1" in dm.devices
         assert "10.0.0.9" not in dm.devices
-        assert sum("would send the TP-Link password" in w for w in warnings) == 1
+        assert sum("asks for an AES login" in w for w in warnings) == 1
 
-    async def test_reclaim_requires_a_hashed_login_from_an_unlisted_address(
+    async def test_reclaim_refuses_aes_to_an_unlisted_address(
         self, monkeypatch, tmp_path
     ):
         from app.collector import device_manager as dm_mod
@@ -1926,7 +1944,7 @@ class TestHashedLoginForUnlistedDevices:
         required: dict[str, bool] = {}
 
         async def fake_get_device(ip, username=None, password=None, **kwargs):
-            required[ip] = kwargs.get("require_hashed_login", False)
+            required[ip] = kwargs.get("refuse_aes_login", False)
             return SimpleNamespace(host=ip, alias="Dev", has_emeter=True, model="P110")
 
         monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)

@@ -41,26 +41,27 @@ RESOLVE_TIMEOUT = 5.0
 
 
 class InsecureLoginRefused(Exception):
-    """The device would receive the TP-Link password in a recoverable form.
+    """The device asked for a login that hands over a credential it could reuse.
 
-    An AES device logs in with the password as ``base64(password)`` unless it speaks
-    login version 2, and the device chooses both the login version (in its discovery
-    reply) and the session key. A responder that is not listed in
-    KASA_COLLECTOR_DEVICE_HOSTS is therefore never handed credentials over that login.
+    Every AES login python-kasa speaks gives the device something it can log in with:
+    login version 1 sends ``base64(password)``, version 2 an unsalted
+    ``base64(sha1(password))`` that the owner's real AES-v2 devices accept as the
+    credential, and the camera (SSL-AES) login an unsalted md5 of the password. The
+    device picks the login in its own discovery reply, so a responder that is not
+    listed in KASA_COLLECTOR_DEVICE_HOSTS is never logged in to over AES. KLAP gives a
+    device only a hash bound to random seeds, which it would have to crack.
     """
 
     def __init__(self, host: str) -> None:
-        super().__init__(f"{host} advertises an AES login that sends the password")
+        super().__init__(
+            f"{host} advertises an AES login, refused for an unlisted device"
+        )
         self.host = host
 
 
-def _sends_recoverable_password(device: Device) -> bool:
-    """Whether logging in to ``device`` would send the password itself, base64-encoded."""
-    connection = device.config.connection_type
-    return (
-        connection.encryption_type is DeviceEncryptionType.Aes
-        and connection.login_version != 2
-    )
+def _logs_in_over_aes(device: Device) -> bool:
+    """Whether logging in to ``device`` would use an AES login (any version, any port)."""
+    return device.config.connection_type.encryption_type is DeviceEncryptionType.Aes
 
 
 async def _close_quietly(device: Device) -> None:
@@ -263,7 +264,7 @@ class KasaAPI:
         username: str | None = None,
         password: str | None = None,
         *,
-        require_hashed_login: bool = False,
+        refuse_aes_login: bool = False,
     ) -> Device:
         """Connect to a Kasa device by IP address or hostname.
 
@@ -271,9 +272,9 @@ class KasaAPI:
             ip_or_hostname: IP address or hostname of the device.
             username: Optional TP-Link account username.
             password: Optional TP-Link account password.
-            require_hashed_login: Refuse to send the credentials to a device whose
-                discovery reply asks for an AES login other than version 2, which sends
-                the password base64-encoded under a key the device chooses. Set for a
+            refuse_aes_login: Refuse to send the credentials to a device whose
+                discovery reply asks for an AES login (any version, cameras included),
+                which hands the device a credential it could log in with. Set for a
                 device the operator did not list.
 
         Returns:
@@ -281,8 +282,8 @@ class KasaAPI:
 
         Raises:
             socket.gaierror: If hostname resolution fails.
-            InsecureLoginRefused: If ``require_hashed_login`` is set and the device asks
-                for a login that sends the password.
+            InsecureLoginRefused: If ``refuse_aes_login`` is set and the device asks
+                for an AES login.
             Exception: If connection fails after all retry attempts.
 
         Connection strategy:
@@ -321,10 +322,10 @@ class KasaAPI:
             )
             if device:
                 if (
-                    require_hashed_login
+                    refuse_aes_login
                     and username
                     and password
-                    and _sends_recoverable_password(device)
+                    and _logs_in_over_aes(device)
                 ):
                     await _close_quietly(device)
                     raise InsecureLoginRefused(ip)

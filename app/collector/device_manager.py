@@ -444,8 +444,8 @@ class DeviceManager:
         """Whether the operator listed ``ip`` in KASA_COLLECTOR_DEVICE_HOSTS (or its address).
 
         A device trusted only through KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES is not listed,
-        so it is never sent the password over an AES login that carries it base64-encoded
-        (``KasaAPI.get_device``'s ``require_hashed_login``).
+        so it is never logged in to over AES, whose every login hands the device a
+        credential it could reuse (``KasaAPI.get_device``'s ``refuse_aes_login``).
         """
         return ip in self.device_hosts or ip in self.manual_addresses.values()
 
@@ -473,15 +473,15 @@ class DeviceManager:
         """Tell the operator once that ``ip`` asked for a login that sends the password.
 
         The device is discovered, not listed, and its discovery reply asks for an AES
-        login other than version 2, which carries the password base64-encoded under a
-        session key the device picks. Anything on the LAN can answer discovery that way.
+        login, which hands the device a credential it could log in to the owner's
+        devices with. Anything on the LAN can answer discovery that way.
         """
         if ip in self._unlisted_warned:
             return
         self._unlisted_warned.add(ip)
         self.logger.warning(
-            "Discovered device %s asks for an AES login that would send the TP-Link "
-            "password itself (login version other than 2), so its credentials were "
+            "Discovered device %s asks for an AES login, which hands the device a "
+            "credential it could log in to your devices with, so its credentials were "
             "withheld. If it is your device, add it to KASA_COLLECTOR_DEVICE_HOSTS to "
             "collect from it.",
             ip,
@@ -566,7 +566,7 @@ class DeviceManager:
                         ip,
                         username,
                         password,
-                        require_hashed_login=not self._is_listed(ip),
+                        refuse_aes_login=not self._is_listed(ip),
                     ),
                     timeout=self.timeout_seconds,
                 )
@@ -790,7 +790,7 @@ class DeviceManager:
                     ip,
                     self.tplink_username if allow else None,
                     self.tplink_password if allow else None,
-                    require_hashed_login=not self._is_listed(ip),
+                    refuse_aes_login=not self._is_listed(ip),
                 )
                 key = str(getattr(device, "host", "") or ip)
                 self.devices[key] = device
@@ -837,7 +837,7 @@ class DeviceManager:
             key,
             self.tplink_username if allow else None,
             self.tplink_password if allow else None,
-            require_hashed_login=not self._is_listed(key),
+            refuse_aes_login=not self._is_listed(key),
         )
 
     def swap_client(self, key: str, old: Device, new: Device) -> bool:
