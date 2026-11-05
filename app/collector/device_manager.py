@@ -32,7 +32,7 @@ from kasa import Device
 
 from app.collector.dns_cache import get_hostname_cached
 from app.collector.kasa_api import InsecureLoginRefused, KasaAPI
-from app.collector.utils import get_device_name
+from app.collector.utils import get_device_name, measures_energy
 from app.core.config import Config
 
 _RESOLVE_TIMEOUT = 5.0
@@ -927,7 +927,7 @@ class DeviceManager:
         through here, so the persisted roster cannot drift from the live one.
         """
         self._remember(ip)
-        if hasattr(device, "has_emeter") and device.has_emeter:
+        if measures_energy(device):
             self.emeter_devices[ip] = device
             self.polling_devices[ip] = (
                 device  # Initially, only emeter devices get polled

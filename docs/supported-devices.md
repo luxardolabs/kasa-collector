@@ -13,7 +13,7 @@ Devices without an energy meter (for example the HS103 plug) are handled cleanly
 
 ## Per-outlet monitoring
 
-Multi-outlet power strips such as the **HS300** expose a separate energy meter per outlet. Kasa Collector records each outlet as its own series, so you can see per-outlet power and energy — not just a strip-wide total — in the Grafana dashboards.
+Multi-outlet power strips expose a separate energy meter per outlet: IOT strips such as the **HS300**, and SMART strips such as the **P316M** and **P304M**, whose outlets each carry their own energy module. Kasa Collector records each outlet as its own series, so you can see per-outlet power and energy — not just a strip-wide total — in the Grafana dashboards. A SMART strip's total is written too when the strip measures one.
 
 ## Tested and known-good models
 
@@ -31,15 +31,15 @@ Other Kasa devices are commonly discovered automatically when they advertise the
 
 ## Testing without hardware
 
-Kasa Collector ships a hardware-free end-to-end harness (`make test-e2e`) built on fake device emulators in `harness/fake_kasa.py`, which speak the real IOT protocol over UDP/TCP so python-kasa builds genuine device objects and reads live emeter data.
+Kasa Collector ships a hardware-free end-to-end harness (`make test-e2e`) built on fake device emulators: `harness/fake_kasa.py` speaks the real IOT protocol over UDP/TCP, and `harness/fake_smart.py` a SMART power strip over KLAP v2 (discovery on UDP 20002, login and encrypted requests over HTTP). python-kasa builds genuine device objects from both and reads live emeter data.
 
-The emulator already covers every IOT device shape the collector handles, selectable via `KASA_FAKE_KIND`:
+The IOT emulator covers every IOT device shape the collector handles, selectable via `KASA_FAKE_KIND`:
 
 - `plug` — a smart plug **with** energy monitoring (e.g. HS110, KP115).
 - `plug_noemeter` — a smart plug **without** energy monitoring (e.g. HS103), to exercise the no-emeter path.
 - `strip` — an HS300-style multi-outlet strip with **per-outlet emeter** data.
 
-Per-outlet strips are fully emulated today — they are not future work. See [Testing](testing.md) for how to run the harness.
+The SMART emulator is a P316M-style strip with six outlets that each measure their own energy. See [Testing](testing.md) for how to run the harness.
 
 ## Compatibility reference
 

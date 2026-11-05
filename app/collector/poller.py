@@ -29,9 +29,15 @@ from typing import Any
 from kasa import Device, Module
 from kasa.emeterstatus import EmeterStatus
 from kasa.iot import IotDevice, IotStrip
+from kasa.smart import SmartDevice
 
 from app.collector.dns_cache import get_hostname_cached
-from app.collector.utils import DeviceContext, async_retry
+from app.collector.utils import (
+    DeviceContext,
+    async_retry,
+    energy_status,
+    has_outlet_energy,
+)
 from app.core.config import Config
 from app.health import heartbeat
 from app.storage.influxdb import InfluxDBStorage, device_id_of
@@ -583,7 +589,7 @@ class Poller:
         """
         async with DeviceContext(device, ip, "emeter fetch"):
             await device.update()
-            if isinstance(device, IotStrip):
+            if isinstance(device, IotStrip) or has_outlet_energy(device):
                 return await self.process_smart_strip_data(ip, device)
             if device.has_emeter:
                 return await self.process_device_data(ip, device)
@@ -591,12 +597,15 @@ class Poller:
             # emeter it had: nothing was stored, and the cycle must not count it so.
             raise UnstorableReading(f"{ip} no longer reports an emeter")
 
-    async def process_smart_strip_data(self, ip: str, smart_strip: IotStrip) -> bool:
+    async def process_smart_strip_data(self, ip: str, smart_strip: Device) -> bool:
         """Process energy data for power strip and all child plugs.
 
         Args:
             ip: IP address of the power strip.
-            smart_strip: IotStrip device object.
+            smart_strip: An IOT strip (HS300), or a SMART strip whose outlets measure
+                their own energy (P316M). An IOT outlet is read with its own update(),
+                in the IOT strip's units; a SMART strip's update() already read every
+                outlet, and its total is written only when the strip measures one.
 
         Collects data from:
         1. Parent strip device (aggregate data)
@@ -618,20 +627,28 @@ class Poller:
             # off the strip as polled: an outlet's alias is user-set and may repeat, and
             # the sysinfo cache may not hold this strip yet.
             device_id = device_id_of(smart_strip.sys_info)
-            smart_strip_data = {
-                "emeter": _storable_reading(smart_strip.emeter_realtime, True),
-                "alias": smart_strip.alias,
-                "device_id": device_id,
-                "dns_name": dns_name,
-                "ip": ip,
-                "equipment_type": "device",
-            }
+            iot = not isinstance(smart_strip, SmartDevice)
+            totals = []
+            if iot or smart_strip.has_emeter:
+                totals.append(
+                    {
+                        "emeter": self._reading(smart_strip, iot),
+                        "alias": smart_strip.alias,
+                        "device_id": device_id,
+                        "dns_name": dns_name,
+                        "ip": ip,
+                        "equipment_type": "device",
+                    }
+                )
             outlets = []
             for index, child in enumerate(smart_strip.children, start=1):
-                await child.update()
+                if iot:
+                    await child.update()
+                elif not child.has_emeter:
+                    continue
                 outlets.append(
                     {
-                        "emeter": _storable_reading(child.emeter_realtime, True),
+                        "emeter": self._reading(child, iot),
                         "alias": smart_strip.alias,
                         "plug_alias": f"{child.alias}",
                         "plug_id": str(index),
@@ -649,11 +666,20 @@ class Poller:
             "Storing smart strip data for %s (IP: %s).", smart_strip.alias, ip
         )
         _reads_done()
-        stored = await self.storage.process_emeter_data({ip: smart_strip_data})
-        for outlet in outlets:
+        stored = True
+        for point in totals + outlets:
             # A strip counts as stored only if the parent AND every outlet landed.
-            stored = await self.storage.process_emeter_data({ip: outlet}) and stored
+            stored = await self.storage.process_emeter_data({ip: point}) and stored
         return stored
+
+    @staticmethod
+    def _reading(device: Any, iot: bool) -> dict[str, int]:
+        """One device's or outlet's storable emeter reading, SMART energy counters
+        included."""
+        reading = _storable_reading(energy_status(device), iot)
+        if not iot:
+            reading.update(smart_energy_fields(device))
+        return reading
 
     async def process_device_data(self, ip: str, device: Device) -> bool:
         """Process energy data for a single smart plug.
@@ -668,7 +694,7 @@ class Poller:
         """
         try:
             is_iot = isinstance(device, IotDevice)
-            emeter_data = _storable_reading(device.emeter_realtime, is_iot)
+            emeter_data = _storable_reading(energy_status(device), is_iot)
             if not is_iot:
                 emeter_data.update(smart_energy_fields(device))
             device_alias = device.alias if device.alias else device.host

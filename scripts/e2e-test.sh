@@ -22,7 +22,7 @@ export TAG="${TAG:-unused-by-e2e}"
 DC="docker compose --profile e2e -p kasa-collector-e2e"
 TOKEN="kasa-e2e-token"
 # Devices whose emeter data must reach InfluxDB (the two plugs + the strip).
-EXPECTED=("Fake HS110 Plug" "Fake KP115 Plug" "Fake HS300 Strip" "Fake Deaf Plug" "Fake Twin Strip" "Fake Legacy Plug")
+EXPECTED=("Fake HS110 Plug" "Fake KP115 Plug" "Fake HS300 Strip" "Fake Deaf Plug" "Fake Twin Strip" "Fake Legacy Plug" "Fake P316M Strip")
 # The non-emeter plug must be handled without crashing but must NOT appear in emeter.
 NOT_EXPECTED="Fake HS103 Plug"
 TIMEOUT="${E2E_TIMEOUT:-120}"
@@ -202,7 +202,7 @@ case "$untagged" in
   *'"results"'*) untagged=0 ;;
   *) echo "✗ FAIL: could not read the untagged outlet point count"; exit 1 ;;
 esac
-for strip_outlets in "Fake HS300 Strip:6" "Fake Twin Strip:2"; do
+for strip_outlets in "Fake HS300 Strip:6" "Fake Twin Strip:2" "Fake P316M Strip:6"; do
   strip="${strip_outlets%:*}" want="${strip_outlets##*:}"
   got="$(outlet_ids "$strip" || true)"
   if [ "$got" != "$want" ]; then

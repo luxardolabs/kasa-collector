@@ -6,7 +6,7 @@ A tiny, dependency-free emulator that lets you test Kasa Collector against devic
 
 ## How it's used
 
-The e2e stack (the `e2e` profile of `compose.yml`, driven by `make test-e2e`) runs seven of these on a bridge network, and the collector finds them by broadcast discovery (a Docker bridge floods broadcast); the demo stack names its four via `KASA_COLLECTOR_DEVICE_HOSTS`. Emeter values sway over time so dashboards actually move.
+The e2e stack (the `e2e` profile of `compose.yml`, driven by `make test-e2e`) runs seven of these, and one SMART strip (`fake_smart.py`, below), on a bridge network, and the collector finds them by broadcast discovery (a Docker bridge floods broadcast); the demo stack names its four via `KASA_COLLECTOR_DEVICE_HOSTS`. Emeter values sway over time so dashboards actually move.
 
 ## Configuration (environment)
 
@@ -43,4 +43,9 @@ docker run --rm -e KASA_FAKE_MODEL="KP115(US)" -e KASA_FAKE_ALIAS="Bench Plug" \
 ## Scope / limitations
 
 - **IOT protocol devices:** emeter plugs, non-emeter plugs, and multi-outlet strips (per-outlet emeter). Enough to exercise discovery, `update()`, and both single-device and child-device emeter collection.
-- **Not yet emulated:** the newer **SMART / KLAP** devices (AES handshake) and bulbs/ dimmers with lighting modules. Possible future extensions.
+- **SMART protocol:** a SMART power strip over KLAP v2 (`fake_smart.py`): UDP 20002 discovery, the KLAP handshake and its AES-encrypted requests, `multipleRequest`, and `control_child` for six outlets that each measure their own energy. Its AES is implemented in the file, stdlib only, and checked against `cryptography` by `tests/test_smart_strip.py`.
+- **Not yet emulated:** SMART devices over the AES transport, and bulbs/dimmers with lighting modules.
+
+## The SMART strip (`fake_smart.py`)
+
+Run with `python3 /fake_smart.py` (the e2e `kasa_fake_p316m` service). It accepts the TP-Link account given by `KASA_FAKE_USERNAME` / `KASA_FAKE_PASSWORD` and refuses any other. `KASA_FAKE_ALIAS`, `KASA_FAKE_MODEL` (default `P316M(US)`), `KASA_FAKE_OUTLETS` (default 6), `KASA_FAKE_BASE_W` (the first outlet's watts, default 20; each next one draws 5 W more) and `KASA_FAKE_HTTP_PORT` (default 80) configure it.

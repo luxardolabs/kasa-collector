@@ -113,12 +113,12 @@ Work from the collector outward.
 
 ### Per-outlet power strip data is missing
 
-For strips like the HS300, each outlet is written to the `emeter` measurement as its own point:
+For strips like the HS300 (IOT) and the P316M (SMART), each outlet is written to the `emeter` measurement as its own point:
 
 - The **parent strip** aggregate is tagged `equipment_type=device`.
 - Each **child outlet** is tagged `equipment_type=plug`, plus `plug_alias` and a numeric `plug_id`.
 
-If per-outlet points are missing but the parent is present, make sure the **sysinfo** cycle has run at least once — child `plug_id`/`plug_alias` enrichment is resolved from cached sysinfo, so per-outlet detail fills in after the first sysinfo poll (default 60s).
+Each outlet's `plug_id` is its position on the strip, read off the strip as it is polled. If outlet points are missing, check the collector log for the strip's emeter fetch: an outlet that does not answer leaves the whole strip unwritten for that cycle, so a strip is never written in part.
 
 ## Performance and tuning
 

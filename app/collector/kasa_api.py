@@ -31,6 +31,7 @@ from typing import Any
 from kasa import Credentials, Device, DeviceConfig, DeviceEncryptionType, Discover
 
 from app.collector.kasa_compat import reclass_strip_if_needed
+from app.collector.utils import energy_status
 from app.core.config import Config
 
 logger = logging.getLogger("KasaAPI")
@@ -427,7 +428,7 @@ class KasaAPI:
             )
             return {}
         logger.debug("Fetched emeter data for device %s", device.model)
-        emeter: dict[str, Any] = device.emeter_realtime
+        emeter: dict[str, Any] = energy_status(device)
         return emeter
 
     @staticmethod
@@ -471,7 +472,7 @@ class KasaAPI:
         logger.debug("Fetched device data for %s", device.model)
         data: dict[str, Any] = {}
         if device.has_emeter:
-            data["emeter"] = device.emeter_realtime
+            data["emeter"] = energy_status(device)
         if hasattr(device, "sys_info"):
             data["sys_info"] = device.sys_info
         return data

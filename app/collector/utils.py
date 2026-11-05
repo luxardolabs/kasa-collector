@@ -17,12 +17,13 @@ clear abstractions.
 
 import asyncio
 import logging
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from functools import wraps
 from types import TracebackType
 from typing import Any, Literal, ParamSpec, Self, TypeVar, cast
 
-from kasa import Device
+from kasa import Device, Module
+from kasa.iot import IotStrip
 
 from app.collector.dns_cache import get_hostname_cached
 from app.core.config import Config
@@ -327,3 +328,39 @@ def format_device_info(device: Device, ip: str, hostname: str | None = None) -> 
 type DeviceMap = dict[str, Any]  # Mapping of IP addresses to device objects
 type IPAddress = str  # String representation of IP address
 type DeviceName = str  # Human-readable device name
+
+
+def has_outlet_energy(device: Any) -> bool:
+    """Whether ``device`` is a SMART strip whose outlets measure their own energy.
+
+    An IOT strip (HS300) is read through its own path; a SMART strip (P316M, P304M)
+    reports each outlet as a child with its own energy module, whether or not the
+    strip itself measures.
+    """
+    if isinstance(device, IotStrip):
+        return False
+    children = getattr(device, "children", None) or ()
+    return any(getattr(child, "has_emeter", False) for child in children)
+
+
+def measures_energy(device: Any) -> bool:
+    """Whether ``device`` reports energy: itself, or through its outlets."""
+    return bool(getattr(device, "has_emeter", False)) or has_outlet_energy(device)
+
+
+def energy_status(device: Any) -> Any:
+    """The device's realtime energy reading, through its Energy module.
+
+    ``emeter_realtime`` is python-kasa's deprecated alias for the same reading; it is
+    read only on an object with no Energy module.
+    """
+    # swallowed-exceptions: a device whose module table cannot be read still has its
+    # reading; falling back to python-kasa's own alias for it is the handling.
+    try:
+        modules = getattr(device, "modules", None)
+        module = modules.get(Module.Energy) if isinstance(modules, Mapping) else None
+    except Exception:
+        module = None
+    if module is not None:
+        return module.status
+    return device.emeter_realtime
