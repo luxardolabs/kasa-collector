@@ -28,7 +28,8 @@ import logging
 import socket
 from typing import Any
 
-from kasa import Credentials, Device, DeviceConfig, DeviceEncryptionType, Discover
+from kasa import Credentials, Device, DeviceConfig, Discover
+from kasa.transports import KlapTransport, KlapTransportV2, XorTransport
 
 from app.collector.kasa_compat import reclass_strip_if_needed
 from app.collector.utils import energy_status
@@ -60,8 +61,16 @@ class InsecureLoginRefused(Exception):
 
 
 def _logs_in_over_aes(device: Device) -> bool:
-    """Whether logging in to ``device`` would use an AES login (any version, any port)."""
-    return device.config.connection_type.encryption_type is DeviceEncryptionType.Aes
+    """Whether logging in to ``device`` would use anything but a KLAP or XOR login.
+
+    Judged by the transport python-kasa actually built, not by what the device
+    advertised: python-kasa builds the camera SSL-AES transport for every camera and
+    doorbell family, whatever encryption the discovery reply names. Fail closed: a
+    transport that is not KLAP or XOR counts as AES.
+    """
+    protocol = getattr(device, "protocol", None)
+    transport = getattr(protocol, "_transport", None)
+    return not isinstance(transport, KlapTransport | KlapTransportV2 | XorTransport)
 
 
 async def _close_quietly(device: Device) -> None:

@@ -1798,6 +1798,7 @@ def _discovered(host: str, encryption: str, login_version: int | None):
     """A discover_single result carrying the connection the responder advertised."""
     from kasa import DeviceConfig, DeviceConnectionParameters
     from kasa.deviceconfig import DeviceEncryptionType, DeviceFamily
+    from kasa.transports import AesTransport, KlapTransportV2
 
     calls: list[str] = []
 
@@ -1807,6 +1808,10 @@ def _discovered(host: str, encryption: str, login_version: int | None):
             self.alias = "Responder"
             self.model = "P110"
             self.calls = calls
+            # The transport python-kasa builds for that encryption, which is what the
+            # login gate judges.
+            transport = KlapTransportV2 if encryption == "KLAP" else AesTransport
+            self.protocol = SimpleNamespace(_transport=object.__new__(transport))
             self.config = DeviceConfig(
                 host=host,
                 connection_type=DeviceConnectionParameters(
