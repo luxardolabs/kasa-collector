@@ -404,6 +404,16 @@ class Poller:
         """Open the storage backend's async connection (called once at startup)."""
         await self.storage.connect()
 
+    async def close_when_free(self, device: Device) -> None:
+        """Close a client the registry has dropped, now or once no fetch holds it.
+
+        A fetch still running on it would otherwise reopen its session after the
+        close, and nothing would close it again.
+        """
+        retired = self._clients().retire(device)
+        if retired is not None:
+            await _close(retired)
+
     async def close(self) -> None:
         """Stop every reconnect still running; called on shutdown before the registry
         closes its clients, so none registers a client after they are closed."""

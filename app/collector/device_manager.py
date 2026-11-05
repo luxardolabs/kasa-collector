@@ -25,6 +25,7 @@ import logging
 import os
 import socket
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -92,6 +93,11 @@ class DeviceManager:
         self.discovery_misses: dict[str, int] = {}
         # A DEVICE_HOSTS name found moved this pass -> the address to re-add it at.
         self._moved_to: dict[str, str] = {}
+        # How a client the registry drops is closed. The poller replaces it with one
+        # that waits for any fetch still holding the client (KasaCollector wires it).
+        self.release_client: Callable[[Device], Awaitable[None]] = (
+            KasaAPI.disconnect_device
+        )
         # Configured DEVICE_HOSTS entry -> the registry key it resolved to. Devices are
         # keyed (and tagged in InfluxDB) by RESOLVED ADDRESS, so a manual host configured
         # by DNS name is indistinguishable from a discovered one in the data. This mapping
@@ -237,7 +243,8 @@ class DeviceManager:
             self.discovery_misses.pop(address, None)
             self.retired.pop(address, None)
             self._forget(address)
-            await KasaAPI.disconnect_device(device)
+            if device is not None:
+                await self._release(device)
 
     async def _add_manual_devices(self, hosts: list[str]) -> None:
         """Connect and register the given manually configured hosts, in parallel.
@@ -277,7 +284,7 @@ class DeviceManager:
                 previous = self.devices.get(key)
                 if previous is not None and previous is not device:
                     # Discovery already holds this address: close its client first.
-                    await KasaAPI.disconnect_device(previous)
+                    await self._release(previous)
                 self.devices[key] = device
                 self.manual_addresses[ip] = key
                 # Check and store devices based on emeter capabilities
@@ -809,6 +816,11 @@ class DeviceManager:
             for ip in candidates:
                 tg.create_task(reclaim(ip))
 
+    async def _release(self, device: Device) -> None:
+        """Close a client the registry has dropped, through ``release_client``."""
+        close = getattr(self, "release_client", None) or KasaAPI.disconnect_device
+        await close(device)
+
     def is_current(self, key: str, device: Device) -> bool:
         """Whether ``device`` is still the client registered under ``key``."""
         return self.devices.get(key) is device
@@ -930,6 +942,8 @@ class DeviceManager:
             self.polling_devices.pop(
                 ip, None
             )  # Remove from polling devices if applicable
+            # Its client is closed: a fresh one is made if it comes back.
+            await self._release(missing_device)
             hostname = await get_hostname_cached(ip)
             self.logger.warning(
                 "Device removed after %s consecutive missed discovery rounds: "

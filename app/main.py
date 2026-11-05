@@ -348,6 +348,8 @@ class KasaCollector:
                 on_reachable=self.device_manager.mark_reachable,
                 registry=self.device_manager,
             )
+            # A client the registry drops is closed once no fetch still holds it.
+            self.device_manager.release_client = self.poller.close_when_free
         except SystemExit:
             # Poller/InfluxDBStorage already logged detailed error messages
             raise
