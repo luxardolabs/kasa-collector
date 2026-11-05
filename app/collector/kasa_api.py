@@ -28,12 +28,35 @@ import logging
 import socket
 from typing import Any
 
-from kasa import Credentials, Device, DeviceConfig, Discover
+from kasa import Credentials, Device, DeviceConfig, DeviceEncryptionType, Discover
 
 from app.collector.kasa_compat import reclass_strip_if_needed
 from app.core.config import Config
 
 logger = logging.getLogger("KasaAPI")
+
+
+class InsecureLoginRefused(Exception):
+    """The device would receive the TP-Link password in a recoverable form.
+
+    An AES device logs in with the password as ``base64(password)`` unless it speaks
+    login version 2, and the device chooses both the login version (in its discovery
+    reply) and the session key. A responder that is not listed in
+    KASA_COLLECTOR_DEVICE_HOSTS is therefore never handed credentials over that login.
+    """
+
+    def __init__(self, host: str) -> None:
+        super().__init__(f"{host} advertises an AES login that sends the password")
+        self.host = host
+
+
+def _sends_recoverable_password(device: Device) -> bool:
+    """Whether logging in to ``device`` would send the password itself, base64-encoded."""
+    connection = device.config.connection_type
+    return (
+        connection.encryption_type is DeviceEncryptionType.Aes
+        and connection.login_version != 2
+    )
 
 
 async def _close_quietly(device: Device) -> None:
@@ -232,7 +255,11 @@ class KasaAPI:
 
     @staticmethod
     async def get_device(
-        ip_or_hostname: str, username: str | None = None, password: str | None = None
+        ip_or_hostname: str,
+        username: str | None = None,
+        password: str | None = None,
+        *,
+        require_hashed_login: bool = False,
     ) -> Device:
         """Connect to a Kasa device by IP address or hostname.
 
@@ -240,12 +267,18 @@ class KasaAPI:
             ip_or_hostname: IP address or hostname of the device.
             username: Optional TP-Link account username.
             password: Optional TP-Link account password.
+            require_hashed_login: Refuse to send the credentials to a device whose
+                discovery reply asks for an AES login other than version 2, which sends
+                the password base64-encoded under a key the device chooses. Set for a
+                device the operator did not list.
 
         Returns:
             Connected device object ready for use.
 
         Raises:
             socket.gaierror: If hostname resolution fails.
+            InsecureLoginRefused: If ``require_hashed_login`` is set and the device asks
+                for a login that sends the password.
             Exception: If connection fails after all retry attempts.
 
         Connection strategy:
@@ -279,6 +312,14 @@ class KasaAPI:
                 else None,
             )
             if device:
+                if (
+                    require_hashed_login
+                    and username
+                    and password
+                    and _sends_recoverable_password(device)
+                ):
+                    await _close_quietly(device)
+                    raise InsecureLoginRefused(ip)
                 await device.update()
                 logger.debug(
                     "Connected to device via discovery: %s (IP: %s)",
@@ -286,6 +327,8 @@ class KasaAPI:
                     ip,
                 )
                 return device
+        except InsecureLoginRefused:
+            raise
         # swallowed-exceptions: HANDLED by a real fallback -- discovery is strategy 1 of 3
         # (see this method's docstring); failure falls through to Device.connect below, which
         # is the path that serves cross-subnet and manually-configured hosts. If every

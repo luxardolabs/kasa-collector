@@ -307,7 +307,7 @@ class TestRetiredDevicesAreReclaimed:
         # It is back on the network but STILL invisible to broadcast — the live shape.
         recovered = SimpleNamespace(alias="Fridge", host="10.0.0.9", modules={})
 
-        async def fake_get_device(ip, user, pw):
+        async def fake_get_device(ip, user, pw, **_):
             assert ip == "10.0.0.9"
             return recovered
 
@@ -326,7 +326,7 @@ class TestRetiredDevicesAreReclaimed:
         dm = self._dm(monkeypatch, tmp_path)
         dm.retired = {"10.0.0.9": 0.0, "10.0.0.8": 0.0}
 
-        async def fake_get_device(ip, user, pw):
+        async def fake_get_device(ip, user, pw, **_):
             if ip == "10.0.0.8":
                 return SimpleNamespace(alias="Back", host="10.0.0.8", modules={})
             raise ConnectionError("host unreachable")
@@ -348,7 +348,7 @@ class TestRetiredDevicesAreReclaimed:
         dm.retired = {"10.0.0.9": 0.0}
         called = []
 
-        async def fake_get_device(ip, user, pw):
+        async def fake_get_device(ip, user, pw, **_):
             called.append(ip)
             raise AssertionError("must not probe a device discovery already returned")
 
@@ -421,7 +421,7 @@ class TestKnownDevicesSurviveRestart:
 
         recovered = SimpleNamespace(alias="Fridge", host="10.0.0.9", has_emeter=True)
 
-        async def fake_get_device(ip, user, pw):
+        async def fake_get_device(ip, user, pw, **_):
             return recovered
 
         monkeypatch.setattr(
@@ -761,7 +761,7 @@ class TestManualHostsAreIntent:
         attempts: list[str] = []
         fail_first = {"on": True}
 
-        async def fake_get_device(ip, user, pw):
+        async def fake_get_device(ip, user, pw, **_):
             attempts.append(ip)
             if fail_first["on"]:
                 raise ConnectionError("device rebooting")
@@ -796,7 +796,7 @@ class TestManualHostsAreIntent:
 
         attempts: list[str] = []
 
-        async def fake_get_device(ip, user, pw):
+        async def fake_get_device(ip, user, pw, **_):
             attempts.append(ip)
             return SimpleNamespace(alias="X", host=ip, has_emeter=False)
 
@@ -839,7 +839,7 @@ class TestManualHostKeyedByResolvedAddress:
     ):
         from app.collector import device_manager as dm_mod
 
-        async def fake_get_device(entry, user, pw):
+        async def fake_get_device(entry, user, pw, **_):
             # get_device resolves the name up front and connects on the address,
             # so device.host is the resolved IPv4 on every path.
             return SimpleNamespace(
@@ -864,7 +864,7 @@ class TestManualHostKeyedByResolvedAddress:
 
         attempts: list[str] = []
 
-        async def fake_get_device(entry, user, pw):
+        async def fake_get_device(entry, user, pw, **_):
             attempts.append(entry)
             return SimpleNamespace(
                 alias="Fridge", host="198.51.100.100", has_emeter=False
@@ -1276,12 +1276,12 @@ class TestEmeterUnits:
 
 @pytest.mark.unit
 class TestCredentialsGatedByTrust:
-    """The TP-Link credentials reach only listed or already-seen devices.
+    """The TP-Link credentials reach only listed devices, or every device under trust.
 
     Broadcast discovery hands credentials to whatever answers it, so a rogue device on
-    the LAN could be given the account's credentials. They now go only to a device the
-    operator listed, one collected from before, or every device when the operator opts
-    in with KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES (KASACOLLEC-99).
+    the LAN could be given the account's credentials. They go only to a device the
+    operator listed, or to every device when KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES is
+    set.
     """
 
     def _dm(self, monkeypatch, tmp_path, *, trust=False):
@@ -1346,7 +1346,7 @@ class TestCredentialsGatedByTrust:
         dm = self._dm(monkeypatch, tmp_path)  # nothing listed, nothing known
         seen_creds: list[tuple] = []
 
-        async def fake_get_device(ip, username=None, password=None):
+        async def fake_get_device(ip, username=None, password=None, **_):
             seen_creds.append((username, password))
             raise Exception("handshake challenge failed")
 
@@ -1376,7 +1376,7 @@ class TestCredentialsGatedByTrust:
         dm.device_hosts = ["10.0.0.3"]  # operator-listed
         seen_creds: list[tuple] = []
 
-        async def fake_get_device(ip, username=None, password=None):
+        async def fake_get_device(ip, username=None, password=None, **_):
             seen_creds.append((username, password))
             return SimpleNamespace(
                 host=ip, alias="Kettle", has_emeter=True, model="HS110"
@@ -1404,7 +1404,7 @@ class TestCredentialsGatedByTrust:
         dm.retired = {"10.0.0.9": 0.0}
         seen_creds: list[tuple] = []
 
-        async def fake_get_device(ip, username=None, password=None):
+        async def fake_get_device(ip, username=None, password=None, **_):
             seen_creds.append((username, password))
             return SimpleNamespace(
                 host=ip, alias="Rogue", has_emeter=True, model="HS110"
@@ -1429,7 +1429,7 @@ class TestCredentialsGatedByTrust:
         dm.known_addresses = {"10.0.0.1", "10.0.0.9"}
         creds_by_ip: dict[str, tuple] = {}
 
-        async def fake_get_device(ip, username=None, password=None):
+        async def fake_get_device(ip, username=None, password=None, **_):
             creds_by_ip[ip] = (username, password)
             return SimpleNamespace(host=ip, alias="Dev", has_emeter=True, model="HS110")
 
@@ -1465,7 +1465,7 @@ class TestCredentialsGatedByTrust:
         )
         seen_creds: list[tuple] = []
 
-        async def fake_get_device(ip, username=None, password=None):
+        async def fake_get_device(ip, username=None, password=None, **_):
             seen_creds.append((username, password))
             return SimpleNamespace(
                 host=ip, alias="Outside Front", has_emeter=True, model="KP125M"
@@ -1501,7 +1501,7 @@ class TestCredentialsGatedByTrust:
         )
         attempted: list[str] = []
 
-        async def fake_get_device(ip, username=None, password=None):
+        async def fake_get_device(ip, username=None, password=None, **_):
             attempted.append(ip)
             return SimpleNamespace(host=ip, alias="x", has_emeter=True, model="KP125M")
 
@@ -1592,3 +1592,160 @@ class TestCredentialsGatedByTrust:
         assert closed == [
             "discovered"
         ]  # the dropped one closed; the kept one left open
+
+    def test_unlisted_warning_names_the_rule_that_withheld_credentials(
+        self, monkeypatch, tmp_path
+    ):
+        dm = self._dm(monkeypatch, tmp_path)
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            dm.logger, "warning", lambda msg, *a: warnings.append(msg % a)
+        )
+
+        dm._warn_unlisted("10.0.0.9")
+
+        assert len(warnings) == 1
+        assert "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES is off" in warnings[0]
+        assert "collected from before" not in warnings[0]
+
+
+def _discovered(host: str, encryption: str, login_version: int | None):
+    """A discover_single result carrying the connection the responder advertised."""
+    from kasa import DeviceConfig, DeviceConnectionParameters
+    from kasa.deviceconfig import DeviceEncryptionType, DeviceFamily
+
+    calls: list[str] = []
+
+    class Discovered:
+        def __init__(self) -> None:
+            self.host = host
+            self.alias = "Responder"
+            self.model = "P110"
+            self.calls = calls
+            self.config = DeviceConfig(
+                host=host,
+                connection_type=DeviceConnectionParameters(
+                    DeviceFamily.SmartTapoPlug,
+                    DeviceEncryptionType(encryption),
+                    login_version=login_version,
+                ),
+            )
+
+        async def update(self) -> None:
+            calls.append("update")
+
+        async def disconnect(self) -> None:
+            calls.append("disconnect")
+
+    return Discovered()
+
+
+@pytest.mark.unit
+class TestHashedLoginForUnlistedDevices:
+    """An unlisted device never gets the password over an AES login that carries it.
+
+    The responder's discovery reply picks the AES login version, and every version but 2
+    sends base64(password) under a session key the responder chooses. With the default
+    KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES=True, credentials still go only to a
+    discovered device whose login hashes the password, unless it is listed.
+    """
+
+    @pytest.mark.parametrize("login_version", [None, 1])
+    async def test_get_device_refuses_a_password_sending_login(
+        self, monkeypatch, login_version
+    ):
+        from app.collector import kasa_api
+
+        responder = _discovered("10.0.0.9", "AES", login_version)
+        connected: list[object] = []
+
+        async def fake_discover_single(host, credentials=None):
+            return responder
+
+        async def fake_connect(**kwargs):
+            connected.append(kwargs)
+
+        monkeypatch.setattr(kasa_api.Discover, "discover_single", fake_discover_single)
+        monkeypatch.setattr(kasa_api.Device, "connect", fake_connect)
+
+        with pytest.raises(kasa_api.InsecureLoginRefused):
+            await kasa_api.KasaAPI.get_device(
+                "10.0.0.9", "owner@x", "s3cret", require_hashed_login=True
+            )
+
+        assert responder.calls == ["disconnect"]  # no login was attempted
+        assert connected == []  # and no fallback connection either
+
+    @pytest.mark.parametrize(
+        ("encryption", "login_version", "require"),
+        [("AES", 2, True), ("KLAP", None, True), ("AES", 1, False)],
+    )
+    async def test_get_device_logs_in_otherwise(
+        self, monkeypatch, encryption, login_version, require
+    ):
+        from app.collector import kasa_api
+
+        responder = _discovered("10.0.0.9", encryption, login_version)
+
+        async def fake_discover_single(host, credentials=None):
+            return responder
+
+        monkeypatch.setattr(kasa_api.Discover, "discover_single", fake_discover_single)
+
+        device = await kasa_api.KasaAPI.get_device(
+            "10.0.0.9", "owner@x", "s3cret", require_hashed_login=require
+        )
+
+        assert device is responder
+        assert responder.calls == ["update"]
+
+    async def test_trusted_unlisted_device_requires_a_hashed_login(
+        self, monkeypatch, tmp_path
+    ):
+        from app.collector import device_manager as dm_mod
+
+        dm = TestCredentialsGatedByTrust()._dm(monkeypatch, tmp_path, trust=True)
+        dm.device_hosts = ["10.0.0.1"]
+        required: dict[str, bool] = {}
+
+        async def fake_get_device(ip, username=None, password=None, **kwargs):
+            required[ip] = kwargs.get("require_hashed_login", False)
+            if required[ip]:
+                raise dm_mod.InsecureLoginRefused(ip)
+            return SimpleNamespace(host=ip, alias="Dev", has_emeter=True, model="P110")
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            dm.logger, "warning", lambda msg, *a: warnings.append(msg % a)
+        )
+
+        for ip in ("10.0.0.1", "10.0.0.9", "10.0.0.9"):
+            await dm._authenticate_device_with_retry(
+                ip, None, allow_credentials=dm._may_use_credentials(ip)
+            )
+
+        assert required == {"10.0.0.1": False, "10.0.0.9": True}
+        assert "10.0.0.1" in dm.devices
+        assert "10.0.0.9" not in dm.devices
+        assert sum("would send the TP-Link password" in w for w in warnings) == 1
+
+    async def test_reclaim_requires_a_hashed_login_from_an_unlisted_address(
+        self, monkeypatch, tmp_path
+    ):
+        from app.collector import device_manager as dm_mod
+
+        dm = TestCredentialsGatedByTrust()._dm(monkeypatch, tmp_path, trust=True)
+        dm.device_hosts = ["10.0.0.1"]
+        dm.known_addresses = {"10.0.0.1", "10.0.0.9"}
+        required: dict[str, bool] = {}
+
+        async def fake_get_device(ip, username=None, password=None, **kwargs):
+            required[ip] = kwargs.get("require_hashed_login", False)
+            return SimpleNamespace(host=ip, alias="Dev", has_emeter=True, model="P110")
+
+        monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
+
+        await dm.reclaim_retired_devices({})
+
+        assert required == {"10.0.0.1": False, "10.0.0.9": True}

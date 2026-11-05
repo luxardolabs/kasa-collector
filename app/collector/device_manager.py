@@ -30,7 +30,7 @@ from pathlib import Path
 from kasa import Device
 
 from app.collector.dns_cache import get_hostname_cached
-from app.collector.kasa_api import KasaAPI
+from app.collector.kasa_api import InsecureLoginRefused, KasaAPI
 from app.collector.utils import get_device_name
 from app.core.config import Config
 
@@ -357,6 +357,15 @@ class DeviceManager:
         """
         if Config.KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES:
             return True
+        return self._is_listed(ip)
+
+    def _is_listed(self, ip: str) -> bool:
+        """Whether the operator listed ``ip`` in KASA_COLLECTOR_DEVICE_HOSTS (or its address).
+
+        A device trusted only through KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES is not listed,
+        so it is never sent the password over an AES login that carries it base64-encoded
+        (``KasaAPI.get_device``'s ``require_hashed_login``).
+        """
         return ip in self.device_hosts or ip in self.manual_addresses.values()
 
     def _warn_unlisted(self, ip: str) -> None:
@@ -371,10 +380,29 @@ class DeviceManager:
         self._unlisted_warned.add(ip)
         self.logger.warning(
             "Discovered device %s needs TP-Link credentials but is not trusted: it is "
-            "not in KASA_COLLECTOR_DEVICE_HOSTS and has not been collected from before, "
-            "so its credentials were withheld. Add it to KASA_COLLECTOR_DEVICE_HOSTS to "
-            "collect from it, or set KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES=true to "
-            "authenticate every discovered device (less safe).",
+            "not in KASA_COLLECTOR_DEVICE_HOSTS and "
+            "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES is off, so its credentials were "
+            "withheld. Add it to KASA_COLLECTOR_DEVICE_HOSTS to collect from it, or set "
+            "KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES=true to authenticate every "
+            "discovered device (less safe).",
+            ip,
+        )
+
+    def _warn_insecure_login(self, ip: str) -> None:
+        """Tell the operator once that ``ip`` asked for a login that sends the password.
+
+        The device is discovered, not listed, and its discovery reply asks for an AES
+        login other than version 2, which carries the password base64-encoded under a
+        session key the device picks. Anything on the LAN can answer discovery that way.
+        """
+        if ip in self._unlisted_warned:
+            return
+        self._unlisted_warned.add(ip)
+        self.logger.warning(
+            "Discovered device %s asks for an AES login that would send the TP-Link "
+            "password itself (login version other than 2), so its credentials were "
+            "withheld. If it is your device, add it to KASA_COLLECTOR_DEVICE_HOSTS to "
+            "collect from it.",
             ip,
         )
 
@@ -453,7 +481,12 @@ class DeviceManager:
             try:
                 # Add timeout for authentication process
                 authenticated_device = await asyncio.wait_for(
-                    KasaAPI.get_device(ip, username, password),
+                    KasaAPI.get_device(
+                        ip,
+                        username,
+                        password,
+                        require_hashed_login=not self._is_listed(ip),
+                    ),
                     timeout=self.timeout_seconds,
                 )
 
@@ -479,6 +512,9 @@ class DeviceManager:
                     )
                 return  # Exit if authentication succeeds
 
+            except InsecureLoginRefused:
+                self._warn_insecure_login(ip)
+                return
             except TimeoutError:
                 self.logger.warning(
                     "Timeout authenticating %s. Retry %s/%s",
@@ -662,6 +698,7 @@ class DeviceManager:
                     ip,
                     self.tplink_username if allow else None,
                     self.tplink_password if allow else None,
+                    require_hashed_login=not self._is_listed(ip),
                 )
                 key = str(getattr(device, "host", "") or ip)
                 self.devices[key] = device
@@ -674,6 +711,8 @@ class DeviceManager:
                     get_device_name(device),
                     key,
                 )
+            except InsecureLoginRefused:
+                self._warn_insecure_login(ip)
             # swallowed-exceptions: per-device boundary inside a TaskGroup. A retired
             # address that is still unreachable is the EXPECTED case, not an error — it
             # stays retired and is retried next round. Raising here would cancel the
