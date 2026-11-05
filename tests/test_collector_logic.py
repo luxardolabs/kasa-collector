@@ -1155,6 +1155,23 @@ class TestEmeterUnits:
         assert await self._poller(written).process_device_data("10.0.0.5", plug)
         assert written[0]["emeter"] == {**self.NORMALIZED, "err_code": 0}
 
+    def test_a_legacy_value_is_rounded_through_its_base_type(self):
+        from kasa.emeterstatus import EmeterStatus
+
+        from app.collector.poller import emeter_fields
+
+        class Odd(float):
+            def __round__(self, ndigits=None):
+                raise RuntimeError("own rounding")
+
+        fields = emeter_fields(
+            EmeterStatus({"power_mw": Odd(12700.6), "voltage_mv": 230500}),
+            legacy_units=True,
+        )
+
+        assert fields == {"power_mw": 12701, "voltage_mv": 230500}
+        assert type(fields["power_mw"]) is int
+
     @pytest.mark.parametrize(
         "reply",
         [

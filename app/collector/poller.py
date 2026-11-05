@@ -144,7 +144,12 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
         except KeyError, TypeError:  # absent, or a null legacy value to convert
             continue
         if value is not None and _storable(value):
-            out[field] = round(value)
+            # Read through the base type, so a subclass's own __round__ never runs.
+            out[field] = (
+                round(float.__float__(value))
+                if isinstance(value, float)
+                else _as_int(value)
+            )
     for key, value in status.items():
         if key not in _EMETER_FIELDS and key not in legacy and _storable(value):
             out[key] = _as_int(value)
