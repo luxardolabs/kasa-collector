@@ -36,11 +36,11 @@ from app.collector.utils import get_device_name
 from app.core.config import Config
 
 
-async def resolve_ipv4(host: str) -> str:
-    """The IPv4 address ``host`` resolves to now, the way ``KasaAPI.get_device`` resolves it."""
+async def resolve_ipv4s(host: str) -> list[str]:
+    """Every IPv4 address ``host`` resolves to now, in the resolver's order."""
     loop = asyncio.get_running_loop()
     result = await loop.getaddrinfo(host, None, family=socket.AF_INET)
-    return str(result[0][4][0])
+    return list(dict.fromkeys(str(entry[4][0]) for entry in result))
 
 
 class DeviceManager:
@@ -83,6 +83,8 @@ class DeviceManager:
         # broadcast, so absence from ONE round does not mean the device is gone; a host
         # is pruned only after KASA_COLLECTOR_DISCOVERY_MISS_THRESHOLD consecutive misses.
         self.discovery_misses: dict[str, int] = {}
+        # A DEVICE_HOSTS name found moved this pass -> the address to re-add it at.
+        self._moved_to: dict[str, str] = {}
         # Configured DEVICE_HOSTS entry -> the registry key it resolved to. Devices are
         # keyed (and tagged in InfluxDB) by RESOLVED ADDRESS, so a manual host configured
         # by DNS name is indistinguishable from a discovered one in the data. This mapping
@@ -189,20 +191,24 @@ class DeviceManager:
         place, the configured device is never collected at its new address, and
         whatever took the old one keeps being polled, credentialed and written under
         the configured device's name. A name that does not resolve this pass (a DNS
-        outage) keeps its registration.
+        outage), or that still resolves to its address among others, keeps its
+        registration. A moved name's old address is forgotten too, so the reclaim
+        probe never re-registers whatever holds it now, and the name is re-added at
+        the address this pass decided on.
         """
         for entry, address in list(self.manual_addresses.items()):
             if entry == address:
                 continue  # configured by IP: there is nothing to re-resolve
             try:
-                resolved = await resolve_ipv4(entry)
+                addresses = await resolve_ipv4s(entry)
             except OSError as e:
                 self.logger.debug(
                     "Could not re-resolve %s, keeping %s: %s", entry, address, e
                 )
                 continue
-            if resolved == address:
+            if not addresses or address in addresses:
                 continue
+            resolved = addresses[0]
             self.logger.warning(
                 "Configured device %s now resolves to %s, not %s: dropping the old "
                 "address and connecting at the new one.",
@@ -211,6 +217,7 @@ class DeviceManager:
                 address,
             )
             del self.manual_addresses[entry]
+            self._moved_to[entry] = resolved
             if (
                 address in self.manual_addresses.values()
                 or address in self.device_hosts
@@ -221,6 +228,8 @@ class DeviceManager:
             self.polling_devices.pop(address, None)
             self.last_poll_ok.pop(address, None)
             self.discovery_misses.pop(address, None)
+            self.retired.pop(address, None)
+            self._forget(address)
             await KasaAPI.disconnect_device(device)
 
     async def _add_manual_devices(self, hosts: list[str]) -> None:
@@ -246,14 +255,22 @@ class DeviceManager:
                 ip: IP address or hostname of the device to add.
             """
             try:
+                # A name this pass found moved connects at the address it decided on,
+                # not at whatever a second lookup returns.
                 device = await KasaAPI.get_device(
-                    ip, self.tplink_username, self.tplink_password
+                    self._moved_to.pop(ip, ip),
+                    self.tplink_username,
+                    self.tplink_password,
                 )
                 # Key on the RESOLVED address, not the configured string. get_device()
                 # resolves the hostname up front and connects on that address, so
                 # device.host is the IPv4 on every path -- which makes the `ip` tag an
                 # actual IP for manual and discovered devices alike.
                 key = str(getattr(device, "host", "") or ip)
+                previous = self.devices.get(key)
+                if previous is not None and previous is not device:
+                    # Discovery already holds this address: close its client first.
+                    await KasaAPI.disconnect_device(previous)
                 self.devices[key] = device
                 self.manual_addresses[ip] = key
                 # Check and store devices based on emeter capabilities
@@ -688,6 +705,17 @@ class DeviceManager:
         if address in self.known_addresses:
             return
         self.known_addresses.add(address)
+        self._persist_known()
+
+    def _forget(self, address: str) -> None:
+        """Drop an address from the persisted roster."""
+        if address not in self.known_addresses:
+            return
+        self.known_addresses.discard(address)
+        self._persist_known()
+
+    def _persist_known(self) -> None:
+        """Write the roster via a temp file + os.replace."""
         try:
             self._known_file.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._known_file.with_suffix(".tmp")

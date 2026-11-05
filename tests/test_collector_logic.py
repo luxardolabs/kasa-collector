@@ -868,12 +868,12 @@ class TestManualHostKeyedByResolvedAddress:
             # ``dns`` does not resolve.
             if dns is None or host not in dns:
                 raise OSError(f"{host} does not resolve")
-            return dns[host]
+            return [dns[host]]
 
         monkeypatch.setattr(
             "app.collector.device_manager.get_hostname_cached", fake_hostname
         )
-        monkeypatch.setattr("app.collector.device_manager.resolve_ipv4", fake_resolve)
+        monkeypatch.setattr("app.collector.device_manager.resolve_ipv4s", fake_resolve)
         from app.core import config
 
         # Isolate the persisted device roster (read+written at construction).
@@ -962,7 +962,12 @@ class TestManualHostKeyedByResolvedAddress:
                 disconnected.append(self.host)
 
         async def fake_get_device(entry, user, pw, **_):
-            return Plug(alias="Kettle", host=dns[entry], has_emeter=True, model="HS110")
+            return Plug(
+                alias="Kettle",
+                host=dns.get(entry, entry),
+                has_emeter=True,
+                model="HS110",
+            )
 
         monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
         dm = self._dm(monkeypatch, tmp_path, dns=dns)
@@ -989,7 +994,9 @@ class TestManualHostKeyedByResolvedAddress:
         dns = {"plug.lan": "10.0.0.50"}
 
         async def fake_get_device(entry, user, pw, **_):
-            return SimpleNamespace(alias="Kettle", host=dns[entry], has_emeter=False)
+            return SimpleNamespace(
+                alias="Kettle", host=dns.get(entry, entry), has_emeter=False
+            )
 
         monkeypatch.setattr(dm_mod.KasaAPI, "get_device", fake_get_device)
         dm = self._dm(monkeypatch, tmp_path, dns=dns)
