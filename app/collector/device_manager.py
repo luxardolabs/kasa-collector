@@ -830,7 +830,7 @@ class DeviceManager:
 
     def swap_client(self, key: str, old: Device, new: Device) -> bool:
         """Register ``new`` in place of ``old`` in every registry that holds it."""
-        if self.devices.get(key) is not old:
+        if getattr(self, "_shutting_down", False) or self.devices.get(key) is not old:
             return False
         self.devices[key] = new
         for registry in (self.emeter_devices, self.polling_devices):
@@ -981,6 +981,9 @@ class DeviceManager:
         This method should be called during application shutdown to
         ensure all resources are properly released.
         """
+        # No client is swapped in from here on: it would be registered after the
+        # registry's clients are closed, and never closed itself.
+        self._shutting_down = True
         self.logger.info("Disconnecting from %s devices...", len(self.devices))
         disconnect_tasks = []
 

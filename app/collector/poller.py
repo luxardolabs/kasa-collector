@@ -318,6 +318,7 @@ class _ClientState:
         self.positions: dict[str, dict[str, int]] = {}
         self.next_reconnect: dict[str, tuple[float, float]] = {}
         self.tasks: dict[str, asyncio.Task[None]] = {}
+        self.zero_based: set[str] = set()
 
     def hold(self, device: Any) -> None:
         self.in_flight[id(device)] = self.in_flight.get(id(device), 0) + 1
@@ -410,6 +411,14 @@ class Poller:
     async def connect(self) -> None:
         """Open the storage backend's async connection (called once at startup)."""
         await self.storage.connect()
+
+    async def close(self) -> None:
+        """Stop every reconnect still running; called on shutdown before the registry
+        closes its clients, so none registers a client after they are closed."""
+        tasks = list(self._clients().tasks.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def _clients(self) -> _ClientState:
         """This poller's client bookkeeping, made on first use."""
@@ -885,7 +894,12 @@ class Poller:
         known = self._clients().positions.setdefault(ip, {})
         if not valid and not known:
             return {id(o): n for n, o in enumerate(outlets, start=1) if o in measuring}
-        shift = 1 if valid and min(valid) == 0 else 0
+        # A strip that has once numbered an outlet 0 numbers from 0: the shift
+        # stays, so one outlet missing from a poll never renumbers the others.
+        zero_based = self._clients().zero_based
+        if valid and min(valid) == 0:
+            zero_based.add(ip)
+        shift = 1 if ip in zero_based else 0
         claimed = {p + shift for p in valid}
         placed: dict[int, int] = {}
         used: set[int] = set()
@@ -947,7 +961,14 @@ class Poller:
         except Exception as e:
             self.logger.warning("Reconnecting %s failed: %s", ip, e)
             return
-        if not registry.swap_client(ip, old, new):
+        except asyncio.CancelledError:
+            raise  # shutdown: nothing was connected yet to close
+        try:
+            swapped = registry.swap_client(ip, old, new)
+        except BaseException:
+            await _close(new)
+            raise
+        if not swapped:
             await _close(new)  # the old client was replaced or removed meanwhile
             return
         self.logger.info("Reconnected %s on a new client", ip)

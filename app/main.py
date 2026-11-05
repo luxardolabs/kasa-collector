@@ -507,7 +507,10 @@ class KasaCollector:
             await self.poller.storage.close()
             self.logger.debug("Closed poller InfluxDB connection")
 
-        # Close the device (source) clients — disconnect all and clear registries.
+        # Stop the poller's reconnects first, so none registers a client after the
+        # device clients are closed; then close them and clear the registries.
+        if hasattr(self.poller, "close"):
+            await self.poller.close()
         await self.device_manager.close()
 
         self.logger.info("Graceful shutdown completed")

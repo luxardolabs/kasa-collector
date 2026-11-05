@@ -321,3 +321,21 @@ def test_the_device_manager_swaps_only_the_client_it_still_holds():
     assert manager.polling_devices[IP] is new
     assert not manager.swap_client(IP, old, other)  # already replaced
     assert manager.devices[IP] is new
+
+
+async def test_closing_the_poller_stops_every_reconnect():
+    from app.collector.poller import Poller
+
+    poller = object.__new__(Poller)
+    started = asyncio.Event()
+
+    async def hangs():
+        started.set()
+        await asyncio.sleep(30)
+
+    poller._clients().start_reconnect(IP, hangs())
+    await started.wait()
+
+    await asyncio.wait_for(poller.close(), timeout=2)
+
+    assert all(task.done() for task in poller._clients().tasks.values())
