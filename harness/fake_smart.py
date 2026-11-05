@@ -40,15 +40,12 @@ import base64
 import hashlib
 import importlib.util
 import json
-import logging
 import os
 import secrets
 import socket
 import struct
 import time
 from typing import Any
-
-logger = logging.getLogger("fake_smart")
 
 # --------------------------------------------------------------------- AES-128-CBC
 
@@ -553,26 +550,9 @@ async def serve(http_port: int = HTTP_PORT, discovery_port: int = 20002) -> None
 
 async def _serve_http(http_port: int) -> None:
     http = await start_http("0.0.0.0", http_port)
-    if IOT is not None:
-        logger.info(
-            "fake IOT device %r (%s) behind KLAP on :%s",
-            IOT.ALIAS,
-            IOT.MODEL,
-            http_port,
-        )
-    else:
-        logger.info(
-            "fake SMART strip %r (%s, %s outlets) on :%s",
-            ALIAS,
-            MODEL,
-            OUTLETS,
-            http_port,
-        )
     async with http:
         await http.serve_forever()
 
 
 if __name__ == "__main__":
-    # The container's one output, read via `docker logs`.
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
     asyncio.run(serve())
