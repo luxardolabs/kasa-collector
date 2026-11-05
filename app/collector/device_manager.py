@@ -231,9 +231,6 @@ class DeviceManager:
             )
             del self.manual_addresses[entry]
             self._moved_to[entry] = resolved
-            listed = getattr(self, "_listed_addresses", None)
-            if listed is not None:
-                listed[entry] = resolved
             if (
                 address in self.manual_addresses.values()
                 or address in self.device_hosts
@@ -274,10 +271,8 @@ class DeviceManager:
             try:
                 # A name this pass found moved connects at the address it decided on,
                 # not at whatever a second lookup returns.
-                target = self._moved_to.pop(ip, ip)
-                await self._note_listed_address(ip, target)
                 device = await KasaAPI.get_device(
-                    target,
+                    self._moved_to.pop(ip, ip),
                     self.tplink_username,
                     self.tplink_password,
                 )
@@ -452,27 +447,7 @@ class DeviceManager:
         so it is never logged in to over AES, whose every login hands the device a
         credential it could reuse (``KasaAPI.get_device``'s ``refuse_aes_login``).
         """
-        return (
-            ip in self.device_hosts
-            or ip in self.manual_addresses.values()
-            or ip in getattr(self, "_listed_addresses", {}).values()
-        )
-
-    async def _note_listed_address(self, entry: str, target: str) -> None:
-        """Record the address a listed name resolves to, before connecting to it.
-
-        Until the manual add succeeds, ``manual_addresses`` does not hold it, and
-        discovery reaching the device at that address would treat it as unlisted.
-        The address recorded is the first the name resolves to, as ``get_device``
-        connects to; a name that does not resolve records nothing.
-        """
-        listed: dict[str, str] = self.__dict__.setdefault("_listed_addresses", {})
-        try:
-            addresses = [target] if target != entry else await resolve_ipv4s(entry)
-        except OSError:
-            return
-        if addresses:
-            listed[entry] = addresses[0]
+        return ip in self.device_hosts or ip in self.manual_addresses.values()
 
     def _warn_unlisted(self, ip: str) -> None:
         """Tell the operator once that ``ip`` was found but had its credentials withheld.

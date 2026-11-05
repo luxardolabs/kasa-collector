@@ -174,28 +174,3 @@ async def test_get_devices_own_lookup_is_bounded(monkeypatch):
 
     with pytest.raises(TimeoutError):
         await kasa_api.KasaAPI.get_device("plug.lan")
-
-
-async def test_a_name_whose_add_failed_is_still_listed_when_discovery_reaches_it(
-    monkeypatch, tmp_path
-):
-    # plug.lan resolves to 10.0.0.50, but its manual add fails this pass; broadcast
-    # discovery then finds the device there. It is the operator's: never refused
-    # the AES login, and never told to add itself to DEVICE_HOSTS.
-    from app.collector import device_manager as dm_mod
-
-    dns = {"plug.lan": ["10.0.0.50"]}
-    manager = _manager(monkeypatch, tmp_path, dns)
-    refused: dict[str, bool] = {}
-
-    async def get_device(entry, user=None, pw=None, **kwargs):
-        refused[entry] = kwargs.get("refuse_aes_login", False)
-        raise ConnectionError("not answering yet")
-
-    monkeypatch.setattr(dm_mod.KasaAPI, "get_device", get_device)
-    await manager.reconcile_manual_devices()  # the add fails
-
-    await manager._authenticate_device_with_retry("10.0.0.50", None, True)
-
-    assert manager._is_listed("10.0.0.50")
-    assert refused["10.0.0.50"] is False
