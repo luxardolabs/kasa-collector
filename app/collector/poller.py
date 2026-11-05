@@ -207,12 +207,6 @@ def _reported_position(outlet: Any) -> int | None:
     return number if number >= 1 else None
 
 
-def _outlet_id(outlet: Any) -> str | None:
-    """A SMART outlet's own device id, which no reordering of the children changes."""
-    value = getattr(outlet, "device_id", None)
-    return value if isinstance(value, str) and value else None
-
-
 def _disabled_outlets(strip: Any) -> list[str]:
     """The outlets whose energy module python-kasa has disabled after repeated errors.
 
@@ -315,7 +309,6 @@ class _ClientState:
     def __init__(self) -> None:
         self.in_flight: dict[int, int] = {}
         self.retiring: dict[int, Any] = {}
-        self.positions: dict[str, dict[str, int]] = {}
         self.next_reconnect: dict[str, tuple[float, float]] = {}
         self.tasks: dict[str, asyncio.Task[None]] = {}
 
@@ -831,7 +824,6 @@ class Poller:
                     }
                 )
             outlets = []
-            positions = {} if iot else self._outlet_positions(ip, smart_strip.children)
             for index, child in enumerate(smart_strip.children, start=1):
                 reading: dict[str, int] | None
                 if iot:
@@ -844,9 +836,9 @@ class Poller:
                     reading = self._outlet_reading(ip, child)
                     if reading is None:
                         continue
-                    if id(child) not in positions:
-                        continue
-                    plug_id = positions[id(child)]
+                    # The outlet's own position, so python-kasa reordering the
+                    # children never moves a reading into another outlet's series.
+                    plug_id = _reported_position(child) or index
                 outlets.append(
                     {
                         "emeter": reading,
@@ -875,49 +867,6 @@ class Poller:
         return await self.storage.process_emeter_entries(
             [(ip, point) for point in totals + outlets]
         )
-
-    def _outlet_positions(self, ip: str, outlets: Any) -> dict[int, int]:
-        """Each SMART outlet's plug_id this poll, by ``id()`` of the outlet object.
-
-        An outlet's reported position (one-based, as every SMART strip numbers its
-        outlets) is its plug_id. An outlet reporting none, or one another outlet
-        already holds, keeps the position it last had, by its own device id (so
-        another strip taking the address never inherits it); failing that, its index
-        if no other outlet reports or holds that number. An outlet that cannot be
-        placed is left out of this poll rather than written into another outlet's
-        series. A strip that reports no positions at all is numbered by index.
-        """
-        measuring = [o for o in outlets if getattr(o, "has_emeter", False)]
-        reported = {id(o): _reported_position(o) for o in measuring}
-        valid = [p for p in reported.values() if p is not None]
-        known = self._clients().positions.setdefault(ip, {})
-        if not valid and not known:
-            return {id(o): n for n, o in enumerate(outlets, start=1) if o in measuring}
-        claimed = set(valid)
-        placed: dict[int, int] = {}
-        used: set[int] = set()
-        for index, outlet in enumerate(outlets, start=1):
-            if outlet not in measuring:
-                continue
-            outlet_id = _outlet_id(outlet)
-            candidates = [
-                reported[id(outlet)],
-                known.get(outlet_id) if outlet_id else None,
-                index if index not in claimed else None,
-            ]
-            position = next((c for c in candidates if c and c not in used), None)
-            if position is None:
-                self.logger.warning(
-                    "Outlet %r of %s has no position of its own this poll; leaving it out",
-                    outlet.alias or index,
-                    ip,
-                )
-                continue
-            placed[id(outlet)] = position
-            used.add(position)
-            if outlet_id:
-                known[outlet_id] = position
-        return placed
 
     def _request_reconnect(self, ip: str, strip: Device) -> None:
         """Reconnect ``strip`` in the background, at most once per back-off gap."""

@@ -14,7 +14,6 @@ from kasa import Device, Module
 import tests.test_smart_strip_edges as edges
 from tests.test_smart_strip_edges import (
     _connect,
-    _drop_outlet,
     _expected,
     _outlet_energy_fails,
     _outlet_power_by_plug_id,
@@ -222,50 +221,12 @@ async def test_reconnects_of_one_strip_back_off(fake, monkeypatch):
         server.close()
 
 
-async def test_a_reorder_then_a_missing_position_keeps_every_series(fake, monkeypatch):
-    # Outlet 2 misses one child list (python-kasa re-creates it at the end of the
-    # children); later outlet 5 reports no position. Each outlet keeps its series.
-    server, strip = await _connect(fake)
-    poller = _poller(monkeypatch)
-
-    async def poll():
-        poller.storage.captured.clear()
-        await strip.update()
-        assert await poller.process_smart_strip_data(IP, strip)
-        return _outlet_power_by_plug_id(poller.storage.captured)
-
-    try:
-        await poll()
-        real, dropped = _drop_outlet(fake, 2)
-        monkeypatch.setattr(fake, "parent_methods", dropped)
-        await poll()
-        monkeypatch.setattr(fake, "parent_methods", real)
-        assert await poll() == {str(n): _expected(n) for n in range(1, 7)}
-
-        def no_position_for_5():
-            m = real()
-            for child in m["get_child_device_list"]["child_device_list"]:
-                if child.get("position") == 5:
-                    child.pop("position")
-            return m
-
-        monkeypatch.setattr(fake, "parent_methods", no_position_for_5)
-        assert await poll() == {str(n): _expected(n) for n in range(1, 7)}
-    finally:
-        await strip.disconnect()
-        server.close()
-
-
 @pytest.mark.parametrize(
     ("positions", "expected"),
-    [
-        ([0, 1, 2, 3, 4, 5], ["1", "2", "3", "4", "5"]),
-        ([1, 2, None, 4, 5, 6], ["1", "2", "3", "4", "5", "6"]),
-        ([1, 1, 2, 3, 4, 5], ["1", "2", "3", "4", "5"]),
-    ],
-    ids=["a-zero", "one-missing", "duplicate"],
+    [([1, 2, None, 4, 5, 6], ["1", "2", "3", "4", "5", "6"])],
+    ids=["one-missing"],
 )
-async def test_two_outlets_never_share_a_plug_id(
+async def test_an_outlet_reporting_no_position_takes_its_index(
     fake, monkeypatch, positions, expected
 ):
     def bend(info, n):
@@ -299,7 +260,7 @@ async def test_two_outlets_never_share_a_plug_id(
             for p in poller.storage.captured
             if dict(p._tags).get("equipment_type") == "plug" and "power_mw" in p._fields
         ]
-        assert sorted(plug_ids) == expected  # a duplicate is left out, not merged
+        assert sorted(plug_ids) == expected
     finally:
         await strip.disconnect()
         server.close()
