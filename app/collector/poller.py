@@ -91,17 +91,33 @@ def _as_int(value: int | float) -> int:
     return int.__int__(value)
 
 
+# An IOT reply's status, not a measurement.
+_STATUS_KEYS = frozenset({"err_code", "err_msg"})
+
+
 def _storable_reading(
     realtime: Mapping[str, Any], legacy_units: bool
 ) -> dict[str, int]:
-    """`emeter_fields`, refusing a reading that leaves nothing to store.
+    """`emeter_fields`, refusing a reading that holds no measurement to store.
 
-    A non-empty reading whose every field was dropped would write no point and count
-    as a success; it is a bad reading instead.
+    An empty reading, one whose every measurement was dropped, or an IOT error reply
+    (``err_code`` other than 0) would write no measurement yet count as stored, and keep
+    the health check green. Each is a bad reading instead.
     """
+    err_code = dict.get(realtime, "err_code") if isinstance(realtime, dict) else None
+    if (
+        isinstance(err_code, int)
+        and not isinstance(err_code, bool)
+        and int.__int__(err_code) != 0
+    ):
+        raise ValueError(
+            f"device answered the emeter read with error {int.__int__(err_code)}"
+        )
     fields = emeter_fields(realtime, legacy_units=legacy_units)
-    if realtime and not fields:
-        raise ValueError(f"no storable field in emeter reading {dict(realtime)!r}")
+    if all(key in _STATUS_KEYS for key in fields):
+        raise ValueError(
+            f"no storable measurement in emeter reading {dict(realtime)!r}"
+        )
     return fields
 
 
@@ -112,7 +128,7 @@ def emeter_fields(realtime: Mapping[str, Any], legacy_units: bool) -> dict[str, 
     legacy-unit keys are replaced by their converted milli-unit field; a null one is
     skipped and the rest still written. Without it every key is written as reported:
     a SMART device's `total` is today's kWh, never the lifetime `total_wh`. Any other key
-    (such as `err_code`) is written as before. A value InfluxDB cannot hold (NaN,
+    (such as `err_code`) is written as reported. A value InfluxDB cannot hold (NaN,
     infinity, an integer outside int64) drops only its own field.
     """
     if not legacy_units:
@@ -543,8 +559,9 @@ class Poller:
                 return await self.process_smart_strip_data(ip, device)
             if device.has_emeter:
                 return await self.process_device_data(ip, device)
-            # No emeter on this device: nothing to store, so nothing failed to store.
-            return True
+            # Only emeter devices are polled here, so this one answered without the
+            # emeter it had: nothing was stored, and the cycle must not count it so.
+            raise UnstorableReading(f"{ip} no longer reports an emeter")
 
     async def process_smart_strip_data(self, ip: str, smart_strip: IotStrip) -> bool:
         """Process energy data for power strip and all child plugs.

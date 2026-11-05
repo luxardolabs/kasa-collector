@@ -1155,6 +1155,42 @@ class TestEmeterUnits:
         assert await self._poller(written).process_device_data("10.0.0.5", plug)
         assert written[0]["emeter"] == {**self.NORMALIZED, "err_code": 0}
 
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            {},
+            {"err_code": 0},
+            {"err_code": -1, "err_msg": "module not support"},
+            {"err_code": -3, "power_mw": 1000},
+        ],
+    )
+    async def test_a_reading_with_no_measurement_is_never_stored(self, reply):
+        # Stored, it would count as ok and keep the health check green while nothing
+        # was measured; an IOT error reply is the reachable form of it.
+        from kasa.emeterstatus import EmeterStatus
+
+        from app.collector.poller import UnstorableReading
+
+        written: list[dict] = []
+        plug = self._iot_plug(EmeterStatus(reply))
+        with pytest.raises(UnstorableReading):
+            await self._poller(written).process_device_data("10.0.0.5", plug)
+        assert written == []
+
+    async def test_an_emeter_device_that_lost_its_emeter_is_not_stored(self):
+        from app.collector.poller import UnstorableReading
+
+        class Plug:
+            has_emeter = False
+
+            async def update(self):
+                return None
+
+        with pytest.raises(UnstorableReading):
+            await Poller.fetch_and_store_emeter_data(
+                self._poller([]), "10.0.0.5", Plug()
+            )
+
     async def test_modern_plug_reading_is_written_unchanged(self):
         from kasa.emeterstatus import EmeterStatus
 
