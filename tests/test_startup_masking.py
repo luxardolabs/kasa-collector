@@ -627,3 +627,19 @@ async def test_a_session_token_in_a_logged_login_reply_is_scrubbed(app_log):
     assert "token=****" in out  # control: the URL form is scrubbed
     assert "Response with 200" in out  # the response line was written
     assert session not in out, [l for l in out.splitlines() if session in l]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Response with 200: {'error_code': 0, 'result': {'token': '%s'}}",
+        """KasaException('bad reply {\\'token\\': \\'%s\\'} at "x"')""",
+        'payload "{\\"result\\": {\\"token\\": \\"%s\\"}}"',
+    ],
+    ids=["repr", "repr-escaped-quote", "json-in-json"],
+)
+def test_a_session_token_field_is_scrubbed_in_each_quoting(line):
+    from app.main import _scrubbed
+
+    token = "".join(["Zq81bQ", "7uLm0xT"])  # not hex: only the token patterns catch it
+    assert "7uLm0xT" not in _scrubbed(line % token, [], hex_runs=True)

@@ -9,7 +9,6 @@ import logging
 import os
 import secrets
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from kasa import Credentials, Device, DeviceConfig, DeviceConnectionParameters
@@ -17,6 +16,7 @@ from kasa.deviceconfig import DeviceEncryptionType, DeviceFamily
 
 from app.collector.poller import Poller
 from app.collector.utils import has_outlet_energy, measures_energy
+from tests.fakes import emeter_storage
 
 pytestmark = pytest.mark.unit
 
@@ -94,7 +94,7 @@ async def test_a_smart_strip_writes_its_total_and_one_point_per_outlet(
 
     poller = object.__new__(Poller)
     poller.logger = logging.getLogger("test")
-    poller.storage = SimpleNamespace(process_emeter_data=store)
+    poller.storage = emeter_storage(store)
 
     assert await poller.process_smart_strip_data("127.0.0.1", strip)
 

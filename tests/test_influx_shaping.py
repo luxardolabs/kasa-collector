@@ -266,6 +266,26 @@ class TestWriteFailurePropagates:
         )
         assert ok is True
 
+    async def test_a_strips_readings_go_to_influxdb_in_one_write(self):
+        # A dead InfluxDB then costs the strip one write timeout, never one per outlet,
+        # and the strip lands whole or not at all.
+        s = _storage()
+        batches: list[list] = []
+
+        async def send(points):
+            batches.append(list(points))
+            return True
+
+        s.send_to_influxdb = send
+        strip = [
+            ("10.0.0.9", {"emeter": {"power_mw": 1}, "alias": "S", "plug_id": str(n)})
+            for n in range(7)
+        ]
+
+        assert await s.process_emeter_entries(strip)
+        assert len(batches) == 1
+        assert len(batches[0]) == 7
+
 
 @pytest.mark.unit
 class TestProcessSysinfo:
@@ -416,6 +436,36 @@ class TestProcessSysinfo:
         assert "state" not in rogue_child._fields
         for point in (rogue, legit):
             assert type(point._fields["children"]) is str
+
+
+@pytest.mark.unit
+async def test_coordinates_never_reach_the_file_sink_or_the_cache(
+    monkeypatch, tmp_path
+):
+    import json
+
+    monkeypatch.setattr(Config, "KASA_COLLECTOR_WRITE_TO_FILE", True)
+    monkeypatch.setattr(Config, "KASA_COLLECTOR_OUTPUT_DIR", str(tmp_path))
+    s = _storage()
+    s._append_to_file = InfluxDBStorage._append_to_file.__get__(s)
+    sysinfo = {
+        "deviceId": "8006ABCDEF",
+        "model": "HS300(US)",
+        "latitude": 51.501364,
+        "longitude": -0.14189,
+        "latitude_i": 515013,
+        "longitude_i": -1418,
+        "children": [{"alias": "A", "id": "c0", "state": 1, "latitude": 1.5}],
+    }
+    await s.process_sysinfo_data(
+        {"10.0.0.9": {"sysinfo": sysinfo, "device_alias": "Kitchen", "dns_name": "k"}}
+    )
+
+    written = "".join(f.read_text() for f in tmp_path.glob("*.jsonl"))
+    assert written
+    for text in (written, json.dumps(s.sysinfo_data)):
+        for key in ("latitude", "longitude"):
+            assert key not in text, text
 
 
 @pytest.mark.unit

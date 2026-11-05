@@ -41,6 +41,7 @@ from app.collector.utils import (
 from app.core.config import Config
 from app.health import heartbeat
 from app.storage.influxdb import InfluxDBStorage, device_id_of
+from app.storage.sysinfo_fields import without_dropped
 
 # The collector's component logger, so KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR governs it
 # as it does the Poller instance's.
@@ -69,17 +70,30 @@ class UnstorableReading(Exception):
 
 _INT64_MIN, _INT64_MAX = -(2**63), 2**63 - 1
 
-# The deadline on the current device's read, set by `Poller._fetch_counted`.
-_READ_DEADLINE: ContextVar[asyncio.Timeout | None] = ContextVar(
-    "_READ_DEADLINE", default=None
+
+class _FetchDeadline:
+    """One device fetch's deadline: a budget for the read, then a fresh one for the
+    writes, so neither can hold the cycle back for longer than its budget."""
+
+    def __init__(self, budget: float) -> None:
+        self.budget = budget
+        self.timeout = asyncio.timeout(budget)
+        self.reads_done = False
+
+
+# The current device fetch's deadline, set by `Poller._fetch_counted`.
+_FETCH_DEADLINE: ContextVar[_FetchDeadline | None] = ContextVar(
+    "_FETCH_DEADLINE", default=None
 )
 
 
 def _reads_done() -> None:
-    """Lift the read deadline: every reading is in hand, and the writes must finish."""
-    deadline = _READ_DEADLINE.get()
-    if deadline is not None:
-        deadline.reschedule(None)
+    """Every reading is in hand: give the writes a budget of their own."""
+    deadline = _FETCH_DEADLINE.get()
+    if deadline is not None and not deadline.reads_done:
+        deadline.reads_done = True
+        loop = asyncio.get_running_loop()
+        deadline.timeout.reschedule(loop.time() + deadline.budget)
 
 
 def _storable(value: Any) -> bool:
@@ -295,8 +309,10 @@ class Poller:
         the cycle waits for every device, so one host that never answers would
         otherwise hold every healthy device's next sample back by its whole retry
         backoff. A read that runs out of time is ``failed``. Once every reading is in
-        hand, the writes run with no deadline (``_reads_done``), so a slow InfluxDB
-        never leaves a device half-written or makes it look unreachable.
+        hand (``_reads_done``), the writes get a budget of their own: a slow InfluxDB
+        never cuts off a read that already finished, and a write that runs out of time
+        (a dead InfluxDB, a hung file mount) is ``write_failed`` on a device that
+        answered.
 
         Per-device failures (after ``async_retry`` is exhausted) are swallowed and
         counted, so a single unreachable device can't cancel the rest of the cycle's
@@ -309,14 +325,15 @@ class Poller:
         with a reading that cannot be stored (``UnstorableReading``) is ``failed`` and
         still reachable: the fault is the device's, not InfluxDB's.
         """
-        deadline = asyncio.timeout(interval * 0.8)
+        phase = _FetchDeadline(interval * 0.8)
+        deadline = phase.timeout
         try:
             async with deadline:
-                token = _READ_DEADLINE.set(deadline)
+                token = _FETCH_DEADLINE.set(phase)
                 try:
                     stored = await fetch(ip, device)
                 finally:
-                    _READ_DEADLINE.reset(token)
+                    _FETCH_DEADLINE.reset(token)
             # The device ANSWERED. Record that before splitting on whether the write
             # landed: `write_failed` is an InfluxDB problem, not a device problem, and
             # a device that is talking to us must not be pruned as missing.
@@ -338,6 +355,18 @@ class Poller:
                 "%s polled %s but its reading could not be collected: %s", label, ip, e
             )
         except TimeoutError as e:
+            if phase.reads_done and deadline.expired():
+                # The device answered in full; its write ran out of time.
+                if self.on_reachable is not None:
+                    self.on_reachable(ip)
+                outcome["write_failed"] += 1
+                self.logger.warning(
+                    "%s polled %s but its write did not finish within %.0f seconds",
+                    label,
+                    ip,
+                    interval * 0.8,
+                )
+                return
             # NOT reachable: it did not answer within the cycle's time, or python-kasa
             # timed it out itself (its TimeoutError is one), reported as its own error.
             outcome["failed"] += 1
@@ -666,11 +695,10 @@ class Poller:
             "Storing smart strip data for %s (IP: %s).", smart_strip.alias, ip
         )
         _reads_done()
-        stored = True
-        for point in totals + outlets:
-            # A strip counts as stored only if the parent AND every outlet landed.
-            stored = await self.storage.process_emeter_data({ip: point}) and stored
-        return stored
+        # One batch: the strip lands whole or not at all, in one write.
+        return await self.storage.process_emeter_entries(
+            [(ip, point) for point in totals + outlets]
+        )
 
     @staticmethod
     def _reading(device: Any, iot: bool) -> dict[str, int]:
@@ -740,7 +768,11 @@ class Poller:
         """
         async with DeviceContext(device, ip, "sysinfo fetch") as ctx:
             await device.update()
-            self.logger.debug("Fetched sysinfo for device %s: %s", ip, device.sys_info)
+            self.logger.debug(
+                "Fetched sysinfo for device %s: %s",
+                ip,
+                without_dropped(device.sys_info),
+            )
             sysinfo_data = {
                 "sysinfo": device.sys_info,
                 "device_alias": ctx.device_name,

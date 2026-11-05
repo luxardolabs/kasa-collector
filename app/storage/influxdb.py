@@ -35,7 +35,7 @@ from influxdb_client.client.write_api_async import WriteApiAsync
 
 from app.collector.utils import sanitize_tag
 from app.core.config import Config
-from app.storage.sysinfo_fields import sysinfo_field
+from app.storage.sysinfo_fields import sysinfo_field, without_dropped
 
 logger = logging.getLogger("InfluxDBStorage")
 
@@ -223,9 +223,20 @@ class InfluxDBStorage:
         - plug_alias: Name of individual plug (for strips)
         - plug_id: Numeric plug identifier (1, 2, 3...)
         """
+        return await self.process_emeter_entries(list(device_data.items()))
+
+    async def process_emeter_entries(
+        self, entries: list[tuple[str, dict[str, Any]]]
+    ) -> bool:
+        """``process_emeter_data`` for several readings that share an address.
+
+        A strip's total and its outlets are one device at one address: their points
+        go to InfluxDB as one batch, so a slow or dead InfluxDB costs the strip one
+        write, never one per outlet, and the strip lands whole or not at all.
+        """
         try:
             points = []
-            for ip, data in device_data.items():
+            for ip, data in entries:
                 emeter_data = data.get("emeter", {})
                 alias = sanitize_tag(data.get("alias", "unknown"))
                 dns_name = data.get("dns_name", "unknown")
@@ -293,7 +304,8 @@ class InfluxDBStorage:
                     points.append(point)
 
             written = await self.send_to_influxdb(points)
-            await self._append_to_file(device_data)
+            for ip, data in entries:
+                await self._append_to_file({ip: data})
             return written
 
         # swallowed-exceptions: per-device boundary. One device's malformed payload must
@@ -345,6 +357,11 @@ class InfluxDBStorage:
         Also caches sysinfo data for use during emeter processing to
         properly associate metrics with device/plug identities.
         """
+        # The keys never written to InfluxDB are never cached, logged or filed either.
+        device_data = {
+            ip: {**data, "sysinfo": without_dropped(data.get("sysinfo", {}))}
+            for ip, data in device_data.items()
+        }
         try:
             # Store the sysinfo data for later use in emeter processing
             self.sysinfo_data.update(device_data)

@@ -141,7 +141,9 @@ _HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
 # AES and SSL transports) or path (`/stok=…/`, the camera path), and as a logged reply's
 # `'token': '…'` (the SSL transport logs its login response).
 _SESSION_TOKEN = re.compile(r"(?:\btoken|\bstok)=([^&/\s'\"<>;,)]+)")
-_SESSION_TOKEN_FIELD = re.compile(r"""['"](?:token|stok)['"]\s*:\s*['"]([^'"]+)['"]""")
+_SESSION_TOKEN_FIELD = re.compile(
+    r"""\\?['"](?:token|stok)\\?['"]\s*:\s*\\?['"]([^'"\\]+)"""
+)
 # The parts of a line the logging module renders from the record itself; the caller's
 # `extra=` fields reach the redactor separately and carry no logger.
 _RENDERED_FIELDS = ("message", "exception", "stack")

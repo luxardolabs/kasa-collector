@@ -153,3 +153,18 @@ def sysinfo_field(key: str, value: Any) -> int | float | bool | str | None:
     if key in BOOL_KEYS:
         return bool.__bool__(value) if isinstance(value, bool) else None
     return _as_text(value)
+
+
+def without_dropped(sysinfo: Any) -> Any:
+    """``sysinfo`` with its ``DROPPED_KEYS`` removed, in its children as well.
+
+    Applied before the sysinfo is cached, logged or written to the file sink, so a
+    key that never reaches InfluxDB never reaches a log line or the disk either.
+    """
+    if not isinstance(sysinfo, dict):
+        return sysinfo
+    kept = {k: v for k, v in sysinfo.items() if k not in DROPPED_KEYS}
+    children = kept.get("children")
+    if isinstance(children, list):
+        kept["children"] = [without_dropped(child) for child in children]
+    return kept

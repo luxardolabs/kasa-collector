@@ -8,6 +8,7 @@ import pytest
 
 from app.collector.poller import Poller
 from app.collector.utils import async_retry
+from tests.fakes import emeter_storage
 
 
 @pytest.mark.unit
@@ -640,7 +641,7 @@ class TestBadReadingsAreNotStorageFailures:
 
         p = object.__new__(Poller)
         p.logger = logging.getLogger("test")
-        p.storage = SimpleNamespace(process_emeter_data=store)
+        p.storage = emeter_storage(store)
         p.on_reachable = reached.append
         return p
 
@@ -722,7 +723,7 @@ class TestBadReadingsAreNotStorageFailures:
 
         reached: list[str] = []
         p = self._poller(reached)
-        p.storage = SimpleNamespace(process_emeter_data=capture)
+        p.storage = emeter_storage(capture)
         outcome = {"ok": 0, "failed": 0, "write_failed": 0}
 
         await p._fetch_counted(
@@ -1057,7 +1058,7 @@ class TestStripOutletIdentity:
 
         p = object.__new__(Poller)
         p.logger = logging.getLogger("test")
-        p.storage = SimpleNamespace(process_emeter_data=capture)
+        p.storage = emeter_storage(capture)
         plug = SimpleNamespace(
             alias="Kettle",
             host="10.0.0.5",
@@ -1089,7 +1090,7 @@ class TestStripOutletIdentity:
 
         p = object.__new__(Poller)
         p.logger = logging.getLogger("test")
-        p.storage = SimpleNamespace(process_emeter_data=capture)
+        p.storage = emeter_storage(capture)
         strip = SimpleNamespace(
             alias="Desk Strip",
             sys_info={"deviceId": "STRIP1"},
@@ -1132,7 +1133,7 @@ class TestEmeterUnits:
 
         p = object.__new__(Poller)
         p.logger = logging.getLogger("test")
-        p.storage = SimpleNamespace(process_emeter_data=capture)
+        p.storage = emeter_storage(capture)
         return p
 
     @pytest.fixture(autouse=True)
