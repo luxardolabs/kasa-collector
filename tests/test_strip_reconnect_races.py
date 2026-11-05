@@ -1,4 +1,4 @@
-"""The in-place SMART strip reconnect under races: a missing zero-based outlet, shutdown,
+"""The in-place SMART strip reconnect under races: an outlet missing one poll, shutdown,
 a key pruned while connecting, a cancelled fetch, an outlet that stays broken."""
 
 import asyncio
@@ -22,7 +22,7 @@ fake = edges.fake
 IP = "127.0.0.1"
 
 
-# ----------------------------------------------------------- positions: zero-based
+# ------------------------------------------------- positions: an outlet missing a poll
 
 
 def _bent(fake, base):
@@ -57,11 +57,8 @@ async def _poll(poller, strip):
     return _outlet_power_by_plug_id(poller.storage.captured)
 
 
-@pytest.mark.parametrize("base", [1, 0], ids=["control-one-based", "zero-based"])
-async def test_an_outlet_missing_one_poll_never_moves_the_others(
-    fake, monkeypatch, base
-):
-    state, parent, outlet = _bent(fake, base)
+async def test_an_outlet_missing_one_poll_never_moves_the_others(fake, monkeypatch):
+    state, parent, outlet = _bent(fake, 1)
     monkeypatch.setattr(fake, "parent_methods", parent)
     monkeypatch.setattr(fake, "outlet_methods", outlet)
     server, strip = await _connect(fake)

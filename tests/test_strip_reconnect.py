@@ -259,11 +259,11 @@ async def test_a_reorder_then_a_missing_position_keeps_every_series(fake, monkey
 @pytest.mark.parametrize(
     ("positions", "expected"),
     [
-        ([0, 1, 2, 3, 4, 5], ["1", "2", "3", "4", "5", "6"]),
+        ([0, 1, 2, 3, 4, 5], ["1", "2", "3", "4", "5"]),
         ([1, 2, None, 4, 5, 6], ["1", "2", "3", "4", "5", "6"]),
         ([1, 1, 2, 3, 4, 5], ["1", "2", "3", "4", "5"]),
     ],
-    ids=["zero-based", "one-missing", "duplicate"],
+    ids=["a-zero", "one-missing", "duplicate"],
 )
 async def test_two_outlets_never_share_a_plug_id(
     fake, monkeypatch, positions, expected

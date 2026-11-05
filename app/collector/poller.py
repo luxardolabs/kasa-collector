@@ -199,12 +199,12 @@ _SMART_ENERGY_FIELDS = {"today_energy": "today_wh", "month_energy": "month_wh"}
 
 
 def _reported_position(outlet: Any) -> int | None:
-    """The position a SMART outlet reports on its strip, or None."""
+    """The position a SMART outlet reports on its strip (one-based), or None."""
     position = (getattr(outlet, "sys_info", None) or {}).get("position")
     if isinstance(position, bool) or not isinstance(position, int):
         return None
     number = int.__int__(position)
-    return number if number >= 0 else None
+    return number if number >= 1 else None
 
 
 def _outlet_id(outlet: Any) -> str | None:
@@ -318,7 +318,6 @@ class _ClientState:
         self.positions: dict[str, dict[str, int]] = {}
         self.next_reconnect: dict[str, tuple[float, float]] = {}
         self.tasks: dict[str, asyncio.Task[None]] = {}
-        self.zero_based: set[str] = set()
 
     def hold(self, device: Any) -> None:
         self.in_flight[id(device)] = self.in_flight.get(id(device), 0) + 1
@@ -880,13 +879,13 @@ class Poller:
     def _outlet_positions(self, ip: str, outlets: Any) -> dict[int, int]:
         """Each SMART outlet's plug_id this poll, by ``id()`` of the outlet object.
 
-        An outlet's reported position is its plug_id (one-based; a strip numbering
-        from 0 is shifted by one). An outlet reporting none, or one another outlet
-        already holds, keeps the position it last had on this strip, by its own device
-        id; failing that, its index if no other outlet reports or holds that number.
-        An outlet that cannot be placed is left out of this poll rather than written
-        into another outlet's series. A strip that reports no positions at all is
-        numbered by index.
+        An outlet's reported position (one-based, as every SMART strip numbers its
+        outlets) is its plug_id. An outlet reporting none, or one another outlet
+        already holds, keeps the position it last had, by its own device id (so
+        another strip taking the address never inherits it); failing that, its index
+        if no other outlet reports or holds that number. An outlet that cannot be
+        placed is left out of this poll rather than written into another outlet's
+        series. A strip that reports no positions at all is numbered by index.
         """
         measuring = [o for o in outlets if getattr(o, "has_emeter", False)]
         reported = {id(o): _reported_position(o) for o in measuring}
@@ -894,22 +893,15 @@ class Poller:
         known = self._clients().positions.setdefault(ip, {})
         if not valid and not known:
             return {id(o): n for n, o in enumerate(outlets, start=1) if o in measuring}
-        # A strip that has once numbered an outlet 0 numbers from 0: the shift
-        # stays, so one outlet missing from a poll never renumbers the others.
-        zero_based = self._clients().zero_based
-        if valid and min(valid) == 0:
-            zero_based.add(ip)
-        shift = 1 if ip in zero_based else 0
-        claimed = {p + shift for p in valid}
+        claimed = set(valid)
         placed: dict[int, int] = {}
         used: set[int] = set()
         for index, outlet in enumerate(outlets, start=1):
             if outlet not in measuring:
                 continue
             outlet_id = _outlet_id(outlet)
-            own = reported[id(outlet)]
             candidates = [
-                own + shift if own is not None else None,
+                reported[id(outlet)],
                 known.get(outlet_id) if outlet_id else None,
                 index if index not in claimed else None,
             ]

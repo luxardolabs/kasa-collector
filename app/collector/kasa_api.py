@@ -339,6 +339,11 @@ class KasaAPI:
                 return await reclass_strip_if_needed(device)
         except InsecureLoginRefused:
             raise
+        except asyncio.CancelledError:
+            # Cancelled after discovery built a client: close it, then stop.
+            if device is not None:
+                await _close_quietly(device)
+            raise
         # swallowed-exceptions: HANDLED by a real fallback -- discovery is strategy 1 of 3
         # (see this method's docstring); failure falls through to Device.connect below, which
         # is the path that serves cross-subnet and manually-configured hosts. If every
@@ -411,8 +416,17 @@ class KasaAPI:
                     "Device %s does not support emeter functionality.", device.alias
                 )
 
+        except asyncio.CancelledError:
+            # A client already built (its update still in flight) is closed, not left.
+            if device is not None:
+                await _close_quietly(device)
+            raise
         except Exception as e:
             logger.exception("Failed to connect to device %s: %s", ip, e)
+            # A client that connected but failed its update or re-class holds an open
+            # session: close it before the error goes to the caller.
+            if device is not None:
+                await _close_quietly(device)
             raise
 
         return device
