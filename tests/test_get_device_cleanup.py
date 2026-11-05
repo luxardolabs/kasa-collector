@@ -5,9 +5,9 @@ import asyncio
 
 import pytest
 
-pytestmark = pytest.mark.unit
-
 from app.collector import kasa_api
+
+pytestmark = pytest.mark.unit
 
 
 class _Client:
