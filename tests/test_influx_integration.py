@@ -67,3 +67,37 @@ async def test_a_rejected_write_is_reported_not_swallowed(monkeypatch):
         assert ok is False
     finally:
         await storage.close()
+
+
+@pytest.mark.integration
+async def test_a_device_reporting_another_type_cannot_cost_another_its_sysinfo():
+    # The rogue writes first, so without one type per key InfluxDB would fix rssi as
+    # text and reject the legitimate device's whole sysinfo point.
+    storage = InfluxDBStorage()
+    await storage.connect()
+    try:
+        run = uuid4().hex[:12]
+        rogue, legit = f"itest-rogue-{run}", f"itest-legit-{run}"
+        assert await storage.process_sysinfo_data(
+            {"10.9.8.66": {"sysinfo": {"deviceId": "R", "rssi": "x"}, "alias": rogue}}
+        )
+        assert await storage.process_sysinfo_data(
+            {
+                "10.9.8.7": {
+                    "sysinfo": {"deviceId": "L", "rssi": -40, "relay_state": 1},
+                    "alias": legit,
+                }
+            }
+        )
+
+        rows = await _query(
+            storage,
+            f'from(bucket: "{storage.bucket}") |> range(start: -5m)'
+            f' |> filter(fn: (r) => r._measurement == "sysinfo")'
+            f' |> filter(fn: (r) => r.device_alias == "{legit}")',
+        )
+        fields = {row["_field"]: row["_value"] for row in rows}
+        assert fields.get("rssi") == "-40"
+        assert fields.get("relay_state") == "1"
+    finally:
+        await storage.close()

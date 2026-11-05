@@ -35,6 +35,7 @@ from influxdb_client.client.write_api_async import WriteApiAsync
 
 from app.collector.utils import sanitize_tag
 from app.core.config import Config
+from app.storage.sysinfo_fields import sysinfo_field
 
 logger = logging.getLogger("InfluxDBStorage")
 
@@ -383,7 +384,7 @@ class InfluxDBStorage:
                     # device_id is this point's tag: the same key as a field would make
                     # InfluxQL's `WHERE device_id = …` read the field, not the tag.
                     if key != "device_id":
-                        point = point.field(key, self._format_value(value))
+                        point = self._typed_field(point, key, value, ip)
 
                 point = point.time(datetime.now(UTC))
                 points.append(point)
@@ -408,9 +409,7 @@ class InfluxDBStorage:
 
                     for key, value in child.items():
                         if key != "id":  # Exclude the original 'id' field
-                            child_point = child_point.field(
-                                key, self._format_value(value)
-                            )
+                            child_point = self._typed_field(child_point, key, value, ip)
 
                     child_point = child_point.time(datetime.now(UTC))
                     points.append(child_point)
@@ -630,25 +629,23 @@ class InfluxDBStorage:
         except Exception as e:
             self.logger.exception("Error writing data to file: %s", e)
 
-    def _format_value(self, value: Any) -> Any:
-        """Format values for InfluxDB field compatibility.
+    def _typed_field(self, point: Point, key: str, value: Any, ip: str) -> Point:
+        """Add sysinfo ``key`` to ``point`` as its one InfluxDB type, or leave it out.
 
-        Args:
-            value: Value to format.
-
-        Returns:
-            Formatted value suitable for InfluxDB fields.
-
-        Handles:
-        - Primitives: Passed through unchanged
-        - Lists: Converted to comma-separated strings
-        - Other: Converted to strings
+        A value that does not fit its key's type is left out of the point rather than
+        written: written, it would conflict with the type InfluxDB already holds for
+        the key and cost the whole point (``app.storage.sysinfo_fields``).
         """
-        if isinstance(value, (int, float, str, bool)):
-            return value
-        elif isinstance(value, list):
-            return ",".join(map(str, value))
-        return str(value)
+        field = sysinfo_field(key, value)
+        if field is None:
+            self.logger.debug(
+                "Leaving sysinfo %r out for %s: %r does not fit its type",
+                key,
+                ip,
+                value,
+            )
+            return point
+        return point.field(key, field)
 
     async def close(self) -> None:
         """Close the InfluxDB connection.

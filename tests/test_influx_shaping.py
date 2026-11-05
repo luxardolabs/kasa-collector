@@ -364,6 +364,59 @@ class TestProcessSysinfo:
         )
         assert "device_id" not in s.captured[0]._fields
 
+    async def test_each_sysinfo_key_keeps_one_field_type_across_devices(self):
+        # InfluxDB fixes a field's type from the first value written; a second device
+        # reporting the key as another type would cost its whole point (a 422).
+        s = _storage()
+        await s.process_sysinfo_data(
+            {
+                "10.0.0.66": {
+                    "sysinfo": {
+                        "deviceId": "ROGUE",
+                        "rssi": "x",
+                        "relay_state": True,
+                        "latitude": 51.5,
+                        "longitude": 7.0,
+                        "on_time": float("nan"),
+                        "led_off": 2**70,
+                        "model": 110,
+                        "children": [{"alias": "A", "id": "c0", "state": "on"}],
+                    },
+                    "device_alias": "Rogue",
+                    "dns_name": "r",
+                },
+                "10.0.0.1": {
+                    "sysinfo": {
+                        "deviceId": "DEV1",
+                        "rssi": -40,
+                        "relay_state": 1,
+                        "latitude": 0,
+                        "longitude": -1879048193,
+                        "on_time": 10,
+                        "led_off": 0,
+                        "model": "HS300(US)",
+                        "children": [{"alias": "A", "id": "c0", "state": 1}],
+                    },
+                    "device_alias": "Strip",
+                    "dns_name": "s",
+                },
+            }
+        )
+
+        rogue, rogue_child, legit, legit_child = s.captured
+        assert legit._fields["rssi"] == -40
+        assert legit._fields["relay_state"] == 1
+        assert legit._fields["latitude"] == 0
+        assert legit_child._fields["state"] == 1
+        for key in ("rssi", "relay_state", "latitude", "on_time", "led_off"):
+            assert key not in rogue._fields, key
+        assert rogue._fields["longitude"] == 7  # an integral float fits an int field
+        assert type(rogue._fields["longitude"]) is int
+        assert rogue._fields["model"] == "110"  # a text key stays text
+        assert "state" not in rogue_child._fields
+        for point in (rogue, legit):
+            assert type(point._fields["children"]) is str
+
 
 @pytest.mark.unit
 class TestFileSink:
