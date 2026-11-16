@@ -110,8 +110,11 @@ POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-act
 # the --env-file. The fake-device stacks need a bridge network so the collector can
 # resolve the emulators by service name, which host networking cannot do — so they are
 # separate SERVICES gated by profile, not separate files.
-RUN_DC  := docker compose --env-file .env.prod
-PROD_DC := docker compose --env-file .env.prod
+# The collector-only stack names its profile here, so a .env.prod copied from .env.example
+# (whose COMPOSE_PROFILES is the dev stack's) starts the collector alone and never the dev
+# pair, which needs the dev host's network.
+RUN_DC  := docker compose --env-file .env.prod --profile collector
+PROD_DC := docker compose --env-file .env.prod --profile collector
 # The dev stack is on the dev host: compose there sends this checkout's path, which the dev
 # host mounts at the same place.
 DEV_DC  = DOCKER_HOST=ssh://$(DEV_HOST) docker compose --env-file .env.dev

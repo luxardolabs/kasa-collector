@@ -134,7 +134,10 @@ services:
     container_name: kasa_grafana
     environment:
       <<: *grafana-env
-      INFLUX_HOST: kasa_influxdb
+      # By its pinned address, not its name: this Grafana is also on the shared dev-edge
+      # network, where any container can claim the alias `kasa_influxdb` and be handed the
+      # datasource's InfluxDB token.
+      INFLUX_HOST: ${KASA_DEV_INFLUX_ADDR:-10.210.250.10}
     # Served by name on the dev host's edge, so it refuses a guessable admin password and
     # sets the one in the env file on every start (ops/grafana/dev-entrypoint.sh). The check
     # is in the container, not a required compose variable: compose interpolates every
@@ -160,7 +163,9 @@ services:
   # ── profiles: local, demo ──────────────────────────────────────────────────
   # InfluxDB + Grafana on the machine that cloned the repo, so these two publish ports
   # (GRAFANA_PORT / INFLUX_PORT): the demo's, and the local real-device stack's, whose
-  # host-networked collector writes to http://localhost:${INFLUX_PORT}.
+  # host-networked collector writes to http://localhost:${INFLUX_PORT}. On 127.0.0.1 unless
+  # the env file sets GRAFANA_BIND / INFLUX_BIND: a template copied unchanged holds tokens
+  # and passwords this public repo prints, which must not answer the LAN.
   kasa_local_influxdb:
     <<: *influx
     profiles: [local, demo]
@@ -170,7 +175,7 @@ services:
       - kasa_local_influxdb_config:/etc/influxdb2
       - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
     ports:
-      - "${INFLUX_PORT:-8086}:8086"
+      - "${INFLUX_BIND:-127.0.0.1}:${INFLUX_PORT:-8086}:8086"
 
   kasa_local_grafana:
     <<: *grafana
@@ -184,7 +189,7 @@ services:
       - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
       - kasa_local_grafana_data:/var/lib/grafana
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
     depends_on:
       kasa_local_influxdb:
         condition: service_healthy

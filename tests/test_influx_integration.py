@@ -24,6 +24,33 @@ async def _query(storage: InfluxDBStorage, flux: str) -> list[dict[str, str]]:
 
 
 @pytest.mark.integration
+async def test_an_iot_plugs_sysinfo_lands_in_a_bucket_holding_lnk_on_as_text():
+    """A bucket the typed shaping filled before lnk_on had a rule holds it as text, and one
+    filled as each device sent it holds it as integer: no single type fits both, so lnk_on
+    is not written, and an IOT plug's whole sysinfo point lands in either."""
+    from influxdb_client.client.write.point import Point
+
+    storage = InfluxDBStorage()
+    await storage.connect()
+    try:
+        run = uuid4().hex[:12]
+        sysinfo = {"deviceId": f"P{run}", "rssi": -40, "relay_state": 1, "lnk_on": 1}
+        # The bucket already holds lnk_on as text for this measurement's current shard.
+        held = (
+            Point("sysinfo")
+            .tag("device_alias", f"itest-txt-{run}")
+            .field("lnk_on", "1")
+        )
+        assert await storage.send_to_influxdb([held])
+
+        assert await storage.process_sysinfo_data(
+            {"10.9.8.7": {"sysinfo": sysinfo, "alias": f"itest-now-{run}"}}
+        ), "the sysinfo point was refused by a bucket holding lnk_on as text"
+    finally:
+        await storage.close()
+
+
+@pytest.mark.integration
 async def test_emeter_point_lands_with_its_tags_and_fields():
     storage = InfluxDBStorage()
     await storage.connect()

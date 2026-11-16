@@ -166,6 +166,29 @@ If hostnames appear wrong or stale, drop the TTL or disable caching temporarily 
 
 Since 2026.10.1 the bundled InfluxDB (`kasa_local_influxdb` in the local and demo stacks, `kasa_influxdb` in the dev stack) keeps `/etc/influxdb2` (the CLI's stored config) on its own named volume. On a stack that existed before, the first start mounts it empty: your data is untouched, but `docker exec kasa_local_influxdb influx …` no longer finds the token and org that setup stored. Pass them explicitly (`--org "$INFLUX_ORG" --token "$INFLUX_TOKEN"`), or recreate the CLI config once with `influx config create`.
 
+### `make local-up`: "port is already allocated", or Grafana comes up empty
+
+Through 2026.11.0, the getting-started guide ran the bundled stack on your own machine with `make dev-up`, as containers `kasa_influxdb` and `kasa_grafana`. `make dev-up` now drives the maintainers' dev host, and the stack for your machine is `make local-up`, with its own containers (`kasa_local_*`) and volumes. If the old pair is still running, it holds ports 3000 and 8086. Stop it with plain compose, which keeps its data volumes:
+
+```bash
+docker compose --env-file .env.dev --profile collector --profile bundled down
+```
+
+To carry its history into the local stack, copy each volume once, before the first `make local-up`:
+
+```bash
+for v in influxdb_data influxdb_config grafana_data; do
+  docker volume create --label com.docker.compose.project=kasa-collector \
+    --label com.docker.compose.volume="kasa_local_$v" "kasa-collector_kasa_local_$v"
+  docker run --rm -v "kasa-collector_kasa_$v:/from:ro" -v "kasa-collector_kasa_local_$v:/to" \
+    alpine cp -a /from/. /to/
+done
+```
+
+The volume names assume the default compose project, `kasa-collector`. If your env file sets `COMPOSE_PROJECT_NAME`, use that prefix instead (`docker volume ls | grep kasa` lists them).
+
+The copied data keeps the credentials it was created with: InfluxDB and Grafana read `INFLUX_*` and `GRAFANA_PASSWORD` only when they create their database. So build `.env.local` from your old `.env.dev`, not from a fresh template: keep its `INFLUX_USER`, `INFLUX_PASSWORD`, `INFLUX_ORG`, `INFLUX_BUCKET`, `INFLUX_TOKEN`, `GRAFANA_PASSWORD` and `KASA_COLLECTOR_INFLUXDB_ORG` / `_BUCKET` / `_TOKEN`, set `ENV_FILE=.env.local` and `KASA_COLLECTOR_INFLUXDB_URL=http://localhost:8086`, and leave `COMPOSE_PROFILES` as it is (`make local-up` names its own).
+
 ### Container shows unhealthy
 
 The health check (`python -m app.health.check`) reports healthy only while **this run** of the collector is storing data. After every energy-poll cycle that stores at least one device's reading, the collector writes a heartbeat inside the container (`/tmp/kasa-collector.heartbeat`). The check needs that heartbeat to be younger than `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` (default 120s, and never less than two fetch intervals) and written by the container's current process (judged by the kernel's process start times and boot id, so a wall-clock step does not affect it), so a restarted container can't inherit its predecessor's verdict. File output on or off makes no difference.
@@ -213,7 +236,7 @@ This builds the image and brings up fake Kasa emulators (`harness/fake_kasa.py`,
 - `make demo-up` — fake emulated devices + bundled InfluxDB + Grafana (no hardware); dashboards populate immediately.
 - `make local-up` — the same bundled stack against **your real** devices.
 
-Both serve Grafana at http://localhost:3000 (admin/admin). Stop with `make demo-down` / `make local-down`. Run `make help` for the full command list.
+Both serve Grafana at http://localhost:3000 (`admin`, with `admin` for the demo or your `GRAFANA_PASSWORD` for the local stack). Stop with `make demo-down` / `make local-down`. Run `make help` for the full command list.
 
 For unit tests and linting: `make test`, `make lint`, `make check`.
 

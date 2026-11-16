@@ -30,6 +30,7 @@ Then open **http://localhost:3000** (admin / admin) and watch the dashboards mov
 - Stop and drop the data volumes with `make demo-clean`.
 - Follow logs with `make demo-logs`.
 - If ports 3000 / 8086 are already in use, set `GRAFANA_PORT` / `INFLUX_PORT` in `.env.demo`.
+- The demo answers on this machine only (127.0.0.1). To open it from another machine (a Pi beside your plugs, say), set `GRAFANA_BIND=0.0.0.0` in `.env.demo`.
 
 ## Option 2 — Local: your real devices + bundled InfluxDB / Grafana
 
@@ -38,11 +39,13 @@ Same self-contained InfluxDB and Grafana as the demo, but the collector uses hos
 ```bash
 cp .env.example .env.local
 # in .env.local: REGISTRY=ghcr.io, TAG=<a released version> (e.g. 2026.10.2), ENV_FILE=.env.local,
-# KASA_COLLECTOR_INFLUXDB_URL=http://localhost:8086, and the bundled INFLUX_* / GRAFANA_* values
+# KASA_COLLECTOR_INFLUXDB_URL=http://localhost:8086, and secrets of your own for
+# INFLUX_PASSWORD, GRAFANA_PASSWORD and INFLUX_TOKEN (the InfluxDB operator token; put the
+# same value in KASA_COLLECTOR_INFLUXDB_TOKEN). ORG and BUCKET must match the same way.
 make local-up
 ```
 
-Open **http://localhost:3000** (admin / admin, unless you set `GRAFANA_PASSWORD`). Stop with `make local-down` (or `make local-clean` to also drop the data volumes); follow logs with `make local-logs`. If ports 3000 / 8086 are taken, set `GRAFANA_PORT` / `INFLUX_PORT` in `.env.local` (and the InfluxDB URL's port with it).
+Open **http://localhost:3000** and sign in as `admin` with the `GRAFANA_PASSWORD` from `.env.local`. Grafana and InfluxDB answer on this machine only (127.0.0.1); to reach them from your LAN, set `GRAFANA_BIND=0.0.0.0` / `INFLUX_BIND=0.0.0.0` in `.env.local`, after you have replaced the template's tokens and passwords. InfluxDB keeps the org, token and passwords it was first started with, so set them before the first `make local-up`. Stop with `make local-down` (or `make local-clean` to also drop the data volumes); follow logs with `make local-logs`. If ports 3000 / 8086 are taken, set `GRAFANA_PORT` / `INFLUX_PORT` in `.env.local` (and the InfluxDB URL's port with it).
 
 To add real devices that require authentication or to pin manual device hosts, drop the relevant `KASA_COLLECTOR_*` values into a gitignored `.env.dev.local` (see `.env.dev.local.example`) — it layers on top of the env file. Full variable reference in [Configuration](configuration.md).
 

@@ -33,7 +33,7 @@ To emulate other models or more devices, add services to `compose.yml` carrying 
 
 ## Try the full system interactively
 
-Two self-contained stacks bring up the collector with a bundled, auto-provisioned InfluxDB + Grafana (open http://localhost:3000, admin / admin):
+Two self-contained stacks bring up the collector with a bundled, auto-provisioned InfluxDB + Grafana (open http://localhost:3000 as `admin`: password `admin` for the demo, your `GRAFANA_PASSWORD` for the local stack):
 
 - `make demo-up` — driven by **fake** devices (the harness emulators), so the dashboards populate with no hardware.
 - `make local-up` — driven by **your real** Kasa devices on the network.

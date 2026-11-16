@@ -8,9 +8,13 @@ therefore has one type here, and a value is converted to it or left out of the p
 
 The types are those python-kasa 0.11.0.1's device fixtures (IOT ``get_sysinfo`` and
 SMART ``get_device_info``, 189 devices) report for each key: no key appears there with
-two types. A key the fixtures lack keeps the type releases before 2026.11.0 stored it as
-(those wrote each value as the device sent it), so an existing bucket accepts the point.
-Every key not named here is written as text.
+two types. Every key not named here is written as text.
+
+A key that existing buckets hold under more than one type is not written to InfluxDB at
+all (``UNWRITTEN_KEYS``): whichever type a point carries, some bucket refuses it. That is
+``lnk_on``, which IOT plugs and strips send as an int: buckets filled as each device
+sent it hold it as integer, and buckets the typed shaping filled before it was named
+hold it as text. No dashboard reads it; it still reaches the file sink and the logs.
 
 A device's coordinates are never written. Real devices send them as a float in degrees
 (IOT ``latitude``) or as a scaled int (SMART), so no one type fits, and python-kasa's
@@ -58,9 +62,6 @@ INT_KEYS = frozenset(
         "lastOnboardingTimestamp",
         "led_off",
         "length",
-        # Not in python-kasa's fixtures, but sent as an int by IOT plugs and strips, and
-        # stored as integer in every bucket a release before 2026.11.0 wrote (KASACOLLEC-150).
-        "lnk_on",
         "max_control_temp",
         "min_control_temp",
         "next_schedule_time",
@@ -111,6 +112,8 @@ BOOL_KEYS = frozenset(
 
 FLOAT_KEYS = frozenset({"current_temp", "target_temp"})
 
+UNWRITTEN_KEYS = frozenset({"lnk_on"})
+
 DROPPED_KEYS = frozenset(
     {"latitude", "latitude_i", "longitude", "longitude_i", "ssid", "bssid"}
 )
@@ -153,7 +156,7 @@ def _as_float(value: Any) -> float | None:
 
 def sysinfo_field(key: str, value: Any) -> int | float | bool | str | None:
     """``value`` as the type InfluxDB holds ``key`` in, or None to leave it out."""
-    if key in DROPPED_KEYS:
+    if key in DROPPED_KEYS or key in UNWRITTEN_KEYS:
         return None
     if key in INT_KEYS:
         return _as_int(value)

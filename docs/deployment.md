@@ -26,7 +26,7 @@ Newer Kasa devices require cloud authentication (KLAP, e.g. EP25 hardware 2.6+).
 
 ### Configuration & secrets
 
-All configuration is via environment variables. The annotated template is [`.env.example`](../.env.example). Real values live in **gitignored** `.env.prod` (production) and `.env.dev` (local); only `.env.example` and the bundled-stack defaults in `.env.demo` are committed.
+All configuration is via environment variables. The annotated template is [`.env.example`](../.env.example). Real values live in **gitignored** `.env.prod` (production), `.env.local` (`make local-up` on your machine) and `.env.dev` (the maintainers' dev host); only `.env.example` and the bundled-stack defaults in `.env.demo` are committed.
 
 ```bash
 cp .env.example .env.prod   # then edit with your real values
@@ -42,7 +42,7 @@ Pin a version tag for anything you deploy: a deployable does not roll, so you al
 
 ## Collector-only deployment
 
-The production shape is the collector on its own, pointed at your external InfluxDB and Grafana. That is the `collector` profile of the single `compose.yml` — the bundled InfluxDB + Grafana are the separate `bundled` profile, so `.env.prod` setting `COMPOSE_PROFILES=collector` gives you the collector alone. Every service is behind a profile, so an unset `COMPOSE_PROFILES` starts nothing. **Compose never builds** — the Makefile builds and pushes the image, and the stack pulls it by a pinned tag. The Dockerfile bakes in a `HEALTHCHECK` (`python -m app.health.check`), so no compose-level health check is needed.
+The production shape is the collector on its own, pointed at your external InfluxDB and Grafana. That is the `collector` profile of the single `compose.yml`; `make up` / `make prod-up` name it themselves, so they start the collector alone whatever `.env.prod`'s `COMPOSE_PROFILES` says. Running compose by hand, set `COMPOSE_PROFILES=collector` in `.env.prod`: every service is behind a profile, so an unset value starts nothing, and `bundled` is the maintainers' dev-host pair, which needs that host's network. **Compose never builds** — the Makefile builds and pushes the image, and the stack pulls it by a pinned tag. The Dockerfile bakes in a `HEALTHCHECK` (`python -m app.health.check`), so no compose-level health check is needed.
 
 There is ONE compose file for every stack and every environment: the **stack** is a compose profile and the **environment** is the `.env.<env>`.
 

@@ -91,17 +91,75 @@ def test_each_grafana_reaches_its_own_stacks_influxdb() -> None:
         REPO / "grafana" / "provisioning" / "datasources" / "influxdb.yml"
     ).read_text()
     assert "url: http://${INFLUX_HOST}:8086" in datasource
-    for grafana, influx, profiles in (
-        ("kasa_grafana", "kasa_influxdb", "[bundled]"),
-        ("kasa_local_grafana", "kasa_local_influxdb", "[local, demo]"),
+    for grafana, influx, host, profiles in (
+        # The dev Grafana shares dev-edge with every other dev stack, where a name can be
+        # claimed by any container: it reaches InfluxDB by the address pinned on kasa_dev.
+        (
+            "kasa_grafana",
+            "kasa_influxdb",
+            "${KASA_DEV_INFLUX_ADDR:-10.210.250.10}",
+            "[bundled]",
+        ),
+        (
+            "kasa_local_grafana",
+            "kasa_local_influxdb",
+            "kasa_local_influxdb",
+            "[local, demo]",
+        ),
     ):
-        assert f"INFLUX_HOST: {influx}" in _service(grafana), grafana
+        assert f"INFLUX_HOST: {host}" in _service(grafana), grafana
         assert f"profiles: {profiles}" in _service(grafana), grafana
         assert f"profiles: {profiles}" in _service(influx), influx
+    assert "ipv4_address: ${KASA_DEV_INFLUX_ADDR:-10.210.250.10}" in _service(
+        "kasa_influxdb"
+    )
+
+
+def test_the_env_template_sets_up_influxdb_with_the_credentials_the_collector_writes_with() -> (
+    None
+):
+    """The bundled InfluxDB is created with INFLUX_*; the collector writes with
+    KASA_COLLECTOR_INFLUXDB_*. A template whose two differ gives a stack copied from it a
+    collector whose every write is refused."""
+    values = dict(
+        line.split("=", 1)
+        for line in (REPO / ".env.example").read_text().splitlines()
+        if line and not line.startswith("#") and "=" in line
+    )
+    for part in ("ORG", "BUCKET", "TOKEN"):
+        assert values[f"INFLUX_{part}"] == values[f"KASA_COLLECTOR_INFLUXDB_{part}"], (
+            part
+        )
+
+
+def test_every_published_port_binds_to_loopback_by_default() -> None:
+    """The local and demo pairs start from env files this public repo prints (placeholder
+    InfluxDB operator token and passwords): a port on every interface hands the database to
+    anyone on the LAN. Only an env file that names a bind address reaches further."""
+    published = re.findall(
+        r'^      - "(\$\{[A-Z_]+:-[^}]*\}):\$\{[A-Z_]+_PORT', COMPOSE, re.M
+    )
+    assert published, "no published port found"
+    assert len(re.findall(r"^\s+ports:", COMPOSE, re.M)) == len(published)
+    for bind in published:
+        assert bind.endswith(":-127.0.0.1}"), bind
+
+
+def test_the_collector_only_targets_start_the_collector_whatever_the_env_file_says() -> (
+    None
+):
+    """.env.example's COMPOSE_PROFILES is the dev stack's, whose pair needs the dev host's
+    network: a .env.prod copied from it must still start the collector alone."""
+    for wrapper in ("RUN_DC", "PROD_DC"):
+        assert re.search(
+            rf"^{wrapper}\s+:= docker compose --env-file \.env\.prod --profile collector$",
+            MAKEFILE,
+            re.M,
+        ), wrapper
 
 
 def test_a_clone_can_still_run_its_real_devices_with_a_bundled_stack_here() -> None:
-    """The dev stack moved to the fleet's dev host; anyone else running the collector from a
+    """The dev stack runs on the fleet's dev host; anyone else running the collector from a
     clone keeps a stack on their own machine: the collector plus the published local pair,
     profiles named on the command line so .env.example's dev profiles never start the dev pair."""
     assert re.search(

@@ -438,12 +438,13 @@ class TestProcessSysinfo:
             assert type(point._fields["children"]) is str
 
 
-# The sysinfo field types a bucket written by 2026.10.5 and earlier holds: `SHOW FIELD
-# KEYS FROM sysinfo` on the maintainers' dev bucket at the 2026.11 cutover (IOT plugs and
-# HS300 strips, SMART P316M strips). Those releases wrote each value as the device sent
-# it, so InfluxDB fixed each field's type from it; a release that writes a key as another
-# type loses that device's whole sysinfo point to a 422 until the shard rolls over.
-_STORED_BY_EARLIER_RELEASES = {
+# The sysinfo field types an existing bucket holds: `SHOW FIELD KEYS FROM sysinfo` on the
+# maintainers' dev bucket (IOT plugs and HS300 strips, SMART P316M strips), whose values
+# were written as each device sent them. InfluxDB fixed each field's type from those, so
+# writing a key as another type loses that device's whole sysinfo point to a 422 until
+# the shard rolls over. lnk_on is left out: it is held as integer here and as text in
+# other buckets, so it is not written at all (test below).
+_STORED_IN_EXISTING_BUCKETS = {
     "active_mode": "string",
     "alias": "string",
     "auto_off_remain_time": "integer",
@@ -466,7 +467,6 @@ _STORED_BY_EARLIER_RELEASES = {
     "ip": "string",
     "lang": "string",
     "led_off": "integer",
-    "lnk_on": "integer",
     "mac": "string",
     "mic_type": "string",
     "model": "string",
@@ -495,12 +495,22 @@ _PYTHON_TYPE = {"integer": int, "boolean": bool, "string": str, "float": float}
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("key,stored", sorted(_STORED_BY_EARLIER_RELEASES.items()))
-def test_a_key_keeps_the_type_earlier_releases_stored_it_as(key, stored):
+@pytest.mark.parametrize("key,stored", sorted(_STORED_IN_EXISTING_BUCKETS.items()))
+def test_a_key_keeps_the_type_an_existing_bucket_holds(key, stored):
     from app.storage.sysinfo_fields import sysinfo_field
 
     written = sysinfo_field(key, _SAMPLE[stored])
     assert type(written) is _PYTHON_TYPE[stored], (key, stored, written)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("value", [1, 0, "1", True])
+def test_lnk_on_is_never_written_whatever_its_type(value):
+    """Existing buckets hold lnk_on as integer (written as devices send it) or as text
+    (written by typed shaping that had no rule for it): any type is refused by one of them."""
+    from app.storage.sysinfo_fields import sysinfo_field
+
+    assert sysinfo_field("lnk_on", value) is None
 
 
 @pytest.mark.unit

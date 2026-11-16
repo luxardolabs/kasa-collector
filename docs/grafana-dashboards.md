@@ -11,7 +11,7 @@ For most people the `shared-local` set is the one to use. Both sets carry a `dat
 
 ### Bundled demo or dev stack (auto-provisioned)
 
-If you start Kasa Collector with the demo stack (`make demo-up`, fake devices) or the local stack (`make local-up`, your real devices), Grafana comes up already provisioned with the datasource and all five dashboards — open **http://localhost:3000** (admin / admin), nothing to import. Provisioning is wired up by [`grafana/provisioning/`](https://github.com/luxardolabs/kasa-collector/tree/main/grafana/provisioning): the datasource is pinned to uid **`uDxwFcOGz`** in InfluxQL mode, authenticating to InfluxDB 2.x's v1-compatibility API via an `Authorization: Token <token>` header, and the dashboards load from `grafana/shared-local`.
+If you start Kasa Collector with the demo stack (`make demo-up`, fake devices) or the local stack (`make local-up`, your real devices), Grafana comes up already provisioned with the datasource and all five dashboards — open **http://localhost:3000** (`admin`, with `admin` for the demo or your `GRAFANA_PASSWORD` for the local stack), nothing to import. Provisioning is wired up by [`grafana/provisioning/`](https://github.com/luxardolabs/kasa-collector/tree/main/grafana/provisioning): the datasource is pinned to uid **`uDxwFcOGz`** in InfluxQL mode, authenticating to InfluxDB 2.x's v1-compatibility API via an `Authorization: Token <token>` header, and the dashboards load from `grafana/shared-local`.
 
 ### Bring your own Grafana (import the JSON)
 
