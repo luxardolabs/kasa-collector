@@ -168,7 +168,7 @@ Since 2026.10.1 the bundled InfluxDB (`kasa_local_influxdb` in the local and dem
 
 ### `make local-up`: "port is already allocated", or Grafana comes up empty
 
-Through 2026.11.0, the getting-started guide ran the bundled stack on your own machine with `make dev-up`, as containers `kasa_influxdb` and `kasa_grafana`. `make dev-up` now drives the maintainers' dev host, and the stack for your machine is `make local-up`, with its own containers (`kasa_local_*`) and volumes. If the old pair is still running, it holds ports 3000 and 8086. Stop it with plain compose, which keeps its data volumes:
+The stack for your machine is `make local-up`, with containers `kasa_local_influxdb` and `kasa_local_grafana` and volumes of their own; `make dev-up` drives the maintainers' dev host. If containers named `kasa_influxdb` and `kasa_grafana` run on your machine, they are a bundled stack started by `make dev-up` from an earlier checkout, and they hold ports 3000 and 8086. Stop it with plain compose, which keeps its data volumes:
 
 ```bash
 docker compose --env-file .env.dev --profile collector --profile bundled down
