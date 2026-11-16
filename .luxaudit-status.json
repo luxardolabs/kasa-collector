@@ -1,6 +1,6 @@
 {
   "guard": "luxaudit",
-  "guard_version": "0.16.0",
+  "guard_version": "0.18.0",
   "repo": "/repo",
   "packages": 32,
   "source": "poetry.lock",
@@ -13,12 +13,13 @@
   "deferred": [],
   "banned": [],
   "not_audited": [],
+  "by_public_version": [],
   "warnings": [],
   "image": {
     "ref": "luxardolabs/kasa-collector:2026.11.0",
     "inert": false,
     "inert_reason": "",
-    "error": "",
+    "error": "the registry has luxardolabs/kasa-collector:2026.11.0, but the scanner could not read it as an image: nt: no podman socket found: stat podman/podman.sock: no such file or directory\n\t* remote error: GET https://<registry>/v2/luxardolabs/kasa-collector/manifests/sha256:5a3b20d5f505fdcf8a209e3d8552a2de592490be8ca21ff684505821d8b89380: MANIFEST_UNKNOWN: manifest unknown; map[Name:luxardolabs/kasa-collector Revision:sha256:5a3b20d5f505fdcf8a209e3d8552a2de592490be8ca21ff684505821d8b89380]",
     "not_released": [],
     "vulnerable": [],
     "deferred": []
@@ -28,6 +29,6 @@
     "expired": [],
     "unjudged": []
   },
-  "commit": "84eaef6be5601270c7e80024b2032fa0dacc7319",
-  "generated_at": "2026-11-05T22:38:59Z"
+  "commit": "872427b9b529db5dad0ef72c4e1cc40de213f974",
+  "generated_at": "2026-11-16T03:53:15Z"
 }

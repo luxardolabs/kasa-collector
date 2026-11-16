@@ -3,7 +3,7 @@ name: luxpm-audit
 description: Audit this repo's whole LuxPM project, not just the issues the current work touched — verify every open issue against the code and close, park, merge or comment on it with evidence, backfill a close summary on every closed issue that lacks one, recover work a closed summary deferred without tracking it, then re-issue the sync receipt. Use when the receipt shows untriaged or unexplained issues, when repo.luxpm_backlog_triaged is red, or when asked to review/clean up/audit LuxPM.
 ---
 
-<!-- luxarch:luxpm-audit-skill asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit luxpm-audit-skill`. -->
+<!-- luxarch:luxpm-audit-skill asset v11 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit luxpm-audit-skill`. -->
 
 # Audit the LuxPM backlog
 
@@ -54,14 +54,19 @@ For each `done`/`cancelled` issue in this project with a blank `close_summary` (
 python3 .claude/hooks/luxpm-close-tracks-deferrals.py --scan <scratch>/closed.json
 ```
 
-It prints each sentence that defers work without naming another issue or `dropped`, as `<KEY>: <sentence>`. For each one:
+It prints each sentence of prose that reads like a deferral naming no other issue and no `dropped`, as `<KEY>: <sentence>`. This is the prose backstop: the close hook itself holds only labelled slots (`Not built:`, `Deferred:`, `Follow-up:` and the rest), so a deferral written as prose reaches you here. Each hit is for you to judge one by one, never an automatic denial: many are sentences that defer nothing. For each one:
 
 - **Read it in context.** A sentence about the ticket itself ("left open for two weeks") defers nothing: note it and move on.
 - **Check the code.** Work done since (`git log -S <symbol>`, the file it names) needs no issue.
 - **Search LuxPM** (`luxpm_semantic_search`, two phrasings). Work an open issue already covers gets a comment there naming the closed key.
 - **File the rest** as its own open issue (label `recovered-deferral`), saying where it was found. Then amend the closed summary to name the new key beside the sentence (`luxpm_update_issue` with only `close_summary`, the state unchanged).
 
-A summary that ends mid-word was stored cut off. Rebuild what is missing from the issue's comments, its commits and the changelog, and write it back whole.
+A summary that ends mid-word, usually at 1000 characters and often on `...`, was stored cut off, and its original tail is gone. For each one:
+
+- **Now: read the issue's activity log, its commits and the changelog** for a follow-up the lost tail may have named. File what nothing tracks, as above, and name the new key in a comment on the closed issue.
+- **Rebuild the tail only when line 2 of `.claude/hooks/luxpm-close-tracks-deferrals.py` says hook v7 or later.** An older hook denies correct sentences, and that pressure is what drops deferrals from a rewrite. Until then, leave the stored text as it is and count the summaries in your report.
+- **A rebuilt tail is marked as such:** end the stored text, then `Reconstructed <date> from the activity log and commits; the original tail was lost.`, then what you rebuilt. It is a reconstruction, never a recovery. A deferral you find in it is filed like any other.
+- **Never reword a true sentence to get past the hook, and never leave a deferral out because the hook would object.** A denial you believe is wrong goes to `/escalate`, and that summary stays as stored.
 
 ## 3. Checklists and activities
 

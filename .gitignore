@@ -79,3 +79,7 @@ Makefile.local
 .claude/.*.lock
 .claude/.*.tmp
 .claude/.*.unreadable-*
+
+# Claude Code hook session state (luxarch --emit hooks)
+.claude/.luxpm-path-searches.json
+.claude/.luxpm-hold-notices.json

@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.344.0",
+  "guard_version": "0.366.2",
   "repo": "/repo",
   "targets": [
     {
@@ -116,10 +116,21 @@
           "inert_reason": "",
           "fix": "",
           "example": ""
+        },
+        {
+          "rule": "fw.first_party_imports_app_prefixed",
+          "status": "PASS",
+          "since": "0.358.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": false,
+          "inert_reason": "",
+          "fix": "",
+          "example": ""
         }
       ],
       "summary": {
-        "PASS": 7,
+        "PASS": 8,
         "FAIL": 0,
         "XFAIL": 0,
         "XPASS": 0,
@@ -526,6 +537,17 @@
         "example": ""
       },
       {
+        "rule": "repo.ops_scripts_in_runbook",
+        "status": "INERT",
+        "since": "0.358.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": true,
+        "inert_reason": "no `scripts/ops/` directory beside any app package, so there is no one-off operator script to judge (a script kept elsewhere is not seen: its home is `<component>/scripts/ops/`)",
+        "fix": "",
+        "example": ""
+      },
+      {
         "rule": "repo.github_release_wired",
         "status": "PASS",
         "since": "0.150.0",
@@ -735,6 +757,17 @@
         "example": ""
       },
       {
+        "rule": "repo.compose_pg_healthcheck_tcp",
+        "status": "INERT",
+        "since": "0.358.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": true,
+        "inert_reason": "no committed compose service carries a healthcheck that probes Postgres \u2014 nothing to check",
+        "fix": "",
+        "example": ""
+      },
+      {
         "rule": "repo.compose_up_selects_services",
         "status": "PASS",
         "since": "0.264.0",
@@ -765,6 +798,17 @@
         "inert": false,
         "inert_reason": "",
         "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.dev_host_declared",
+        "status": "FAIL",
+        "since": "0.365.0",
+        "violations": 1,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "Move the dev stack to the dev host: `DEV_HOST := devhost` committed in the Makefile, no host `ports:`, and the service the edge reaches on the `dev-edge` network: the app's own front nginx as `<app>-nginx`, or, for an app with none, the app itself. The whole recipe, both shapes: --doc FLEET-BUILD-DEPLOY-STANDARD, \"The dev host\", \"Moving a stack to the dev host\".",
         "example": ""
       },
       {
@@ -924,19 +968,19 @@
     ],
     "summary": {
       "PASS": 67,
-      "FAIL": 0,
+      "FAIL": 1,
       "XFAIL": 0,
       "XPASS": 0,
-      "INERT": 5
+      "INERT": 7
     }
   },
   "summary": {
-    "PASS": 74,
-    "FAIL": 0,
+    "PASS": 75,
+    "FAIL": 1,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 8
+    "INERT": 10
   },
-  "commit": "84eaef6be5601270c7e80024b2032fa0dacc7319",
-  "generated_at": "2026-11-05T22:38:59Z"
+  "commit": "872427b9b529db5dad0ef72c4e1cc40de213f974",
+  "generated_at": "2026-11-16T03:53:15Z"
 }

@@ -1,5 +1,7 @@
 #!/bin/sh
 # luxlint: REQUIRED fleet secret guard for the commit MESSAGE (do not delete).
+unset MAKEFLAGS GNUMAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES \
+  LUXLINT LUXLINT_IMAGE GITLEAKS_IMAGE
 # gitleaks reads file content and pre-commit runs before the message exists, so the message is
 # scanned here, with the same config: `make gitleaks-commit-msg` (luxarch gitleaks asset v13+).
 # No Docker (an iOS app's Mac): the luxios checkout's native message gate.

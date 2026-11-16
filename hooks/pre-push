@@ -1,5 +1,7 @@
 #!/bin/sh
 # luxlint: REQUIRED fleet secret guard — last net before anything goes public.
+unset MAKEFLAGS GNUMAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES \
+  LUXLINT LUXLINT_IMAGE GITLEAKS_IMAGE
 # No Docker (an iOS app's Mac): the luxios checkout's native push gate, the same fleet config.
 if ! docker info >/dev/null 2>&1; then  # no Docker CLI, or no daemon it can reach
   lx=$(git config --get luxios.path || true)

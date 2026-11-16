@@ -3,7 +3,7 @@ name: adversarial-audit
 description: Attack the WHOLE platform, not just a change — take the attack surface from `luxarch --sweep attack-surface`, rank it by this repo's committed audit profile, hand each slice to an independent attacker, verify every break with a second agent, and file each confirmed break in LuxPM with its failing test. Direct it in plain words ("what changed since the last release", "just payments, go deep", "quick"); re-runs attack only what changed. Use for a first full review of an app, on the owner's schedule, or when asked to audit or red-team the platform.
 ---
 
-<!-- luxarch:adversarial-audit-skill asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit adversarial-audit-skill`. -->
+<!-- luxarch:adversarial-audit-skill asset v11 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit adversarial-audit-skill`. -->
 
 # Adversarial audit: the whole platform
 
@@ -126,12 +126,38 @@ id>/ (never in the repo's tree), or a probe against the dev stack with its outpu
 that passes, so the failure is the code's and not the harness's. Otherwise mark it UNREPRODUCED
 with the reason.
 
+TARGET: your requests reach only this work's throwaway stack, never a real host. Address it by
+container name or 127.0.0.1, and send the real host name only as a header (`curl -H 'Host: <name>'`,
+playwright `extra_http_headers`). A script that needs the real name in its URL (a cookie domain, TLS)
+runs in a container on a `docker network create --internal` network holding only that stack, with its
+dependencies installed before it joins: a remap the script sets for itself, or a hosts entry it relies
+on, fails open, and a missed one sends its login to production. Outside that network, never use
+`curl -k` or any other certificate bypass.
+
+WHERE ATTACK SCRIPTS RUN: on a machine other agents share, as a user that can write its system paths,
+so a script's mistake lands on every session there. Every script you run:
+- starts `set -eu` (a Python script fails on an unset name by itself), so an unset variable stops it
+  before `"$ROOT/bin/gh"` becomes `/bin/gh`;
+- runs only inside `docker run --rm --network none -v <scratch>/<slice id>:/s -v <checkout>:/w:ro -w /s
+  <image> sh /s/<script>`, both paths written out, nothing else mounted: your slice's scratch dir
+  read-write, the code under attack read-only. The image already holds what the script needs (the
+  repo's test image, or `python:3-slim` for a stdlib script); nothing is installed at run time. A
+  stand-in tool (`gh`, `docker`, `git`) lives in /s/bin, on PATH inside that container only. The one
+  run that leaves it is the probe of the throwaway stack above, on its `--internal` network;
+- is a file you wrote with the file tool before the first `docker run` that mounts it (docker makes a
+  missing mount source as an empty directory owned by root);
+- is run by one plain `docker run` per step, naming that script: no `&&` chain, heredoc or pipe into
+  a filter, and its whole output read (a cut tail is a lost result);
+- has no `pytest.skip` and no bare `noqa`: a test that cannot run fails;
+- holds a bare red and a bare green control, and the report shows both results.
+A round in which nothing executed is INCONCLUSIVE, with what stopped it, never "no breaks".
+
 CONSTRAINTS: read-only on the repo except <scratch>/<slice id>/; no commits, pushes, git config
-changes or tracker writes; never touch production.
+changes or tracker writes.
 
 REPORT: CONFIRMED findings, most severe first: the route/job, what goes wrong, the reproducing test
 file or probe output, the one-line fix. Then UNREPRODUCED ones with the reason. Then what you did
-not attack and why.
+not attack and why. Then every host your scripts connected to, read from the scripts and their output.
 ```
 
 ## 5. Verify every confirmed finding
@@ -142,7 +168,8 @@ A large sweep drifts toward plausible findings that are not real. **Merge duplic
 Another agent claims this defect in <repo>: <finding>. Its reproduction: <test or probe>.
 Decide whether it is REAL. Run the reproduction yourself; check that it fails for the reason
 claimed and not because of the harness, a fixture, or a misread; check the control passes; look
-for the guard or test that should already have caught it. Read-only except <scratch>/verify/.
+for the guard or test that should already have caught it. Read-only except <scratch>/verify/, and
+every script you run follows WHERE ATTACK SCRIPTS RUN in step 4's prompt, with <scratch>/verify as /s.
 REPORT: REAL, NOT REAL or INCONCLUSIVE, with the run's output. REAL: the severity and the smallest
 fix. NOT REAL only with a demonstrated reason: the control fails the same way, the code path cannot be
 reached, or the claimed behaviour is correct. INCONCLUSIVE when you could not decide: the reproduction
@@ -155,7 +182,7 @@ Tier the verification by what is at stake. **Full verification** (the second age
 
 ## 6. `deep` only: the chaining pass
 
-One more independent agent gets every REAL finding and UNREPRODUCED lead from this run, plus the profile, and asks how two of them combine into something worse than either: a low-severity read that hands over the id a second slice trusts, an unauthenticated write that a background job later acts on. Same evidence bar; same verification for anything it confirms.
+One more independent **general-purpose** agent, on the strongest model (judgment work, never a cheaper tier), gets every REAL finding and UNREPRODUCED lead from this run, plus the profile, and asks how two of them combine into something worse than either: a low-severity read that hands over the id a second slice trusts, an unauthenticated write that a background job later acts on. Same evidence bar; same verification for anything it confirms.
 
 ## 7. File the burn-down and record the run
 

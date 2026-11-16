@@ -3,7 +3,7 @@ name: wrap-up
 description: Close out a piece of work the fleet way before calling it done — tests written and run for what changed, every red in touched files fixed, docs updated (stale advice removed), make check green, committed in the issue's worktree, LuxPM fully closed out (issues, checklists, activities, commit links, sync receipt), then landed on the base branch, the worktree removed, and pushed as the repo declares. Every step reports evidence, not a tick.
 ---
 
-<!-- luxarch:wrap-up-skill asset v19 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit wrap-up-skill`. -->
+<!-- luxarch:wrap-up-skill asset v23 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit wrap-up-skill`. -->
 
 # Wrap up
 
@@ -54,7 +54,7 @@ A red can also be moved instead of fixed: the code goes to another layer, helper
 
 ## 5. The gate, committed in the issue's worktree
 
-- You are in the issue's worktree (`.claude/worktrees/<ISSUE-KEY>`; `luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Concurrent agents: one worktree per issue"). If the work was done in the main checkout, that is the failure the standard exists to stop: say so in the report.
+- You are in the issue's worktree (`<repo parent>/.worktrees/<repo>/<ISSUE-KEY>`, or `.claude/worktrees/<ISSUE-KEY>` for one made before worktrees moved beside the repository; `luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Concurrent agents: one worktree per issue"). If the work was done in the main checkout, that is the failure the standard exists to stop: say so in the report.
 - `make check` green, run in the worktree. A red you could not fix stays red with an open escalation (`/escalate`), never deferred or silenced.
 - Commit as `luxardolabs` via the global git config (never `git -c user.email=…`), no AI attribution.
 
@@ -64,8 +64,8 @@ A red can also be moved instead of fixed: the code goes to another layer, helper
 
 - Every issue this work touched: **closed** (`luxpm_update_issue` with a `close_summary` saying what shipped), or left open on purpose with a comment saying what remains. A comment is not a close. **Close when the code is done** (committed, pushed, gate green), never later: not "after the deploy", not "once I've checked prod". Deploying is the owner's step; a check of the deployed stack is its own step or its own issue.
 - **Checklist items** done: one `luxpm_update_checklist(sequence_id, items=[{item: <number or title>, done: true}, …])` per issue, ticking every finished item. **Activities and todos** for this work completed (`luxpm_list_activities`).
-- **Work logged with its commits**, one call per issue: `luxpm_log_activity(sequence_id, kind="code_change", content=<the evidence>, commits=[{sha, committed_at}, …])` records the entry AND links the commits (use `luxpm_link_commits` only for commits that belong to no issue), every commit with its `committed_at` (`git log -1 --format=%cI <sha>`): without it LuxPM cannot know the commit's age, and an old sha linked as evidence becomes the sync receipt's anchor. Link this repo's commits to this repo's issues only.
-- **Every finding this session raised, filed or dropped.** Go back through the session, not just the diff: each bug, red, limit or follow-up you named in a reply ("not filed yet", "to file", "follow-up", "out of scope"), each `/adversarial` UNREPRODUCED or deferred item, each red you noticed in a file outside the change, and each owner aside. For each one: **search first** (`luxpm_semantic_search`, `luxpm_list_issues` with `search`), comment on the match, or create one; or name it dropped with the reason. One that lives only in the conversation is lost at the next compact.
+- **Work logged with its commits**, one call per issue: `luxpm_log_activity(sequence_id, kind="code_change", content=<the evidence>, commits=[{sha, committed_at}, …])` records the entry AND links the commits (use `luxpm_link_commits` only for commits that belong to no issue), every commit with its `committed_at` (`git log -1 --format=%cI <sha>`) and `files`, as `worktree.py land` prints each landed commit's JSON: without it LuxPM cannot know the commit's age, and an old sha linked as evidence becomes the sync receipt's anchor. Link this repo's commits to this repo's issues only.
+- **Every finding this session raised, filed or dropped.** Go back through the session, not just the diff: each bug, red, limit or follow-up you named in a reply ("not filed yet", "to file", "follow-up", "out of scope"), each `/adversarial` UNREPRODUCED or deferred item, each red you noticed in a file outside the change, and each owner aside. For each one: **search first** (`luxpm_semantic_search`, `luxpm_list_issues` with `search`, and with `path=` for a finding about a file), comment on the match, or create one, with `files` naming the repo-relative paths of the code it is about; or name it dropped with the reason. One that lives only in the conversation is lost at the next compact.
 - **A close summary is not a tracker.** Work you did not do — not built, deferred, a follow-up, a stated limit with a fix, an UNREPRODUCED finding — is filed as its own open issue BEFORE the close, and the close summary names that key beside it ("Not built: X (<ticket>)"), or says `dropped: <why>`. Written into a closed issue's summary or comment, it is tracked by nothing and nobody picks it up. The emitted `luxpm-close-tracks-deferrals` hook denies a close whose summary defers work without naming another issue or `dropped`.
 - New follow-up work from the close-out itself: the same, search first, comment on an existing issue if found, create only if none.
 - **Close on the commit and the green gate**: step 7 lands and pushes it next. If landing then fails, set the issue back to `in_progress` with the reason.
@@ -80,13 +80,13 @@ A red can also be moved instead of fixed: the code goes to another layer, helper
 - Pushing follows `.luxarch.toml`. `[agents] push = "agent"`: `land` pushes the tested HEAD to origin as it lands. If origin rejected it, origin moved: run `land` again, never `git pull --rebase` on the base. `push = "owner"`: `land` stays local; say the work is landed and ready. A repo with no declaration reds `repo.agent_push_declared`: ask the owner which it is, once, and write the answer there.
 - `ExitWorktree` with `action: "keep"`, then from the main checkout `python3 .claude/hooks/worktree.py list --prune`: it prunes the worktree and its branch now that they are landed, clean, and locked by no one else. Not `ExitWorktree` `remove`: it judges the branch against the commit the worktree was made from, so it refuses every landed branch as unmerged work, and `discard_changes: true` is never the answer to that refusal.
 - `python3 .claude/hooks/worktree.py list`: no worktree left for this issue.
-- Nothing of this unit is left on the shared machine (`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Shared machine"): its scratch subdirectory removed, every container, image tag, compose project and volume it created removed by its exact name, nothing written outside the worktree and scratch.
+- Nothing of this unit is left on the shared machine (`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Shared machine"): its background shells stopped (`python3 .claude/hooks/background-shells.py --own`, read before clearing scratch, since one may be waiting on a file there), its scratch subdirectory removed, every container, image tag, compose project and volume it created removed by its exact name, nothing written outside the worktree and scratch. A claim that nothing is running comes from that command, not from memory.
 
 **Evidence:** `land`'s `Landed and pushed N commit(s) on <base> at <sha>` line (`Landed N commit(s)` under `"owner"`), the `list` output, and `git status -sb` (nothing ahead under `"agent"`; the commits ahead named under `"owner"`), and `docker ps -a` and `docker image ls` filtered by the issue key listing nothing.
 
 ## 8. Report
 
-Two parts, in this order:
+Three parts, in this order:
 
 1. **What this session worked on**, in a short paragraph or a few bullets of plain sentences for someone who was not watching:
 
@@ -98,3 +98,11 @@ Two parts, in this order:
    Name issues by key. This is a summary of the work, not of the effort: no narrating how hard it was.
 
 1. **The evidence:** what shipped (with the evidence above), and what is still open and why.
+
+1. **The compact line**, last, for the owner to paste if they choose to compact. It is an offer, never a prompt: agents never ask for a compact (`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Compaction"). One line, built from this session's real state:
+
+   ```
+   /compact Keep: next <key> (<what>) in <work order key>'s order, then <keys>; owner decisions open: <keys>; running: <agents or background jobs, or none>; main at <sha> <clean|dirty>, <release state>; unresolved: <failures, by key, or none>. Drop: raw tool/LuxPM output, landed-fix details, resolved errors, file contents and anything retrievable from LuxPM or the repo.
+   ```
+
+   Every Keep entry is a pointer to something already persisted: an issue key, a commit sha or a file path. A decision, finding or failure that you cannot name that way lives only in the conversation, and the compact loses it: file it first (step 6), then name its key. The line must start with `/compact` at the very start of the prompt, or Claude Code sends it as a message instead of running it.
