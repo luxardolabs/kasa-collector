@@ -438,6 +438,71 @@ class TestProcessSysinfo:
             assert type(point._fields["children"]) is str
 
 
+# The sysinfo field types a bucket written by 2026.10.5 and earlier holds: `SHOW FIELD
+# KEYS FROM sysinfo` on the maintainers' dev bucket at the 2026.11 cutover (IOT plugs and
+# HS300 strips, SMART P316M strips). Those releases wrote each value as the device sent
+# it, so InfluxDB fixed each field's type from it; a release that writes a key as another
+# type loses that device's whole sysinfo point to a 422 until the shard rolls over.
+_STORED_BY_EARLIER_RELEASES = {
+    "active_mode": "string",
+    "alias": "string",
+    "auto_off_remain_time": "integer",
+    "auto_off_status": "string",
+    "avatar": "string",
+    "charging_status": "string",
+    "child_num": "integer",
+    "children": "string",
+    "default_states": "string",
+    "dev_name": "string",
+    "deviceId": "string",
+    "err_code": "integer",
+    "feature": "string",
+    "fw_id": "string",
+    "has_set_location_info": "boolean",
+    "hwId": "string",
+    "hw_id": "string",
+    "hw_ver": "string",
+    "icon_hash": "string",
+    "ip": "string",
+    "lang": "string",
+    "led_off": "integer",
+    "lnk_on": "integer",
+    "mac": "string",
+    "mic_type": "string",
+    "model": "string",
+    "next_action": "string",
+    "nickname": "string",
+    "ntc_state": "integer",
+    "obd_src": "string",
+    "oemId": "string",
+    "oem_id": "string",
+    "on_time": "integer",
+    "overcurrent_status": "string",
+    "power_protection_status": "string",
+    "region": "string",
+    "relay_state": "integer",
+    "rssi": "integer",
+    "signal_level": "integer",
+    "specs": "string",
+    "status": "string",
+    "sw_ver": "string",
+    "time_diff": "integer",
+    "type": "string",
+    "updating": "integer",
+}
+_SAMPLE = {"integer": 1, "boolean": True, "string": "x", "float": 1.5}
+_PYTHON_TYPE = {"integer": int, "boolean": bool, "string": str, "float": float}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("key,stored", sorted(_STORED_BY_EARLIER_RELEASES.items()))
+def test_a_key_keeps_the_type_earlier_releases_stored_it_as(key, stored):
+    from app.storage.sysinfo_fields import sysinfo_field
+
+    written = sysinfo_field(key, _SAMPLE[stored])
+    assert type(written) is _PYTHON_TYPE[stored], (key, stored, written)
+
+
 @pytest.mark.unit
 async def test_coordinates_never_reach_the_file_sink_or_the_cache(
     monkeypatch, tmp_path

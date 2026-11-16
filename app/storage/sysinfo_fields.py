@@ -8,7 +8,9 @@ therefore has one type here, and a value is converted to it or left out of the p
 
 The types are those python-kasa 0.11.0.1's device fixtures (IOT ``get_sysinfo`` and
 SMART ``get_device_info``, 189 devices) report for each key: no key appears there with
-two types. Every key not named here is written as text.
+two types. A key the fixtures lack keeps the type releases before 2026.11.0 stored it as
+(those wrote each value as the device sent it), so an existing bucket accepts the point.
+Every key not named here is written as text.
 
 A device's coordinates are never written. Real devices send them as a float in degrees
 (IOT ``latitude``) or as a scaled int (SMART), so no one type fits, and python-kasa's
@@ -56,6 +58,9 @@ INT_KEYS = frozenset(
         "lastOnboardingTimestamp",
         "led_off",
         "length",
+        # Not in python-kasa's fixtures, but sent as an int by IOT plugs and strips, and
+        # stored as integer in every bucket a release before 2026.11.0 wrote (KASACOLLEC-150).
+        "lnk_on",
         "max_control_temp",
         "min_control_temp",
         "next_schedule_time",
