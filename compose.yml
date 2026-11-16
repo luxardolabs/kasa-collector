@@ -25,7 +25,7 @@ name: kasa-collector
 #
 # THE DEV STACK RUNS ON THE DEV HOST (`DEV_HOST` in the Makefile; FLEET-BUILD-DEPLOY-STANDARD,
 # "The dev host") and publishes no host port. Its Grafana joins the dev host's `dev-edge`
-# network under its container name, and the edge serves it by its dev name. Its InfluxDB has
+# network at its pinned address (172.30.0.15), where the edge serves it by its dev name. Its InfluxDB has
 # a FIXED address on the `kasa_dev` network: the collector is on the host's network (it must
 # be, for discovery), where no container name resolves, and a host-networked process reaches
 # a bridge container by its address.
@@ -146,7 +146,13 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
       - kasa_grafana_data:/var/lib/grafana
-    networks: [kasa_dev, dev-edge]
+    networks:
+      kasa_dev: {}
+      # The edge routes by PINNED address on dev-edge, never by name: any container on the
+      # network can claim an alias. 172.30.0.15 is this Grafana's row in the edge's address
+      # table (the edge repo's README, "The dev-edge network and the address table").
+      dev-edge:
+        ipv4_address: 172.30.0.15
     depends_on:
       kasa_influxdb:
         condition: service_healthy
@@ -469,7 +475,7 @@ networks:
       config:
         - subnet: ${KASA_DEV_SUBNET:-10.210.250.0/24}
   # The dev host's edge (FLEET-BUILD-DEPLOY-STANDARD, "The dev host"): only the dev
-  # Grafana joins it, so only the dev stack needs it to exist.
+  # Grafana joins it (pinned at 172.30.0.15), so only the dev stack needs it to exist.
   dev-edge:
     external: true
 

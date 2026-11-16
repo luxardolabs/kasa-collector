@@ -53,11 +53,17 @@ def test_the_dev_pair_publishes_no_host_port(name: str) -> None:
 
 
 def test_the_dev_grafana_is_served_by_name_on_the_edge() -> None:
-    """The edge hands the dev name to http://kasa_grafana:3000 on `dev-edge` ([dev_host] in
-    .luxarch.toml); a Grafana off that network cannot be reached at all."""
+    """The edge hands the dev name to kasa_grafana:3000 on `dev-edge` ([dev_host] in
+    .luxarch.toml) by its PINNED address: a Grafana off that network, or one that joins
+    without its pin (and so takes a random .128+ address), cannot be reached."""
     service = _service("kasa_grafana")
     assert "container_name: kasa_grafana" in service
-    assert "networks: [kasa_dev, dev-edge]" in service
+    assert re.search(
+        r"^    networks:\n      kasa_dev: \{\}\n(?:      #.*\n)*      dev-edge:\n"
+        r"        ipv4_address: 172\.30\.0\.15$",
+        service + "\n",
+        re.M,
+    )
     assert re.search(r"^  dev-edge:\n    external: true$", COMPOSE, re.M)
     toml = (REPO / ".luxarch.toml").read_text()
     assert re.search(

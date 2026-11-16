@@ -24,7 +24,7 @@ push = "agent"
 
 # How the dev stack is reached on the dev host (FLEET-BUILD-DEPLOY-STANDARD, "The dev host").
 # There is no nginx and the collector serves no HTTP: the edge hands the dev name straight to
-# the stack's Grafana on `dev-edge` (http://kasa_grafana:3000).
+# the stack's Grafana on `dev-edge` at its pinned address (http://172.30.0.15:3000).
 [dev_host]
 front = "app"
 service = "kasa_grafana"
