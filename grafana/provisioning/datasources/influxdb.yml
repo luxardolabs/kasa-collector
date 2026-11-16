@@ -1,7 +1,8 @@
 # Grafana datasource for the bundled InfluxDB. The dashboards use InfluxQL and
 # reference datasource uid "uDxwFcOGz", so this pins that uid. Auth to InfluxDB
 # 2.x's v1-compat API is via an Authorization: Token header. Values come from the
-# demo env passed into the Grafana container.
+# env compose passes into the Grafana container: INFLUX_HOST names that stack's
+# InfluxDB service (kasa_influxdb for dev, kasa_local_influxdb for local and demo).
 apiVersion: 1
 
 datasources:
@@ -9,7 +10,7 @@ datasources:
     uid: uDxwFcOGz
     type: influxdb
     access: proxy
-    url: http://kasa_influxdb:8086
+    url: http://${INFLUX_HOST}:8086
     isDefault: true
     jsonData:
       version: InfluxQL

@@ -66,8 +66,8 @@ The build/deploy flow follows the Luxardo Labs fleet standard. `VERSION` (repo r
 # does not yet refuse `candidate-*`, `dev` or `latest` (KASACOLLEC-84).
 make dev-deploy
 
-# Bring the dev stack up at whatever .env.dev pins — host networking
-make dev-up          # make dev-logs / make dev-ps / make dev-down
+# Bring the dev stack up on the dev host (DEV_HOST := devhost, an ssh alias) at whatever .env.dev pins
+make dev-up          # make dev-logs / make dev-ps / make dev-down — all over ssh to DEV_HOST
 
 # Release (luxarch's image block): refuses a dirty tree, an already-released VERSION, a local
 # v<VERSION> tag not at HEAD, and a v<VERSION> missing from origin (it does not yet check WHERE
@@ -91,18 +91,24 @@ make prod-deploy PROD_NODE=<host>
 # collector-only → YOUR external InfluxDB/Grafana (edit .env.prod). The plug-in.
 make up                # make down / logs / ps / shell
 
-# dev: your REAL devices + bundled InfluxDB + Grafana (daily local driver).
-# Same compose.yml — .env.dev sets COMPOSE_PROFILES=collector,bundled.
+# dev: the owner's REAL devices + bundled InfluxDB + Grafana, ON THE DEV HOST (DEV_HOST).
+# .env.dev sets COMPOSE_PROFILES=collector,bundled. No host port: Grafana is on the dev
+# host's dev-edge network, served by name; InfluxDB is at a fixed address on kasa_dev
+# (10.210.250.10), which .env.dev's KASA_COLLECTOR_INFLUXDB_URL names.
 make dev-up            # make dev-down
 
-# demo: FAKE devices + bundled InfluxDB + Grafana (watch it work, no hardware)
+# local: real devices + the published InfluxDB + Grafana on THIS machine (.env.local) —
+# the stack for anyone running from a clone; profiles collector + local.
+make local-up          # make local-down / local-clean / local-logs / local-ps
+
+# demo: FAKE devices + the same published pair (watch it work, no hardware)
 make demo-up           # http://localhost:3000 — make demo-down / demo-clean
 
 # test: hardware-free end-to-end (all fake device kinds -> collector -> InfluxDB)
 make test-e2e          # builds the images, runs by tag, pass/fail, self-tears-down
 
-# Ports default to 3000/8086. They are DEPLOYMENT facts, not repo defaults: set
-# GRAFANA_PORT/INFLUX_PORT in your gitignored .env.dev when a sibling app owns one.
+# The local/demo ports default to 3000/8086. They are DEPLOYMENT facts: set
+# GRAFANA_PORT/INFLUX_PORT in .env.local / .env.demo when another app owns one.
 # Compose never builds — `make` builds each image and compose runs it by pinned tag.
 
 # Unit tests + lint. All decoupled from :dev (FLEET-BUILD-DEPLOY-STANDARD): ruff AND mypy
@@ -177,11 +183,14 @@ The fleet standard is one compose file per repo: the STACK is a compose **profil
 | profile     | services                                            | selected by             |
 | ----------- | --------------------------------------------------- | ----------------------- |
 | `collector` | `kasa-collector` — HOST network, real devices       | `.env.prod`, `.env.dev` |
-| `bundled`   | `kasa_influxdb` + `kasa_grafana`                    | `.env.dev`              |
-| `demo`      | that bundled pair + 4 fakes + `kasa-collector-demo` | `.env.demo`             |
+| `bundled`   | `kasa_influxdb` + `kasa_grafana` (no host port)     | `.env.dev`              |
+| `local`     | `kasa_local_influxdb` + `kasa_local_grafana`        | `make local-up`         |
+| `demo`      | the local pair + 4 fakes + `kasa-collector-demo`    | `.env.demo`             |
 | `e2e`       | throwaway InfluxDB + 7 fakes + `kasa-collector-e2e` | `make test-e2e`         |
 
-Each env file names its stack in `COMPOSE_PROFILES`: `.env.prod` → `collector`, `.env.dev` → `collector,bundled`, `.env.demo` → `demo`. Set `GRAFANA_PORT`/`INFLUX_PORT` per host — sibling apps share the box, so 3000 is often taken.
+Each env file names its stack in `COMPOSE_PROFILES`: `.env.prod` → `collector`, `.env.dev` → `collector,bundled`, `.env.demo` → `demo`; `make local-up` names `collector` + `local` itself. Only the local pair publishes ports (`GRAFANA_PORT`/`INFLUX_PORT`).
+
+**The dev stack runs on the dev host** (`DEV_HOST := devhost`, `[dev_host]` in `.luxarch.toml`; FLEET-BUILD-DEPLOY-STANDARD, "The dev host"), which mounts this checkout at the same path and sits on the plugs' LAN. It publishes no host port: `kasa_grafana` joins `dev-edge` under its container name and the edge serves it by its dev name; it refuses an empty, `admin` or placeholder `GRAFANA_PASSWORD` and sets the env file's password on every start (`ops/grafana/dev-entrypoint.sh`). The host-networked collector cannot resolve service names, so `kasa_influxdb` has a fixed address (`KASA_DEV_INFLUX_ADDR`, default 10.210.250.10) on the `kasa_dev` network, pinned to `KASA_DEV_SUBNET` (default 10.210.250.0/24, the top of the dev host's Docker pool).
 
 **Why three collector SERVICES rather than one.** `network_mode` is a property of a service and cannot vary by profile. The real collector needs HOST networking because Kasa discovery is a UDP broadcast that cannot cross a bridge; the fake-device stacks need BRIDGE networking so the collector resolves the emulators by service name, which host networking cannot do. Those are three different services, not one service in three moods. (This supersedes the previous note claiming demo/e2e had to be separate FILES — they had to be separate services, which profiles express fine.)
 

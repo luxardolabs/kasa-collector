@@ -36,9 +36,9 @@ To emulate other models or more devices, add services to `compose.yml` carrying 
 Two self-contained stacks bring up the collector with a bundled, auto-provisioned InfluxDB + Grafana (open http://localhost:3000, admin / admin):
 
 - `make demo-up` — driven by **fake** devices (the harness emulators), so the dashboards populate with no hardware.
-- `make dev-up` — driven by **your real** Kasa devices on the network.
+- `make local-up` — driven by **your real** Kasa devices on the network.
 
-The demo runs the published GHCR release (`.env.demo`) plus the locally built emulator, so it needs no registry of your own; the dev stack runs whatever `.env.dev` pins. Stop them with `make demo-down` / `make dev-down` (add `-clean` to also drop the data volumes). The dashboards they provision are documented in [grafana-dashboards.md](grafana-dashboards.md).
+The demo runs the published GHCR release (`.env.demo`) plus the locally built emulator, so it needs no registry of your own; the local stack runs whatever `.env.local` pins. Stop them with `make demo-down` / `make local-down` (add `-clean` to also drop the data volumes). The dashboards they provision are documented in [grafana-dashboards.md](grafana-dashboards.md).
 
 ## See also
 

@@ -49,11 +49,11 @@ Everything is driven by `make`. There is one `compose.yml`; the stack is a compo
 | Stack              | Command         | What it does                                                                    |
 | ------------------ | --------------- | ------------------------------------------------------------------------------- |
 | **demo**           | `make demo-up`  | Fake emulated devices + bundled InfluxDB + Grafana — watch it work, no hardware |
-| **dev**            | `make dev-up`   | Your real devices (host networking) + bundled InfluxDB + Grafana                |
+| **local**          | `make local-up` | Your real devices (host networking) + bundled InfluxDB + Grafana                |
 | **collector-only** | `make up`       | Just the collector, pointed at your own external InfluxDB + Grafana             |
 | **test**           | `make test-e2e` | Hardware-free end-to-end test — fakes → collector → ephemeral InfluxDB          |
 
-The demo and dev stacks serve Grafana at http://localhost:3000 (admin/admin) — set `GRAFANA_PORT`/`INFLUX_PORT` in your `.env` if another service already owns those ports. See [Deployment](docs/deployment.md) for production.
+The demo and local stacks serve Grafana at http://localhost:3000 (admin/admin) — set `GRAFANA_PORT`/`INFLUX_PORT` in `.env.demo` / `.env.local` if another service already owns those ports. The maintainers' own dev stack (`make dev-up`) runs on their dev host and is reached by name, not a port. See [Deployment](docs/deployment.md) for production.
 
 ## Features
 

@@ -31,18 +31,22 @@ Then open **http://localhost:3000** (admin / admin) and watch the dashboards mov
 - Follow logs with `make demo-logs`.
 - If ports 3000 / 8086 are already in use, set `GRAFANA_PORT` / `INFLUX_PORT` in `.env.demo`.
 
-## Option 2 — Dev: your real devices + bundled InfluxDB / Grafana
+## Option 2 — Local: your real devices + bundled InfluxDB / Grafana
 
-Same self-contained InfluxDB and Grafana as the demo, but the collector uses host networking and broadcast discovery to find **your real** Kasa devices. It runs the image `.env.dev` pins — the published release is the simplest choice:
+Same self-contained InfluxDB and Grafana as the demo, but the collector uses host networking and broadcast discovery to find **your real** Kasa devices. It runs the image `.env.local` pins — the published release is the simplest choice:
 
 ```bash
-cp .env.example .env.dev    # set REGISTRY=ghcr.io and TAG=<a released version>, e.g. 2026.10.2
-make dev-up
+cp .env.example .env.local
+# in .env.local: REGISTRY=ghcr.io, TAG=<a released version> (e.g. 2026.10.2), ENV_FILE=.env.local,
+# KASA_COLLECTOR_INFLUXDB_URL=http://localhost:8086, and the bundled INFLUX_* / GRAFANA_* values
+make local-up
 ```
 
-Open **http://localhost:3000** (admin / admin). Stop with `make dev-down` (or `make dev-clean` to also drop the data volumes); follow logs with `make dev-logs`.
+Open **http://localhost:3000** (admin / admin, unless you set `GRAFANA_PASSWORD`). Stop with `make local-down` (or `make local-clean` to also drop the data volumes); follow logs with `make local-logs`. If ports 3000 / 8086 are taken, set `GRAFANA_PORT` / `INFLUX_PORT` in `.env.local` (and the InfluxDB URL's port with it).
 
-To add real devices that require authentication or to pin manual device hosts, drop the relevant `KASA_COLLECTOR_*` values into a gitignored `.env.dev.local` (see `.env.dev.local.example`) — it layers on top of the bundled-stack config. Full variable reference in [Configuration](configuration.md).
+To add real devices that require authentication or to pin manual device hosts, drop the relevant `KASA_COLLECTOR_*` values into a gitignored `.env.dev.local` (see `.env.dev.local.example`) — it layers on top of the env file. Full variable reference in [Configuration](configuration.md).
+
+`make dev-up` is the maintainers' dev stack: the same services on their dev host (`DEV_HOST` in the Makefile), where Grafana is served by name instead of a port.
 
 ## Option 3 — Collector-only: bring your own InfluxDB / Grafana
 

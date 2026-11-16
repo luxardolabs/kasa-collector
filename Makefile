@@ -28,6 +28,11 @@ PUBLIC_REGISTRY ?= ghcr.io
 # The public `:latest` moves with each release (owner's call): users pull it, so `release-public`
 # moves it to the released digest too, and only when VERSION is origin's newest release.
 PUBLIC_LATEST := 1
+# The dev stack runs on the fleet's dev host, an ssh alias every coding machine resolves, so no
+# internal host name is committed (FLEET-BUILD-DEPLOY-STANDARD, "The dev host"). `dev-pin` and
+# `smoke` reach its docker over ssh, and so do the dev-* targets below. It is on the same LAN as
+# the plugs, so the host-networked collector's discovery broadcast reaches them from there.
+DEV_HOST := devhost
 # LOCAL verification images for the hardware-free stacks — BARE on purpose, so they cannot be
 # pushed by accident or mistaken for a deployable, and a clean clone needs no registry. The
 # e2e image (the `production` stage) has its own `<repo>-<role>:test` name, so it never shares
@@ -107,8 +112,15 @@ POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-act
 # separate SERVICES gated by profile, not separate files.
 RUN_DC  := docker compose --env-file .env.prod
 PROD_DC := docker compose --env-file .env.prod
-DEV_DC  := docker compose --env-file .env.dev
+# The dev stack is on the dev host: compose there sends this checkout's path, which the dev
+# host mounts at the same place.
+DEV_DC  = DOCKER_HOST=ssh://$(DEV_HOST) docker compose --env-file .env.dev
 DEMO_DC := docker compose --env-file .env.demo
+# Your real devices + a bundled InfluxDB and Grafana on THIS machine, ports published: the
+# stack for anyone running the collector from a clone. Its profiles are named here, so a
+# `.env.local` copied from .env.example (whose COMPOSE_PROFILES is the dev stack's) still
+# starts this one and never the dev pair.
+LOCAL_DC := docker compose --env-file .env.local --profile collector --profile local
 
 # Remote prod deploy over SSH. The collector runs on a host with LAN access to the
 # Kasa devices; set the node explicitly (no fleet default — this app is not bb01).
@@ -2153,13 +2165,13 @@ ps: ## Collector status
 shell: ## Shell into the collector container
 	$(RUN_DC) exec kasa-collector /bin/bash
 
-##@ Dev — full LOCAL stack (your real devices + bundled InfluxDB + Grafana)
+##@ Dev — the full stack on the dev host (DEV_HOST: your real devices + bundled InfluxDB + Grafana)
 
-# Runs whatever .env.dev pins. To run new code: commit, then `make dev-deploy` (build + push
-# :sha-<commit>, pin, restart). `make dev-pin TAG=…` rolls back to an already-published tag.
-dev-up: ## Start the full dev stack at the TAG pinned in .env.dev (Grafana on GRAFANA_PORT)
+# Runs whatever .env.dev pins, on the dev host. To run new code: commit, then `make dev-deploy`
+# (build + push :sha-<commit>, pin, restart). `make dev-pin TAG=…` rolls back to a published tag.
+dev-up: ## Start the full dev stack on the dev host at the TAG pinned in .env.dev
 	$(DEV_DC) up -d
-	@echo "kasa-collector [dev] — Grafana on the port set by GRAFANA_PORT in .env.dev (admin/admin)"
+	@echo "kasa-collector [dev] on $(DEV_HOST) — Grafana by its dev name through the dev host's edge (no host port)"
 
 dev-down: ## Stop the dev stack (keep data volumes)
 	$(DEV_DC) down
@@ -2175,6 +2187,24 @@ dev-ps: ## Dev stack status
 
 dev-shell: ## Shell into the collector container
 	$(DEV_DC) exec kasa-collector /bin/bash
+
+##@ Local — your real devices + bundled InfluxDB + Grafana on THIS machine (.env.local)
+
+local-up: ## Start the collector + a bundled InfluxDB and Grafana here, at the TAG pinned in .env.local
+	$(LOCAL_DC) up -d
+	@echo "kasa-collector [local] — Grafana on the port set by GRAFANA_PORT in .env.local (default 3000)"
+
+local-down: ## Stop the local stack (keep data volumes)
+	$(LOCAL_DC) down
+
+local-clean: ## Stop the local stack AND delete its data volumes
+	$(LOCAL_DC) down -v
+
+local-logs: ## Follow local stack logs
+	$(LOCAL_DC) logs -f
+
+local-ps: ## Local stack status
+	$(LOCAL_DC) ps
 
 ##@ Prod — local stack (pulls the :$(VERSION) pinned in .env.prod)
 

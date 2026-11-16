@@ -164,7 +164,7 @@ If hostnames appear wrong or stale, drop the TTL or disable caching temporarily 
 
 ### `influx` CLI inside the bundled InfluxDB asks for an org or token
 
-Since 2026.10.1 the bundled `kasa_influxdb` keeps `/etc/influxdb2` (the CLI's stored config) on the named volume `kasa_influxdb_config`. On a stack that existed before, the first start mounts it empty: your data is untouched, but `docker exec kasa_influxdb influx …` no longer finds the token and org that setup stored. Pass them explicitly (`--org "$INFLUX_ORG" --token "$INFLUX_TOKEN"`), or recreate the CLI config once with `influx config create`.
+Since 2026.10.1 the bundled InfluxDB (`kasa_local_influxdb` in the local and demo stacks, `kasa_influxdb` in the dev stack) keeps `/etc/influxdb2` (the CLI's stored config) on its own named volume. On a stack that existed before, the first start mounts it empty: your data is untouched, but `docker exec kasa_local_influxdb influx …` no longer finds the token and org that setup stored. Pass them explicitly (`--org "$INFLUX_ORG" --token "$INFLUX_TOKEN"`), or recreate the CLI config once with `influx config create`.
 
 ### Container shows unhealthy
 
@@ -211,9 +211,9 @@ This builds the image and brings up fake Kasa emulators (`harness/fake_kasa.py`,
 ### See it work interactively
 
 - `make demo-up` — fake emulated devices + bundled InfluxDB + Grafana (no hardware); dashboards populate immediately.
-- `make dev-up` — the same bundled stack against **your real** devices.
+- `make local-up` — the same bundled stack against **your real** devices.
 
-Both serve Grafana at http://localhost:3000 (admin/admin). Stop with `make demo-down` / `make dev-down`. Run `make help` for the full command list.
+Both serve Grafana at http://localhost:3000 (admin/admin). Stop with `make demo-down` / `make local-down`. Run `make help` for the full command list.
 
 For unit tests and linting: `make test`, `make lint`, `make check`.
 

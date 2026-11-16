@@ -17,10 +17,22 @@ name: kasa-collector
 #   profile     services                                            used by
 #   ---------   -------------------------------------------------   -----------------
 #   collector   kasa-collector (HOST network, real devices)          .env.prod, .env.dev
-#   bundled     kasa_influxdb + kasa_grafana                         .env.dev
-#   demo        the same bundled pair + fakes + kasa-collector-demo  .env.demo
+#   bundled     kasa_influxdb + kasa_grafana (dev, no host ports)    .env.dev
+#   local       kasa_local_influxdb + kasa_local_grafana (published)  .env.local
+#   demo        the local pair + fakes + kasa-collector-demo         .env.demo
 #   e2e         throwaway InfluxDB + fakes + kasa-collector-e2e      make test-e2e
 #   test        a throwaway InfluxDB the pytest suite writes to       make test
+#
+# THE DEV STACK RUNS ON THE DEV HOST (`DEV_HOST` in the Makefile; FLEET-BUILD-DEPLOY-STANDARD,
+# "The dev host") and publishes no host port. Its Grafana joins the dev host's `dev-edge`
+# network under its container name, and the edge serves it by its dev name. Its InfluxDB has
+# a FIXED address on the `kasa_dev` network: the collector is on the host's network (it must
+# be, for discovery), where no container name resolves, and a host-networked process reaches
+# a bridge container by its address.
+#
+# THE LOCAL PAIR PUBLISHES PORTS, for stacks run on the machine that cloned the repo: the
+# demo (fakes), and `collector,local` (your real devices + a bundled InfluxDB and Grafana on
+# this machine, `make local-up`). The dev stack never starts the `local` profile.
 #
 # WHY THREE COLLECTOR SERVICES RATHER THAN ONE. `network_mode` cannot vary by profile —
 # it is a property of a service. The real collector needs HOST networking to reach real
@@ -40,6 +52,36 @@ name: kasa-collector
 #
 # Real `.env.dev` / `.env.prod` are gitignored (TAG/REGISTRY/ports/secrets);
 # `.env.example` is the committed template and `.env.demo` ships public defaults.
+
+# What the dev and demo InfluxDB + Grafana pairs share; each service adds its profile,
+# names, volumes and network. oom_score_adj -500: the stacks rank last for the OOM killer.
+x-influx: &influx
+  image: influxdb:2.7
+  oom_score_adj: -500
+  environment:
+    DOCKER_INFLUXDB_INIT_MODE: setup
+    DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
+    DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+    DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+    DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+    DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+  healthcheck:
+    test: ["CMD", "influx", "ping"]
+    interval: 5s
+    timeout: 3s
+    retries: 30
+  restart: unless-stopped
+
+x-grafana: &grafana
+  image: grafana/grafana:11.3.0
+  oom_score_adj: -500
+  environment: &grafana-env
+    GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+    GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+    GF_USERS_ALLOW_SIGN_UP: "false"
+    INFLUX_BUCKET: ${INFLUX_BUCKET}
+    INFLUX_TOKEN: ${INFLUX_TOKEN}
+  restart: unless-stopped
 
 services:
   # ── profile: collector ─────────────────────────────────────────────────────
@@ -68,57 +110,78 @@ services:
     volumes:
       - ${OUTPUT_DIR:-/mnt/docker/kasa-collector/output}:/app/output
 
-  # ── profiles: bundled, demo ────────────────────────────────────────────────
-  # Bundled observability. Shared by the dev stack (real devices, host-networked
-  # collector reaching these on localhost) and the demo stack (fakes on the bridge).
+  # ── profile: bundled ───────────────────────────────────────────────────────
+  # The dev stack's own InfluxDB + Grafana, on the dev host, with no host port. The
+  # host-networked collector writes to InfluxDB at its fixed address (KASA_DEV_INFLUX_ADDR,
+  # which .env.dev's KASA_COLLECTOR_INFLUXDB_URL names); Grafana reads it by service name.
   kasa_influxdb:
-    profiles: [bundled, demo]
-    oom_score_adj: -500
-    image: influxdb:2.7
+    <<: *influx
+    profiles: [bundled]
     container_name: kasa_influxdb
-    environment:
-      DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
-      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
-      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
-      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
     volumes:
       - kasa_influxdb_data:/var/lib/influxdb2
       # The image DECLARES /etc/influxdb2 too (the CLI config setup mode writes). Unmapped,
       # every `up` minted an anonymous volume and every `down` abandoned it.
       - kasa_influxdb_config:/etc/influxdb2
       - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
-    ports:
-      - "${INFLUX_PORT:-8086}:8086"
-    healthcheck:
-      test: ["CMD", "influx", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    restart: unless-stopped
+    networks:
+      kasa_dev:
+        ipv4_address: ${KASA_DEV_INFLUX_ADDR:-10.210.250.10}
 
   kasa_grafana:
-    profiles: [bundled, demo]
-    oom_score_adj: -500
-    image: grafana/grafana:11.3.0
+    <<: *grafana
+    profiles: [bundled]
     container_name: kasa_grafana
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      INFLUX_BUCKET: ${INFLUX_BUCKET}
-      INFLUX_TOKEN: ${INFLUX_TOKEN}
+      <<: *grafana-env
+      INFLUX_HOST: kasa_influxdb
+    # Served by name on the dev host's edge, so it refuses a guessable admin password and
+    # sets the one in the env file on every start (ops/grafana/dev-entrypoint.sh). The check
+    # is in the container, not a required compose variable: compose interpolates every
+    # service, and the e2e and test stacks set no Grafana password. A missing bind source
+    # arrives as a directory, which sh would run as a silent exit 0.
+    entrypoint: ["/bin/sh", "-c", "test -f /ops/dev-entrypoint.sh || { echo 'REFUSING: /ops/dev-entrypoint.sh is not mounted: run the dev stack from a checkout the dev host has at the same path' >&2; exit 1; }; exec /bin/sh /ops/dev-entrypoint.sh"]
     volumes:
+      - ./ops/grafana/dev-entrypoint.sh:/ops/dev-entrypoint.sh:ro
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
       - kasa_grafana_data:/var/lib/grafana
-    ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+    networks: [kasa_dev, dev-edge]
     depends_on:
       kasa_influxdb:
         condition: service_healthy
-    restart: unless-stopped
+
+  # ── profiles: local, demo ──────────────────────────────────────────────────
+  # InfluxDB + Grafana on the machine that cloned the repo, so these two publish ports
+  # (GRAFANA_PORT / INFLUX_PORT): the demo's, and the local real-device stack's, whose
+  # host-networked collector writes to http://localhost:${INFLUX_PORT}.
+  kasa_local_influxdb:
+    <<: *influx
+    profiles: [local, demo]
+    container_name: kasa_local_influxdb
+    volumes:
+      - kasa_local_influxdb_data:/var/lib/influxdb2
+      - kasa_local_influxdb_config:/etc/influxdb2
+      - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    ports:
+      - "${INFLUX_PORT:-8086}:8086"
+
+  kasa_local_grafana:
+    <<: *grafana
+    profiles: [local, demo]
+    container_name: kasa_local_grafana
+    environment:
+      <<: *grafana-env
+      INFLUX_HOST: kasa_local_influxdb
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
+      - kasa_local_grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      kasa_local_influxdb:
+        condition: service_healthy
 
   # ── profiles: demo, e2e ────────────────────────────────────────────────────
   # Fake Kasa devices (harness/fake_kasa.py, pure stdlib). One set serves both the
@@ -273,13 +336,13 @@ services:
     env_file:
       - ${ENV_FILE:-.env.demo}
     environment:
-      KASA_COLLECTOR_INFLUXDB_URL: http://kasa_influxdb:8086
+      KASA_COLLECTOR_INFLUXDB_URL: http://kasa_local_influxdb:8086
       KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY: "False"
       KASA_COLLECTOR_DEVICE_HOSTS: kasa_fake_hs110,kasa_fake_kp115,kasa_fake_hs103,kasa_fake_hs300
       KASA_COLLECTOR_DATA_FETCH_INTERVAL: "5"
     restart: unless-stopped
     depends_on:
-      kasa_influxdb:
+      kasa_local_influxdb:
         condition: service_healthy
       kasa_fake_hs110:
         condition: service_started
@@ -395,7 +458,25 @@ services:
       kasa_fake_klap_hs300:
         condition: service_started
 
+networks:
+  # The dev pair's network, on a PINNED subnet so InfluxDB keeps one address the
+  # host-networked collector can be told. Inside the dev host's Docker address pool
+  # (10.210.0.0/16, allocated /24 by /24 from the bottom), at its top, so it never takes a
+  # range the pool would hand another stack first; the pool skips it once it exists.
+  # Override both in .env.dev if a host needs another range.
+  kasa_dev:
+    ipam:
+      config:
+        - subnet: ${KASA_DEV_SUBNET:-10.210.250.0/24}
+  # The dev host's edge (FLEET-BUILD-DEPLOY-STANDARD, "The dev host"): only the dev
+  # Grafana joins it, so only the dev stack needs it to exist.
+  dev-edge:
+    external: true
+
 volumes:
   kasa_influxdb_data:
   kasa_influxdb_config:
   kasa_grafana_data:
+  kasa_local_influxdb_data:
+  kasa_local_influxdb_config:
+  kasa_local_grafana_data:
