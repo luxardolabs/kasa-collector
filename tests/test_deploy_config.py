@@ -53,9 +53,9 @@ def test_the_dev_pair_publishes_no_host_port(name: str) -> None:
 
 
 def test_the_dev_grafana_is_served_by_name_on_the_edge() -> None:
-    """The edge hands the dev name to kasa_grafana:3000 on `dev-edge` ([dev_host] in
-    .luxarch.toml) by its PINNED address: a Grafana off that network, or one that joins
-    without its pin (and so takes a random .128+ address), cannot be reached."""
+    """The dev Grafana is an ops UI the edge serves by its own dev name, at its PINNED
+    address on `dev-edge`: a Grafana off that network, or one that joins without its pin
+    (and so takes a random .128+ address), cannot be reached."""
     service = _service("kasa_grafana")
     assert "container_name: kasa_grafana" in service
     assert re.search(
@@ -65,10 +65,19 @@ def test_the_dev_grafana_is_served_by_name_on_the_edge() -> None:
         re.M,
     )
     assert re.search(r"^  dev-edge:\n    external: true$", COMPOSE, re.M)
+
+
+def test_the_dev_stack_declares_no_web_front_and_is_proven_by_its_container() -> None:
+    """The collector serves no HTTP, so the stack has no front the edge reaches: it is
+    declared `front = "none"` with no service, no SMOKE_URL is committed, and the deploy is
+    proven by the collector container's own health."""
     toml = (REPO / ".luxarch.toml").read_text()
-    assert re.search(
-        r'^\[dev_host\]\nfront = "app"\nservice = "kasa_grafana"$', toml, re.M
-    )
+    table = re.search(r"^\[dev_host\]\n((?:[^\[\n].*\n?)*)", toml, re.M)
+    assert table, "no [dev_host] table"
+    keys = [ln for ln in table[1].splitlines() if ln and not ln.startswith("#")]
+    assert keys == ['front = "none"'], keys
+    assert _make_setting("SMOKE_CONTAINERS") == ["kasa-collector"]
+    assert not re.search(r"^SMOKE_URL\s*:?=\s*\S", MAKEFILE, re.M)
 
 
 def test_the_host_networked_collector_can_reach_the_dev_influxdb() -> None:

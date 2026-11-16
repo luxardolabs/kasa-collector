@@ -43,7 +43,7 @@ FAKE_IMAGE := kasa-collector-fake:test
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.366.2
+LUXARCH_VERSION  := 0.368.0
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
@@ -288,7 +288,7 @@ override sq = $(if $(findstring $(IB_NL),$(1)),$(error REFUSING: a value a block
 override sqw = $(foreach w,$(1),$(call sq,$(w)))
 # luxarch:build-core end - DO NOT edit this marker line: the image block's runtime guard reads its range.
 
-# luxarch:image-block asset v27 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
+# luxarch:image-block asset v28 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
 # ── Images: ONE naming scheme, and the NAME declares what the image IS ──────────────────────────
 # Emitted by `luxarch --emit image-block`. Two axes, both readable from the name alone:
 #
@@ -1510,8 +1510,11 @@ endef
 # v10: a deploy ends by probing what it deployed (`luxarch --emit smoke`, pasted below this block). A
 # deploy that restarted the stack is not one that works: the suite runs in-process and cannot see the
 # proxy, the server, the production image or a standalone entry point.
+# Before it builds or pushes anything, dev-deploy makes dev-pin's dev-host checks in its own recipe, in a
+# subshell: what they export never reaches the build, even under .ONESHELL.
 dev-deploy: ## Build+push THIS commit (:sha-…, never the version), pin $(DEV_ENV_FILE) to it, restart the dev stack, smoke it
 	@$(if $(filter none,$(DEV_DEPLOY)),:,$(require_main_checkout))
+	@$(if $(filter compose,$(DEV_DEPLOY)),( set -e; set -f; $(if $(filter-out local,$(IB_DEV_HOST)),DOCKER_HOST=ssh://$(call sq,$(IB_DEV_HOST)); export DOCKER_HOST; )ib_dm=; for m in GNUmakefile makefile Makefile; do if [ -f "$$m" ]; then ib_dm=$$m; break; fi; done; [ -n "$$ib_dm" ] || { echo "REFUSING: this directory has no default makefile"; exit 1; }; $(require_dev_env_file); $(require_dev_host); $(dev_host_same_files) ) || exit 1,:)
 	@$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))$(if $(filter none,$(DEV_DEPLOY)),echo "REFUSING: "$(call sq,$(IB_NO_STACK)); exit 1,$(MAKE) --no-print-directory publish-sha)
 	@$(if $(filter none,$(DEV_DEPLOY)),:,$(MAKE) --no-print-directory dev-pin TAG=sha-$(call sq,$(COMMIT)))
 	@$(if $(filter none,$(DEV_DEPLOY)),:,$(MAKE) --no-print-directory smoke)
@@ -1939,7 +1942,7 @@ gh-release: ## Publish the GitHub Release for v$(VERSION) from its release notes
 SMOKE_CONTAINERS := kasa-collector
 SMOKE_ENTRY_MODULES := app.main app.health.check
 
-# luxarch:smoke asset v12 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit smoke`.
+# luxarch:smoke asset v14 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit smoke`.
 # ── Smoke: probe the DEPLOYED stack from outside, after every dev deploy ──────────────────────────
 # Emitted by `luxarch --emit smoke`; paste below the image block. `make test` runs the app in-process
 # against its test stack, so it cannot see the proxy, the server, the production image or an entry
@@ -1950,7 +1953,7 @@ SMOKE_ENTRY_MODULES := app.main app.health.check
 # (`repo.stack_smoke_wired`); a FAIL fails the deploy, and a probe that cannot run says NOT RUN and
 # why, never a silent pass.
 #
-# Settings are `?=` defaults: override them above this block (or in Makefile.local for a host name).
+# Settings are `?=` defaults: override them above this block, committed (SMOKE_URL is the dev name).
 
 # Setting: where the dev stack is reachable from the build host (e.g. https://dev.example.com) ---
 SMOKE_URL ?=
@@ -1993,6 +1996,9 @@ SMOKE_RUN_OPTS ?=
 # Setting: extra curl options (e.g. --cacert <file> for a private CA) -------------------------
 SMOKE_CURL_OPTS ?=
 
+# v14: with the browser-smoke block pasted below this one (luxarch --emit browser-smoke), `make smoke`
+# runs `smoke-browser` last, once every probe above has passed, so a page that breaks in a browser
+# fails the deploy. Without that block (opt-in) the line does nothing.
 # v11: the key reaches curl on its standard input, never its command line, where any user on the
 # host could read it for as long as curl runs (a stream holds it open). The signed-in probe wants
 # SMOKE_AUTH_TYPE as its media type (any case) and a whole body, or be an event stream still open
@@ -2026,7 +2032,7 @@ SMOKE_CURL_OPTS ?=
 # said the same thing; the probe can only pass on an answer from the app itself.
 smoke: ## Probe the deployed dev stack: build commit, static asset, forged Host refused, auth, containers healthy, standalone entry points
 	@set -u; fail=0; \
-	[ -n "$(strip $(SMOKE_URL)$(SMOKE_CONTAINERS))" ] || { echo "REFUSING: set SMOKE_URL to the dev stack's address (Makefile.local), or SMOKE_CONTAINERS to its containers when it serves no HTTP"; exit 2; }; \
+	[ -n "$(strip $(SMOKE_URL)$(SMOKE_CONTAINERS))" ] || { echo "REFUSING: commit SMOKE_URL := https://<the dev stack's dev name> in the Makefile, or SMOKE_CONTAINERS := <its containers> when it serves no HTTP"; exit 2; }; \
 	probe() { curl -sS --max-time 15 $(SMOKE_CURL_OPTS) -o "$$B" -w '%{http_code} %{content_type}' "$$@" 2>/dev/null || echo "000 -"; }; \
 	B=$$(mktemp); trap 'trap "" HUP INT TERM; rm -f "$$B"' EXIT; trap 'trap "" HUP INT TERM; exit 1' HUP INT TERM; \
 	sha=$$(git rev-parse --short=7 HEAD) || sha=; \
@@ -2132,6 +2138,7 @@ smoke: ## Probe the deployed dev stack: build commit, static asset, forged Host 
 	fi; \
 	[ "$$n" -ne 0 ] || echo "NOT RUN  entry points: no module under $(SMOKE_SCRIPTS_DIR) and no SMOKE_ENTRY_MODULES"; \
 	exit $$fail
+	@$(if $(value smoke_browser_block),$(MAKE) --no-print-directory smoke-browser,:)
 
 # The emulator is a TEST FIXTURE, never a released artifact: built locally under a BARE name and
 # never pushed, so the demo and e2e stacks resolve it from the local store with no registry.

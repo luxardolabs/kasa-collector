@@ -23,8 +23,9 @@ exempt_reason = "Headless collector: no OTel dependency, no span helpers, and no
 push = "agent"
 
 # How the dev stack is reached on the dev host (FLEET-BUILD-DEPLOY-STANDARD, "The dev host").
-# There is no nginx and the collector serves no HTTP: the edge hands the dev name straight to
-# the stack's Grafana on `dev-edge` at its pinned address (http://172.30.0.15:3000).
+# The collector serves no HTTP, so nothing is reached through the dev edge as the stack's front:
+# the deploy is proven by the collector container's health (SMOKE_CONTAINERS). Its Grafana is an
+# ops UI, not the front: it joins `dev-edge` at its own pinned address (172.30.0.15) with its own
+# dev name and edge server block.
 [dev_host]
-front = "app"
-service = "kasa_grafana"
+front = "none"
