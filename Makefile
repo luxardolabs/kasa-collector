@@ -43,13 +43,13 @@ FAKE_IMAGE := kasa-collector-fake:test
 # Architecture guard (luxarch) — pinned; pulled via LUXARCH_REGISTRY (Makefile.local).
 # Bump LUXARCH_VERSION when adopting new rules. Unset host → `make arch` skips gracefully.
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.368.0
+LUXARCH_VERSION  := 0.373.1
 LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
 # same out-of-tree pattern as luxarch. Unset host → make lint/format skip gracefully.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  := 0.79.1
+LUXLINT_VERSION  := 0.82.0
 LUXLINT_IMAGE    ?= $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 # The luxlint ref the emitted gitleaks and test blocks read. Without the fleet registry it is the
 # same pinned version from the local image store, never an unversioned build.
@@ -58,7 +58,7 @@ LUXLINT = $(if $(LUXLINT_REGISTRY),$(LUXLINT_IMAGE),luxlint:$(LUXLINT_VERSION))
 # Dependency-vulnerability guard (luxaudit) — pinned; pulled via LUXAUDIT_REGISTRY (Makefile.local).
 # Scans poetry.lock against the live OSV+PyPA feed. Unset host → `make audit` skips gracefully.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  := 0.18.0
+LUXAUDIT_VERSION  := 0.21.0
 LUXAUDIT_IMAGE    ?= $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION)
 # The public image runs on other people's hardware (Raspberry Pis included), so every published
 # build is multi-arch: the image block builds the candidate once per platform and scans each.
@@ -288,7 +288,7 @@ override sq = $(if $(findstring $(IB_NL),$(1)),$(error REFUSING: a value a block
 override sqw = $(foreach w,$(1),$(call sq,$(w)))
 # luxarch:build-core end - DO NOT edit this marker line: the image block's runtime guard reads its range.
 
-# luxarch:image-block asset v28 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
+# luxarch:image-block asset v29 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
 # ── Images: ONE naming scheme, and the NAME declares what the image IS ──────────────────────────
 # Emitted by `luxarch --emit image-block`. Two axes, both readable from the name alone:
 #
@@ -376,7 +376,7 @@ override CANDIDATE     := $(IMAGE):candidate-$(COMMIT)
 # v17: the make INVOCATION is judged too. Every name the block sets is `override`, so a command-line
 # value of one (silently ignored) refuses, as do `make -e`, `--eval`, MAKEFILES and MAKEFILE_LIST from
 # outside; and the makefile make read FIRST must be this directory's default one (no `-f <wrapper>`).
-# A stated limit: a makefile reading a file through HOME or PATH reads it in the clean evaluation too.
+# A makefile reading a file through HOME or PATH reads it in the clean evaluation too.
 override define require_make_inputs
 $(strip $(foreach w,$(MAKEOVERRIDES),$(if $(filter override,$(origin $(firstword $(subst :, ,$(subst =, ,$(w)))))),echo "REFUSING: $(firstword $(subst :, ,$(subst =, ,$(w)))) is set from the command line but the makefile defines it itself (an override): the image block refuses a value it would ignore"; exit 1; )))$(if $(filter-out --%,$(firstword $(MAKEFLAGS))),$(if $(findstring e,$(firstword $(MAKEFLAGS))),echo "REFUSING: make -e lets the environment override the makefile's own values: run make without -e"; exit 1; ))$(if $(filter --eval=%,$(MAKEFLAGS)),echo "REFUSING: make was run with --eval: it adds makefile text nobody committed. Run it without"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )\
 [ -z $(call sq,$(strip $(MAKEFILES))) ] || { \
@@ -1032,8 +1032,8 @@ override PUBLIC_LATEST_IMAGE := $(PUBLIC_REGISTRY)/$(if $(IMAGE_PRIMARY),$($(IMA
 # image whose public `:$(VERSION)` exists must hold the digest just rescanned and only its `:latest`
 # moves; an image whose public `:$(VERSION)` is absent is copied whole. Without it a public
 # `:$(VERSION)` refuses, as always. It is one run's choice on this make's own command line: another
-# origin, a parent make (MAKELEVEL) or an exported MAKEFLAGS naming it refuses. A stated limit: that
-# check reads make's starting environment in /proc, so a resume runs on Linux only.
+# origin, a parent make (MAKELEVEL) or an exported MAKEFLAGS naming it refuses. That check
+# reads make's starting environment in /proc, so a resume runs on Linux only.
 override IB_PUBLIC_RESUME = $(and $(filter command line,$(origin PUBLIC_RESUME)),$(filter 1,$(PUBLIC_RESUME)))
 override define public_resume_gate
 $(if $(filter-out undefined,$(origin PUBLIC_RESUME)),$(if $(filter-out command line,$(origin PUBLIC_RESUME)),echo "REFUSING: PUBLIC_RESUME is set in "$(call sq,$(origin PUBLIC_RESUME))": resuming a public copy is a choice for one run on the command line (make release-public PUBLIC_RESUME=1)"; exit 1; ,$(if $(IB_PUBLIC_RESUME),,echo "REFUSING: PUBLIC_RESUME="$(call sq,$(PUBLIC_RESUME))" is not 1"; exit 1; )))$(if $(IB_PUBLIC_RESUME),[ $(call sq,$(MAKELEVEL)) = 0 ] || { \
@@ -1191,7 +1191,7 @@ endif
 # the commit), refuses a mirror tag already published (immutable: bump MIRROR_VERSION), builds from
 # the commit with `--build-arg MIRROR_VERSION=<it>` (so the Dockerfile's `ARG MIRROR_VERSION` and the
 # tag are one value), scans it, and only then pushes `$(REGISTRY)/<name>:<MIRROR_VERSION>`. A stack or
-# a target pins MIRROR_IMAGE. `release` and `publish-sha` never touch it. A stated limit: it is built
+# a target pins MIRROR_IMAGE. `release` and `publish-sha` never touch it. It is built
 # for this host's architecture (PLATFORMS is the app's).
 MIRROR_VERSION       ?=
 MIRROR_IMAGE_NAME    ?=
@@ -1483,7 +1483,7 @@ endef
 # with the variables that point it at a repository (GIT_DIR, GIT_WORK_TREE, …) unset, so one set
 # elsewhere cannot make a worktree read as the main checkout, and so is each superproject this
 # checkout is a submodule of: a submodule checked out inside a linked worktree is in that worktree.
-# A stated limit: a makefile is trusted code, and a recipe of its own that runs
+# A makefile is trusted code: a recipe of its own that runs
 # `$(MAKE) dev-pin DEV_DEPLOY_FROM_WORKTREE=1` passes the value as a command line.
 override define require_main_checkout
 case $(call sq,$(origin DEV_DEPLOY_FROM_WORKTREE)) in \
@@ -2404,7 +2404,7 @@ TEST_ENV := -e KASA_COLLECTOR_INFLUXDB_URL=http://kasa_test_influxdb:8086 \
             -e KASA_COLLECTOR_INFLUXDB_TOKEN=kasa-test-token \
             -e KASA_COLLECTOR_INFLUXDB_ORG=kasa -e KASA_COLLECTOR_INFLUXDB_BUCKET=kasa
 
-# luxarch:test-block asset v14 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
+# luxarch:test-block asset v15 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
 # ── Test: THE suite, in the test image, against an isolated stack of real services ───────────────
 # Emitted by `luxarch --emit test-block`; paste below the build core (`luxarch --emit build-core`, v4:
 # it builds with the core's `img_*` helpers and TEST_IMAGE, and the repo's BUILD_ARGS, and quotes every
@@ -2535,7 +2535,7 @@ TEST_ENV := -e KASA_COLLECTOR_INFLUXDB_URL=http://kasa_test_influxdb:8086 \
 #   - A HEAVY-JOB SLOT (v12): `make test` holds one of the machine's HEAVY_SLOTS (the guard-run
 #     block's `guard_slot`, v4) for the whole run, and waits, saying so, while they are all taken. A
 #     narrowed `make test-fast PYTEST_ARGS=<…>` takes none; inside `make check`, which holds one, the
-#     suite runs in the gate's slot. Stated limit: any PYTEST_ARGS that is not blank counts as
+#     suite runs in the gate's slot. Any PYTEST_ARGS that is not blank counts as
 #     narrowing (`PYTEST_ARGS=tests/` too); a blank one takes a slot.
 #   - THE [shared] OVERLAY (v7). A repo declaring `[shared]` keeps 0-byte placeholders in each app
 #     that the real shared code is mounted over; the suite runs from the read-only `/repo` mount, so
@@ -2802,7 +2802,7 @@ arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml)
 # `|| true` because --json exits non-zero on a red repo — the verdict is IN the JSON, and a
 # red repo still has a valid, committable status. `set -e` so a failed/empty stamp ABORTS
 # rather than printing a false "wrote". See luxarch --doc FLEET-STATUS.
-# luxarch:guard-run asset v10 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
+# luxarch:guard-run asset v12 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
 # ── GUARD_RUN: how every guard sees this checkout ───────────────────────────────────────────────────
 # Emitted by `luxarch --emit guard-run`; paste it above the targets that run the guards (`status:`, and
 # `arch:` / `lint:` / `audit:` where they run a guard image).
@@ -2837,7 +2837,7 @@ override GUARD_MAIN := $(if $(filter command,$(origin GUARD_MAIN)),$(GUARD_MAIN)
 # sub-make at its own MAKELEVEL) were refused at the first sub-make, so a correctly wired repo read
 # red. The block's own variables are set with `override` and never
 # exported, so neither `make -e` nor a parent's bare `export` can hand a sub-make other values.
-# Stated limits, each refused rather than misread: a `-f` path holding two spaces in a row or a tab
+# Refused rather than misread: a `-f` path holding two spaces in a row or a tab
 # (MAKEFILE_LIST collapses them: run `make -C`), and a checkout path holding `:` (docker reads it
 # as a mount option). Not refused: under `make -n`, a guard line that make runs anyway (a `+` line,
 # or one naming `$(MAKE)`) in a sub-make that inherited a command-line CURDIR.
@@ -2876,9 +2876,15 @@ override GUARD_RUN = guard_slot_run() ( $(guard_slot_body) $(guard_capped) ); gu
 #   - TARGETED runs take none: a GUARD_RUN naming `--rule <id>` (a value holding more than blanks
 #     and commas, which luxarch drops, so `--rule ' '` runs every rule), or a flag that scans nothing
 #     (`--emit*`, `--doc`, `--docs`, `--playbook`, `--version`, `--list-rules`, `--changelog`,
-#     `--new-rules`, `--coverage-ratchet`, `--help`), and `make test-fast PYTEST_ARGS=<…>`. Every
-#     other guard run is a full scan and takes one: `--path <file>` alone too, which narrows only
-#     what is shown while every rule still reads the whole repo.
+#     `--new-rules`, `--coverage-ratchet`, `--help`), a luxarch run with `--path <file>` (a value
+#     holding more than blanks), which from luxarch 0.373.0 runs only the per-file rules on the named
+#     files, and `make test-fast PYTEST_ARGS=<…>`. The image is read as docker reads it: the first
+#     word after `docker run` that is no option and no option's value (`-v <mount>`, `--name <x>`,
+#     `-e <K=V>`). It is `luxarch:<version>` at 0.373.0 or later, or a checkout's own
+#     `luxarch:local-<hash>`. Only the words after it are the guard's, so `--path` and the modes that
+#     read the whole repo (`--plan`, `--sweep`, `--ratchet`, `--json`) are read there, and an
+#     `--entrypoint` anywhere makes it a full scan. Every other guard run is a full scan and takes
+#     one: `--path` on an older image, under another tag, or on another guard, too.
 #   - NESTED heavy jobs take no second slot: a job whose descriptor 9 is open on one of slots
 #     1..HEAVY_SLOTS and holds its lock runs inside the job that took it (`check` running `test`
 #     running a scan), so it starts at once, at HEAVY_SLOTS=1 too. So does a job one of whose
@@ -2901,13 +2907,13 @@ override GUARD_RUN = guard_slot_run() ( $(guard_slot_body) $(guard_capped) ); gu
 #     file, and each slot file 644 so every user can open it read-only, which is all a lock needs: two
 #     users on one machine share one cap. A slot directory or file that is a symlink, not a plain
 #     file, or unreadable is refused, naming it.
-# Stated limits: the cap counts slots 1..HEAVY_SLOTS of each caller, so a caller with a larger setting
+# The cap counts slots 1..HEAVY_SLOTS of each caller, so a caller with a larger setting
 # (or a second makefile given with `-f` that sets one) uses more slots than one with a smaller; a
 # process a job starts that outlives it (a backgrounded daemon) keeps the descriptor, and so the slot,
 # until it exits; where there is no /proc (macOS) a job started through a process that closed its
 # descriptors is not seen as nested and waits for a slot of its own; and an ancestor shell that opens
-# a held slot file on descriptor 9 by hand makes its children read as nested in that slot. Found by
-# attack round 3 and not closed: a `--rule` substring that matches many rules (`--rule .`) is taken as
+# a held slot file on descriptor 9 by hand makes its children read as nested in that slot.
+# Also as built: a `--rule` substring that matches many rules (`--rule .`) is taken as
 # targeted; a job nested through an ancestor runs unlocked from the moment it finds the ancestor's
 # lock until its own background request reaches the kernel, so an ancestor that exits in that window
 # (milliseconds; not hit unloaded in 50 tries) lets a new job share its slot; a slot file removed
@@ -2947,8 +2953,16 @@ override guard_slot_vals = $(foreach v,HEAVY_SLOTS HEAVY_SLOT_DIR,$(if $(filter 
 override guard_slot = $(if $(guard_dry),:,set -- $(guard_slot_vals); $(guard_slot_body) :)
 override guard_slot_body = gs_d=$$1 gs_n=$$2 gs_job=$$3; shift 3; \
   case "$$gs_n" in (""|0*|*[!0-9]*|?????*) echo "REFUSING: HEAVY_SLOTS is \"$$gs_n\", not a whole number from 1 to 9999: set it in Makefile.local" >&2; exit 2;; esac; \
-  gs_x=; gs_p=; for gs_a in "$$@"; do case "$$gs_p" in (--rule) case "$$gs_a" in (*[![:space:],]*) gs_x=1;; esac;; esac; \
-    case "$$gs_a" in (--rule=*[![:space:],]*|--emit|--emit=?*|--emit-*|--doc|--doc=?*|--docs|--playbook|--playbook=?*|--version|--list-rules|--changelog|--new-rules|--coverage-ratchet|--help) gs_x=1;; esac; gs_p=$$gs_a; done; \
+  gs_x=; gs_p=; gs_pa=; gs_nw=; gs_la=; gs_im=; gs_rn=; gs_sk=; for gs_a in "$$@"; do case "$$gs_p" in (--rule) case "$$gs_a" in (*[![:space:],]*) gs_x=1;; esac;; (--path) [ -z "$$gs_im" ] || case "$$gs_a" in (*[![:space:]]*) gs_pa=1;; (*) gs_nw=1;; esac;; esac; \
+    case "$$gs_a" in (--rule=*[![:space:],]*|--emit|--emit=?*|--emit-*|--doc|--doc=?*|--docs|--playbook|--playbook=?*|--version|--list-rules|--changelog|--new-rules|--coverage-ratchet|--help) gs_x=1;; (--entrypoint|--entrypoint=*) gs_nw=1;; esac; \
+    if [ -n "$$gs_im" ]; then case "$$gs_a" in (--path=*[![:space:]]*) gs_pa=1;; (--path=*|--pl*|--sw*|--ra*|--js*) gs_nw=1;; esac; \
+    elif [ -z "$$gs_rn" ]; then [ "$$gs_a" != run ] || gs_rn=1; \
+    elif [ -n "$$gs_sk" ]; then gs_sk=; \
+    else case "$$gs_a" in (-v|--volume|-e|--env|--env-file|--name|-h|--hostname|-w|--workdir|--network|--net|--network-alias|-u|--user|-l|--label|--label-file|--mount|--platform|-m|--memory|--memory-swap|--memory-reservation|-c|--cpu-shares|--cpus|--cpuset-cpus|--oom-score-adj|--add-host|--cap-add|--cap-drop|--device|--dns|--group-add|--ipc|--pid|--uts|--userns|--cgroupns|--security-opt|--tmpfs|--ulimit|--shm-size|--log-driver|--log-opt|-p|--publish|--expose|--runtime|--gpus|--restart|--stop-signal|--stop-timeout|--cidfile|--pull|--volumes-from|--link|--ip|--ip6|--mac-address|--health-cmd|--health-interval|--health-retries|--health-timeout|--isolation|--attach|-a) gs_sk=1;; (-*) ;; \
+      (*) gs_im=1; case "$$gs_a" in (luxarch:local-?*|*/luxarch:local-?*) gs_la=1;; (luxarch:[0-9]*|*/luxarch:[0-9]*) \
+      gs_mj=$$(expr "x$$gs_a" : '.*luxarch:\([0-9][0-9]*\)\.' || :); gs_mn=$$(expr "x$$gs_a" : '.*luxarch:[0-9][0-9]*\.\([0-9][0-9]*\)' || :); \
+      if [ -n "$$gs_mj" ] && [ -n "$$gs_mn" ] && { [ "$$gs_mj" -gt 0 ] || [ "$$gs_mn" -ge 373 ]; }; then gs_la=1; fi;; esac;; esac; fi; gs_p=$$gs_a; done; \
+  [ -z "$$gs_pa" ] || [ -n "$$gs_nw" ] || [ -z "$$gs_la" ] || gs_x=1; \
   gs_who() { gs_t=$$(mktemp "$$gs_d/.who.XXXXXX") && { printf "%s\n" "$$gs_job (shell pid $$$$, user $$(id -un 2>/dev/null))" > "$$gs_t"; chmod 644 "$$gs_t"; mv -f "$$gs_t" "$$gs_f.who" 2>/dev/null || rm -f "$$gs_t"; }; }; \
   gs_busy() { command -v docker >/dev/null 2>&1 && docker ps -q --filter "label=fleet.heavy-slot=$$1" 2>/dev/null | grep -qE '^[0-9a-f]{12,64}$$'; }; \
   gs_lock() { if command -v flock >/dev/null 2>&1; then flock -n -E 75 9; else python3 -I -c "import fcntl,os,sys; sys.excepthook=lambda t,v,b: os._exit(75 if t is BlockingIOError else 2); fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)"; fi; }; \
@@ -3016,7 +3030,7 @@ test-e2e: harness-build ## Hardware-free end-to-end test: fake Kasa devices -> c
 # `check` is a GATE, not a report: Make stops at the FIRST failing step. For the full red board
 # (every red at once, phase-ordered + file-clustered) run `make plan`.
 # See luxarch --doc FLEET-MAKEFILE-STANDARD.
-# luxarch:check-gate asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit check-gate`.
+# luxarch:check-gate asset v6 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit check-gate`.
 # ── The fleet gate: every leg runs, then the gate fails naming each red leg ───────────────────────
 # Emitted by `luxarch --emit check-gate`; it replaces a hand-written `check:` line. A gate written as a
 # prerequisite list (`check: … lint mypy test arch …`) stops at the FIRST failing leg: one ruff finding
@@ -3049,7 +3063,7 @@ test-e2e: harness-build ## Hardware-free end-to-end test: fake Kasa devices -> c
 # GNUMAKEFLAGS given as a command-line variable is refused, and MAKE and SHELL are checked as the
 # recipe runs: make's own MAKE, and a POSIX shell.
 # Under `make -n` the legs dry-run (each sub-make prints its commands) and the gate exits 1 with no
-# verdict: nothing ran, so nothing passed. Stated limits: a second makefile given with `-f` is part
+# verdict: nothing ran, so nothing passed. A second makefile given with `-f` is part
 # of the makefile as far as make can tell, and a variable a leg runs that the makefile sets with `?=`
 # or never sets (an image, a tool, its arguments) takes a value from the environment; the gate can
 # tell neither from your own. `make -o check`, or `-o` in MAKEFLAGS in the environment, marks `check`
@@ -3127,7 +3141,7 @@ hooks: ## Install the committed git hooks (pre-commit + pre-push run the gitleak
 	git config core.hooksPath hooks
 	@printf "✓ core.hooksPath -> hooks (pre-commit + pre-push secret scan active)\n"
 
-# luxarch:gitleaks asset v25 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
+# luxarch:gitleaks asset v26 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
 # ── The privacy gate: EVERY surface a commit publishes ──────────────────────────────────────────
 # Emitted by `luxarch --emit gitleaks`. Drop in verbatim.
 #
@@ -3854,8 +3868,8 @@ gitleaks: ## secret scan over FULL HISTORY, what an image build sends, + the com
 	@# SHELL or .SHELLFLAGS from outside, a CURDIR on the command line, and at the top level a LUXLINT or
 	@# LUXLINT_IMAGE from outside (`GITLEAKS_IMAGE` cannot be set at all) are refused before any pass runs,
 	@# on the first line, a `+` line: make runs it under -t too, and under .ONESHELL the first line's
-	@# prefix is the recipe's. Stated limits: under `make check`, a variable that reached the environment
-	@# of a leg is the gate's stated limit, since a bare `export` in the makefile looks the same, and a
+	@# prefix is the recipe's. Under `make check`, a variable that reached the environment of a leg
+	@# is not told apart from the makefile's own, since a bare `export` in it looks the same, and a
 	@# MAKELEVEL from outside looks like a leg. `-o` and `-n` from outside never reach a recipe (the
 	@# emitted git hooks clear make's flags), and an untracked Makefile.local can say `.IGNORE`.
 	@# A shallow clone and a graft file each make git (and so every pass) read part of the history,
@@ -3984,7 +3998,7 @@ gitleaks: ## secret scan over FULL HISTORY, what an image build sends, + the com
 	@# refused. With no Dockerfile and no declared build, the untracked files git would add and the
 	@# files changed against HEAD (staged included) are read instead: one commit puts them in history.
 	@# What is sent is copied out and scanned by path, NULs stripped as the binary pass does. git reads
-	@# this checkout as the work tree, whatever `core.worktree` the repository sets. Stated limits: a
+	@# this checkout as the work tree, whatever `core.worktree` the repository sets. A
 	@# build no makefile recipe runs (a compose `build.context: .` for a nested Dockerfile, a script a
 	@# recipe calls, a sub-make's own arguments) is judged at its Dockerfile's directory, a gitignored
 	@# Dockerfile is not found, a `$(LUXLINT)` image with no make reads every undeclared

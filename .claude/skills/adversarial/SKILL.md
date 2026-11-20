@@ -3,7 +3,7 @@ name: adversarial
 description: Attack a change before calling it done — an independent agent that did not write the change tries to make it wrong (security, tenant isolation, data integrity, money, the real stack), reproduces each break as a failing test or a probe, and the author fixes every confirmed break and commits the test. Run it from /wrap-up for any change touching auth, tenancy, data writes or migrations, money, secrets or personal data, deploys, or a guard-red fix.
 ---
 
-<!-- luxarch:adversarial-skill asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit adversarial-skill`. -->
+<!-- luxarch:adversarial-skill asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit adversarial-skill`. -->
 
 # Adversarial pass
 
@@ -24,7 +24,7 @@ A build, release or deploy recipe runs on the operator's machine with the operat
 - a personal identity or a secret reaching a tag, a log or a terminal;
 - a run that half-completes on an ordinary machine.
 
-A finding must also be **real**: an input that a real user, repo or environment produces, not a shape built only to break the code. A finding outside this section is listed under NOT IN SCOPE, and is neither fixed nor filed.
+A finding must also be **real**: an input that a real user, repo or environment produces, not a shape built only to break the code. Every defect a real user, repo or environment hits is in scope, and it is fixed. A finding that needs what this section rules out (control of the operator's machine, or a recipe attacked for anything but an accident) is listed under NOT IN SCOPE, one line each: it needs no flaw in the change, so the change has nothing to fix.
 
 ## 1. Scope the change
 
@@ -109,22 +109,22 @@ In a re-attack round (step 4), add to the prompt: `ALREADY FOUND AND FIXED (do n
 
 - **Merge duplicates first.** Two findings with the same reproduction and the same failing line are one finding, whatever their titles say: fix and test it once.
 - **Every CONFIRMED finding is fixed in this work**, and its reproducing test is moved into the suite and committed. Run it against the code without the fix first and record its failing line (`/wrap-up` step 2).
-- A finding whose fix needs the owner (scope, money, data semantics) gets an issue in LuxPM. The red stays red until it is decided.
+- A finding whose fix is genuinely the owner's call (scope the owner set, money, data semantics) is one question to the owner, asked now (`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Asking the owner"). The change waits on the answer, and the red stays red until it is decided.
 - A finding in a fleet guard or emitted asset is a `/escalate`, not a local fix.
-- **INCONCLUSIVE stays open.** Uncertainty never clears a finding: re-run that attack yourself, or file it in LuxPM as an open lead with what stopped the attacker. It never counts toward a clean pass.
-- UNREPRODUCED findings get one line each in your report. Do not fix guesses.
-- NOT IN SCOPE findings (step 0) are neither fixed nor filed.
+- **INCONCLUSIVE stays open.** Uncertainty never clears a finding: re-run that attack yourself, removing what stopped the attacker, until it reproduces (then it is CONFIRMED and fixed) or runs clean against a passing control. It never counts toward a clean pass.
+- **UNREPRODUCED is probed again, by you.** Each UNREPRODUCED suspicion is re-probed by the author with the attacker's reason in hand, until it reproduces (then it is CONFIRMED and fixed) or the probe shows it is not a defect, with that probe and its control in your report. A guess is never fixed without a reproduction, and never left unprobed.
+- NOT IN SCOPE findings (step 0) get one line each in your report: they need no flaw in the change.
 
-## 4. Attack the fixes: a fresh attacker, at most three rounds
+## 4. Attack the fixes: a fresh attacker each round, until a round is clean
 
-The fixes are new code, and nobody has attacked them. When round 1 confirmed anything, spawn a **new** attacker (a new agent, never the round-1 one continued) on the change as it now stands, with the earlier findings listed as already fixed (step 2). Act on its report as in step 3. Repeat while a round confirms something, **at most three rounds in all**. If round 3 still confirms findings, the design is not converging: stop patching. Split the change, rethink the approach, or take it to the owner with the round counts. A round that finds nothing ends the loop.
+The fixes are new code, and nobody has attacked them. When round 1 confirmed anything, spawn a **new** attacker (a new agent, never the round-1 one continued) on the change as it now stands, with the earlier findings listed as already fixed (step 2). Act on its report as in step 3. **Repeat until a round confirms nothing**: a round that finds nothing ends the loop. If round 3 still confirms findings, the design is not converging: stop patching it. Ask the owner ONE question before building anything else: the round counts and a simpler design, in one line, that still does everything the change was asked to do (the hard part included; a design that drops it is not simpler, it is smaller). Build it on the owner's answer, and attack it from round 1.
 
-**What is left is a stated limit, not new work.** A finding the loop leaves unfixed is one line in the change's stated limits (its changelog entry, docstring or close summary). It becomes an issue only when a real repo, user or incident already hits it.
+**Nothing confirmed is left.** Every confirmed finding is fixed, with its test, before the change lands. None ships as a stated limit, a follow-up issue or a line in a close summary (`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Work what you find; never defer it").
 
 **A clean first round is a signal, not a pass.** When round 1 confirms nothing on a change to authentication, authorization, tenancy, money or a guard, run one more fresh attacker before believing it. An attacker that never finds anything is as likely lax as the change is clean.
 
-**Escapes.** A defect found later in code that passed this pass (by a reviewer, a later attack, production) is filed with the label `adversarial-escape`, naming the change and the round that missed it. That count is how the fleet learns how good its attackers are.
+**Escapes.** A defect found later in code that passed this pass (by a reviewer, a later attack, production) is fixed in the change that found it, and that change's issue carries the label `adversarial-escape` and names the change and the round that missed it. That count is how the fleet learns how good its attackers are.
 
 ## 5. Evidence
 
-Per round: the CONFIRMED, INCONCLUSIVE and UNREPRODUCED counts (and, with two attackers, each one's count and the overlap). Each confirmed finding's test name with its fail-then-pass lines, how the loop ended (a clean round, or stopped at round 3 and why), and any issues or escalations filed. `/wrap-up` quotes this.
+Per round: the CONFIRMED, INCONCLUSIVE and UNREPRODUCED counts (and, with two attackers, each one's count and the overlap). Each confirmed finding's test name with its fail-then-pass lines, each UNREPRODUCED suspicion's re-probe and its outcome, how the loop ended (a clean round, or the simpler design the owner approved after round 3, with its own rounds), and any escalation filed or owner question asked, by key. `/wrap-up` quotes this.

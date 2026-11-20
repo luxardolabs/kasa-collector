@@ -1,4 +1,4 @@
-<!-- luxarch:changelog-guide asset v4 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit changelog-guide`. -->
+<!-- luxarch:changelog-guide asset v6 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit changelog-guide`. -->
 
 # Change Log Writing Guide (INTERNAL)
 
@@ -41,7 +41,8 @@ One-line release theme (optional).
 1. [where it runs] `make <target>` or the exact command — expect: what success prints. On failure: what to do. Rollback: how.
 2. [node] `python -m scripts.ops.<name> --dry-run`, then the same without `--dry-run` — every one-off script this release ships.
 
-- Known issues. Deferred follow-ups.
+### Release actions
+- {PREFIX}-NNN: the step or heads-up its `release-actions/{PREFIX}-NNN.md` names, the file removed in this commit (each step is also a runbook step above).
 
 ## Known reds
 - {RULE} — {PREFIX}-NNN — why it isn't fixable locally now (escalated, owner-approved to ship red).
@@ -56,6 +57,7 @@ Omit **Known reds** when `make check` is green. Include it only when the release
 - No end-user impact framing — that belongs in `release_notes/`.
 - Mention destructive operations (drops, force pushes, data backfills, prod cutovers) **prominently**.
 - **Notes opens with the deploy runbook**, `### Deploy runbook ({version})`: every step of this release's deploy, in order, from the first command to the last check, so whoever deploys follows one list and no other document. It is the repo's standing procedure (`docs/deployment/prod-release.md`) filled in for this release, plus each one-off operator script the release ships (its row in `<component>/scripts/ops/README.md` names this version) and each owner step (a secret to set, a DNS change). Each step is a make target or an exact command, never a description, and says where it runs (a `[host]` tag), what success looks like, what to do if it fails, and how to roll it back where that differs from the standing procedure. `repo.ops_scripts_in_runbook` reds a one-off script this release ships that the runbook does not run. A release with nothing to deploy beyond the standing procedure still carries the heading, with the standing procedure's steps.
+- **Notes lists the release actions**, `### Release actions`: one line per `release-actions/<KEY>.md` the tree holds before the release commit (and, for a final release, each one its pre-releases consumed), `- <KEY>: <its step or heads-up>`, each file removed (`git rm`) in the same commit (`--doc FLEET-RELEASE-PROCESS` §3a). The emitted `release-actions-collected` hook denies the tag and `make release` while a file is left or one consumed since the earlier releases is not listed; Issues Closed does not count. A release that consumes none leaves the heading out.
 - One file per version: `<app>/change_logs/{version}.md` (named to match the repo `VERSION` file exactly — `repo.release_docs_current` reds a version bump with no matching file).
 
 ## Per-repo parameters

@@ -6,6 +6,10 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/hooks-heartbeat.py\""
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/fleet-start-gate.py\""
           }
         ]
       },
@@ -52,6 +56,10 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/no-unbounded-waiter.py\""
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/release-actions-collected.py\""
           }
         ]
       },
@@ -108,7 +116,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/luxpm-close-tracks-deferrals.py\""
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/release-action-close.py\""
           }
         ]
       },
@@ -127,6 +135,33 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/escalation-remedy-tried.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__luxpm__luxpm_update_issue|mcp__luxpm__luxpm_create_issue|mcp__luxpm__luxpm_log_activity|mcp__luxpm__luxpm_create_release|mcp__luxpm__luxpm_update_release",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/luxpm-close-tracks-deferrals.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__luxpm__luxpm_create_issue|mcp__luxpm__luxpm_update_issue|mcp__luxpm__luxpm_chat|mcp__luxpm__luxpm_code_to_issues|mcp__luxpm__luxpm_update_checklist",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/no-new-follow-ups.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__luxpm__luxpm_update_issue|mcp__luxpm__luxpm_create_issue|mcp__luxpm__luxpm_chat|mcp__luxpm__luxpm_delete_issue|mcp__luxpm__luxpm_delete_page|mcp__luxpm__luxpm_create_page|mcp__luxpm__luxpm_update_page|mcp__luxpm__luxpm_patch_page|mcp__luxpm__luxpm_generate_page|mcp__luxpm__luxpm_store_memory|mcp__luxpm__luxpm_update_memory|mcp__luxpm__luxpm_upsert_adr|mcp__luxpm__luxpm_update_project",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/no-self-park.py\""
           }
         ]
       }
@@ -239,6 +274,20 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree.py\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/fleet-start-after-compact.py\""
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/fleet-start-gate.py\""
           }
         ]
       }

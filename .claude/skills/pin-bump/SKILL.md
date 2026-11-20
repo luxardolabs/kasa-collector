@@ -1,15 +1,21 @@
 ---
 name: pin-bump
-description: Move this repo to the latest fleet guards (luxarch, luxlint, luxaudit) the fleet way — bump the pins, read what changed, re-emit every asset whose version moved, leave new reds red, review every open guard escalation this repo filed against the new version, and regenerate and commit the status files. Use whenever guard-version-check says a pin is behind.
+description: Move this repo to the latest fleet guards (luxarch, luxlint, luxaudit) the fleet way — bump the pins, read what changed, re-emit every asset whose version moved, fix every new red in the bump's own change (escalating a guard that is wrong), review every open guard escalation this repo filed against the new version, and regenerate and commit the status files. Use whenever guard-version-check says a pin is behind.
 ---
 
-<!-- luxarch:pin-bump-skill asset v6 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit pin-bump-skill`. -->
+<!-- luxarch:pin-bump-skill asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit pin-bump-skill`. -->
 
 # Pin bump
 
 The runnable guard upgrade for this repo. Emitted from luxarch (`luxarch --emit pin-bump-skill`); re-emit, never hand-edit. Rationale: `luxarch --doc FLEET-MAKEFILE-STANDARD` (pins, `guard-version-check`, `guard-upgrade`) and `luxarch --doc FLEET-STATUS`.
 
 **Every step ends with its evidence.**
+
+## 0. The bump's issue
+
+A bump runs in its issue's worktree. When no open issue in this repo's project covers this bump, file it yourself: search first (`luxpm_list_issues(project=<this repo's project>, search="guard bump")`), then `luxpm_create_issue` with `project` set to this repo's project, `state: in_progress`, titled with the versions (`Guard bump to luxarch <version>`), and no `waiting_on`. The emitted `no-new-follow-ups` hook allows a create of work started now; never ask the owner to file it, and never reopen the last bump's closed issue. Then enter its worktree.
+
+**Evidence:** the issue key and the worktree entered.
 
 ## 1. Bump the pins
 
@@ -40,14 +46,15 @@ It replaces the asset in `<file>` (a whole file, or the block inside your Makefi
 
 **Evidence:** each asset re-emitted, `vN -> vM`.
 
-## 4. Run the gate, and leave new reds red
+## 4. Run the gate, and fix every new red in the bump's own change
 
 `make check`. A new rule that fires is the point of the bump: another repo was held to a stricter bar and this one now is too.
 
-- Fix what is yours to fix now. **You touched it, you own it** applies to every file you edit (conduct standard #11), and `luxlint --playbook mypy-sweep` comes first for mypy.
-- Anything genuinely wrong with a guard: `/escalate`. A red stays red while its escalation is open; never defer or allowlist it to get green.
+- **Every new red the bump lights is fixed in the pin bump's own change**, in this worktree, before it lands. Aligning to a ratified standard is do-it class: never ask, and never a new issue for the repo-side work, nor a plan to do it "after this lands" (`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Work what you find; never defer it"). **You touched it, you own it** applies to every file you edit (conduct standard #11), and `luxlint --playbook mypy-sweep` comes first for mypy.
+- **A fix with a step that is not this repo's still lands its repo-side part now.** When the remedy also needs an infra or owner step (an edge map line, a secret, a DNS change), do every repo-side step in this change. Only the part that genuinely needs the owner or infra waits, and it goes to the owner. A dev edge change is the standard's infra request (`luxarch --doc FLEET-BUILD-DEPLOY-STANDARD`, "Infra's part is a request"): its own issue, `infra-request`, parked on `waiting_on: "owner: infra, <the change?>"`. Any other owner step is one question on the bump's issue, which names the step and what it unblocks, parked `on_hold` with `waiting_on: "owner: <the question?>"`. Every such `waiting_on` starts with `owner:`: infra is reached through the owner.
+- A guard that is genuinely wrong: `/escalate`. A red stays red while its escalation is open; never defer or allowlist it to get green.
 
-**Evidence:** the red count before and after, and any escalation keys.
+**Evidence:** the red count before and after, the commit that fixed each new red, and any escalation key or `waiting_on` set.
 
 ## 5. Review this repo's open guard escalations
 

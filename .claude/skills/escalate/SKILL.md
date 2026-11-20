@@ -3,7 +3,7 @@ name: escalate
 description: Escalate a fleet guard (luxarch, luxlint, luxaudit, luxios) the fleet way when a red is genuinely wrong or a guard conflicts with a standard — search LuxPM first, file a self-contained fleet-escalation in this repo's project with a repro and numbers, and leave the red lit while it is open.
 ---
 
-<!-- luxarch:escalate-skill asset v7 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit escalate-skill`. -->
+<!-- luxarch:escalate-skill asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit escalate-skill`. -->
 
 # Escalate a guard
 
@@ -25,12 +25,12 @@ The test before filing: could the maintainer answer "apply the remedy in the fix
 
 Every escalation declares its kind, on a `Kind:` line:
 
-- `false-red`: correct code is red. `remedy-fails`: the documented remedy, applied, still reds or breaks the code. `conflict`: two guard requirements cannot both be met. Each of these says the remedy cannot work here, so you tried it: commit the attempt (in the issue's worktree, not landed) and name it on a `Remedy applied: <sha>` line.
+- `false-red`: correct code is red. `remedy-fails`: the documented remedy, applied, still reds or breaks the code. `conflict`: two guard requirements cannot both be met. Each of these says the remedy cannot work here, so you tried it: commit the attempt in the issue's worktree and name it on a `Remedy applied: <sha>` line. **Land every step that works now: an escalation holds back one site, never the rest of the issue.** For `conflict`, the commit is every repo-side step that works, and it lands; the red stays lit on the one part the other requirement refuses. A conflict also names its other requirement on a `Conflicts with: <rule or doc section>` line, and its landed commit changes a file the escalation names. For `false-red` and `remedy-fails`, the attempt reds or breaks the code, so only it stays off main.
 - `false-green`: broken code the rule passes. `asset-defect`: an emitted asset, unedited, fails. `missing-rule`: a fleet concern no rule checks (FLEET-ONBOARDING-STANDARD, retiring a hand-rolled check). No remedy exists to apply, so no commit is named.
 
-Keep the attempt until the escalation closes: `git branch escalation/<this issue's key> <sha>` before the worktree is landed or pruned, because pruning deletes the worktree's branch and the maintainer reads the commit (`git show <sha>`).
+Keep an unlanded attempt until the escalation closes: `git branch escalation/<this issue's key> <sha>` before the worktree is landed or pruned, because pruning deletes the worktree's branch and the maintainer reads the commit (`git show <sha>`).
 
-The emitted `escalation-remedy-tried` hook (`luxarch --emit hooks`) denies filing a guard escalation (a `[<guard> ESCALATION]` title, or `fleet-escalation` beside the guard's label), or rewriting its title, without its `Kind:` line, or with a remedy kind whose `Remedy applied:` commit is not in this repository, changes no file, or is already landed (on a `main` / `master` / `dev` / `develop` / `trunk` branch, local or pushed, the `init.defaultBranch`, a remote's default branch, or the main checkout's branch). Put the attempt's sha first on the `Remedy applied:` line, and write the fields in your own text (on their own lines, or inline after other fields): a field inside a code fence or a `>` quote is not read. Pushing the attempt's own branch so others can read it is fine.
+The emitted `escalation-remedy-tried` hook (`luxarch --emit hooks`) denies filing a guard escalation (a `[<guard> ESCALATION]` title, or `fleet-escalation` beside the guard's label), or rewriting its title, without its `Kind:` line, or with a remedy kind whose `Remedy applied:` commit is not in this repository, changes no file, or (for `false-red` and `remedy-fails`) is already landed (on a `main` / `master` / `dev` / `develop` / `trunk` branch, local or pushed, the `init.defaultBranch`, a remote's default branch, or the main checkout's branch). Put the attempt's sha first on the `Remedy applied:` line, and write the fields in your own text (on their own lines, or inline after other fields): a field inside a code fence or a `>` quote is not read. Pushing the attempt's own branch so others can read it is fine.
 
 ## 1. Search first
 
@@ -46,9 +46,10 @@ The emitted `escalation-remedy-tried` hook (`luxarch --emit hooks`) denies filin
 
 ## 3. File it in THIS repo's LuxPM project
 
-- Title `[<guard> ESCALATION] <the defect in one line>`.
+- Title `[<guard> ESCALATION] <the defect in one line>`; one defect shared by two guards is one escalation, `[<guard>/<guard> ESCALATION] …` (`[luxarch/luxlint ESCALATION]`).
 - Label **`fleet-escalation`**. An unlabelled escalation is missed by the maintainer's sweep.
-- `waiting_on: <guard> maintainer`. The maintainer replaces it with your next step when they answer, and `/fleet-start` shows you every escalation whose `waiting_on` names you.
+- `state: todo` and `waiting_on: <guard> maintainer`. It stays open, never `on_hold` or `backlog`: an agent parks only on a question to the owner. The maintainer replaces `waiting_on` with your next step when they answer, and `/fleet-start` shows you every escalation whose `waiting_on` names you.
+- `project` absent or this repo's own project code: the emitted `no-new-follow-ups` hook passes an escalation only filed here, titled and labelled as above, against a guard that is not this repo's own (its other routes, work started now and a handoff, carry no escalation title or label).
 - Self-contained: the maintainer reads it cold, so include the repro, numbers, evidence and **Verify** block above, a suggested fix if you have one, and what this repo did meanwhile.
 - **Never a GitHub issue.** There is no fallback.
 
@@ -57,3 +58,7 @@ The emitted `escalation-remedy-tried` hook (`luxarch --emit hooks`) denies filin
 The red stays red while the escalation is open: no `[rules.deferred]`, no allowlist, no `noqa`, no local config, no false attestation. A lit red is honest; a silenced one is a lie someone inherits. Say in the issue that you are holding it red.
 
 **Evidence to report:** the issue key, and the red left lit.
+
+## 5. Withdrawing an escalation that was wrong
+
+When you find the guard was right (the maintainer's answer, or your own later reading, shows the defect was this repo's), the escalation is withdrawn by closing it: `state: done` with a `close_summary` that says it is withdrawn and why, with the evidence (the command and its output, or the reply that showed it), and the commit that aligned the code. Never `cancelled`: a cancel is the owner's call. Align the red the escalation held in the same change.

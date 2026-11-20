@@ -1,6 +1,6 @@
 {
   "guard": "luxaudit",
-  "guard_version": "0.18.0",
+  "guard_version": "0.21.0",
   "repo": "/repo",
   "packages": 32,
   "source": "poetry.lock",
@@ -13,6 +13,8 @@
   "deferred": [],
   "banned": [],
   "not_audited": [],
+  "vendored": [],
+  "deptry_drift": "",
   "by_public_version": [],
   "warnings": [],
   "image": {
@@ -29,6 +31,6 @@
     "expired": [],
     "unjudged": []
   },
-  "commit": "b375ff6f7b7d7cf913c23b39d6ce61b798ae15df",
-  "generated_at": "2026-11-16T17:24:48Z"
+  "commit": "99906c3cd8c609589fca2e9befb64b2924cbf963",
+  "generated_at": "2026-11-20T23:46:48Z"
 }

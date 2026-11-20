@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-<!-- luxarch:claude-pointer asset v13 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
+<!-- luxarch:claude-pointer asset v16 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
 
 ## How to work here (fleet conduct — read the standard, not just this block)
 
@@ -20,10 +20,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Ask** — deleting anything; changing scope; a deferral/allowlist/exemption; publishing outward (pushing another repo, a force-push, a history rewrite); a genuine product fork where the choice is taste, not correctness.
 - **Do it** — aligning code to a ratified standard or a guard red; anything you have evidence for that is reversible in one commit. The standard already decided; say what you did.
+- **Work what you find.** A finding in the work at hand is fixed in that change, with its test; the only other routes are `/escalate` for another repo's guard or emitted asset and one question to the owner, never a follow-up issue, `dropped`, a stated limit or a self-parked `on_hold` (the conduct standard, "Work what you find; never defer it").
 
 **Work the guard reds in `luxarch --plan` order. Never ask which family or sweep is next.** The order is decided. An escalation covers ONE site: its family keeps going.
 
-**Check one rule or one file with a targeted run, never a filtered full scan.** `luxarch --rule <id>` runs only the matching rules (exact or substring, repeatable); add `--path <file>` to show one file's sites. The whole repo's per-rule counts are in `.luxarch-status.json` (`make status`). A full scan piped into `grep`, `head` or `tail` is denied by the emitted `targeted-guard-run` hook.
+**Check one rule or one file with a targeted run, never a filtered full scan.** `luxarch --rule <id>` runs only the matching rules (exact or substring, repeatable). `luxarch --path <file>` (repeatable: name every file you touched in one run) runs only the per-file rules, on those files alone, in seconds, and says how many whole-tree rules it left out; `--rule <id> --path <file>` shows one rule's sites in that file. The whole repo's per-rule counts are in `.luxarch-status.json` (`make status`). A full scan piped into `grep`, `head` or `tail` is denied by the emitted `targeted-guard-run` hook.
 
 **An owner hold is exactly as wide as the owner said.** "Hold off on X" excludes X and nothing else. It is not permission to pause, ask, or check in about anything outside X. Skip the held family, say so in one line, and keep burning down the rest.
 
@@ -37,7 +38,7 @@ When you do ask: **one decision per message**, the evidence that makes it answer
 
 **Align or escalate; never route around.** A guard red is fixed by changing the code, or escalated to the guard maintainer as genuinely wrong. Never by an exemption, a `# noqa`, a deferral, or a local config. Verification is not authorization: proving something is unreferenced does not license deleting it.
 
-**Search LuxPM for a file before you change it to clear a red.** `luxpm_list_issues(path="<path>")` (the `edit-history` hook reads its result; on a LuxPM without `path`, `search="<path>"` with every hit read), then `git log -- <file>`. A site that is on hold, in another agent's work, or under an open escalation is skipped and named, never changed. A red moved to another file, or out of a rule's sight, is not fixed: `/wrap-up` compares the whole repo's per-rule counts.
+**Search LuxPM for a file before you change it to clear a red.** `luxpm_list_issues(path="<path>", project=<this repo's project>, sort_by="sequence_id", sort_order="asc", limit=100)` (the `edit-history` hook reads its result and names the next page's call when there is one; on a LuxPM without `path`, `search="<path>"` with every hit read), then `git log -- <file>`. A site that is on hold for someone else (the owner, another agent, a maintainer), in another agent's work, or under an open escalation is skipped and named, never changed. A red moved to another file, or out of a rule's sight, is not fixed: `/wrap-up` compares the whole repo's per-rule counts.
 
 **Escalations go in THIS repo's LuxPM project** — label `fleet-escalation`, title `[<guard> ESCALATION] …`, self-contained enough to forward whole. **Search LuxPM for an existing issue first** (and comment on it if found); filing a new one is pre-authorized. **Never a GitHub issue** — there is no fallback. The maintainer sweeps the label across every project and picks it up where you filed it.
 
