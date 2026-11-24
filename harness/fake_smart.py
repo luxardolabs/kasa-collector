@@ -1,7 +1,7 @@
 """SMART-protocol fake device over KLAP v2, for the hardware-free e2e stack.
 
 A Tapo/Kasa SMART power strip (default: P316M, six outlets with per-outlet energy
-monitoring) as python-kasa 0.11 talks to it:
+monitoring) as python-kasa 0.12 talks to it:
 
 - discovery on UDP 20002: a 16-byte header and the device's JSON discovery result,
   advertising KLAP with login version 2;

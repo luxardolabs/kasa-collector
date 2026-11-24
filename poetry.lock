@@ -1222,14 +1222,14 @@ six = ">=1.5"
 
 [[package]]
 name = "python-kasa"
-version = "0.11.0.1"
+version = "0.12.0"
 description = "Python API for TP-Link Kasa and Tapo devices"
 optional = false
 python-versions = "<4.0,>=3.11"
 groups = ["main"]
 files = [
-    {file = "python_kasa-0.11.0.1-py3-none-any.whl", hash = "sha256:58e0ad5c5b71e60c2b58f3a5a17bd9b9427b8947ec72aecb96edaaa6a78d84ad"},
-    {file = "python_kasa-0.11.0.1.tar.gz", hash = "sha256:378e6bb923690cda5cf1e9d33d4d4094c21a6e337614fd29a0f2d4af40da23e4"},
+    {file = "python_kasa-0.12.0-py3-none-any.whl", hash = "sha256:e18adb340f359750bc5e798aa1856cdc1a28bc9307d510ad6556998545f40bbd"},
+    {file = "python_kasa-0.12.0.tar.gz", hash = "sha256:92b0cd9eafc89a07a31e5652dd494a2eed0477fc1b0e517ba1b1a045d2cf3643"},
 ]
 
 [package.dependencies]
@@ -1469,4 +1469,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.14,<4.0"
-content-hash = "e023c6f71cedc960f15b78c4a543bbec5b6f32cfaf4009750fe7c2d48ce271d5"
+content-hash = "3c9ec7adda6c6eac6c0f9463f201368018bc71d30071c6521ed57b4b13faf35b"

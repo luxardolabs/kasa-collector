@@ -47,7 +47,7 @@ class TestReclassStripIfNeeded:
 @pytest.mark.unit
 class TestVerifyStillNeeded:
     def test_installed_python_kasa_still_classes_discovery_by_family(self):
-        # Pins the finding behind keeping this module on python-kasa 0.11.0.1: if a
+        # Pins the finding behind keeping this module through python-kasa 0.12.0: if a
         # python-kasa upgrade turns this red, the discovery fix shipped upstream —
         # re-probe the KLAP strips and delete the module, do not edit this test.
         assert kasa_compat.discovery_classes_from_family() is True
@@ -65,7 +65,7 @@ class TestVerifyStillNeeded:
 
 @pytest.mark.unit
 class TestDiscoveredDevicePath:
-    """The DISCOVERY path must re-class too: it is the one python-kasa 0.11 left broken.
+    """The DISCOVERY path must re-class too: it is the one python-kasa 0.11 and 0.12 left broken.
 
     On 0.10.2 update() raised for a discovered strip built as IotPlug, so the collector fell
     back to the connect path, which re-classed it. On 0.11 that update() succeeds, so the
