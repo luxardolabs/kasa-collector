@@ -7,8 +7,7 @@
   "summary": {
     "PASS": 32,
     "FAIL": 0,
-    "XFAIL": 0,
-    "INERT": 1
+    "XFAIL": 0
   },
   "vulnerable": [],
   "deferred": [],
@@ -20,12 +19,10 @@
   "warnings": [],
   "image": {
     "ref": "luxardolabs/kasa-collector:2026.11.1",
-    "inert": true,
-    "inert_reason": "luxardolabs/kasa-collector:2026.11.1: not in the registry, so nothing was released at this VERSION. A deploy that pins `:sha-\u2026` is not visible from the mount; name it in `[image] refs`",
+    "inert": false,
+    "inert_reason": "",
     "error": "",
-    "not_released": [
-      "luxardolabs/kasa-collector:2026.11.1"
-    ],
+    "not_released": [],
     "vulnerable": [],
     "deferred": []
   },
@@ -34,6 +31,6 @@
     "expired": [],
     "unjudged": []
   },
-  "commit": "166f1711dba63ae3c0e608acb148146272587b6a",
-  "generated_at": "2026-11-25T05:15:32Z"
+  "commit": "025ad9c9ca3ac4f1ccdd05855c9b06433a06b141",
+  "generated_at": "2026-11-25T05:33:08Z"
 }
