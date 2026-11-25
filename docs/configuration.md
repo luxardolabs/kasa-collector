@@ -43,13 +43,13 @@ Broadcast discovery only reaches the local subnet, so devices on other VLANs/sub
 
 ## Data collection and polling
 
-| Variable                                | Default | Description                                                                                  |
-| --------------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
-| `KASA_COLLECTOR_DATA_FETCH_INTERVAL`    | `15`    | Seconds between energy-meter (power/voltage/current) reads (minimum `1`).                    |
-| `KASA_COLLECTOR_SYSINFO_FETCH_INTERVAL` | `60`    | Seconds between system-information reads (minimum `1`).                                      |
-| `KASA_COLLECTOR_FETCH_MAX_RETRIES`      | `5`     | Retry attempts for a failed data fetch before giving up for the cycle (minimum `1`).         |
-| `KASA_COLLECTOR_FETCH_RETRY_DELAY`      | `1`     | Initial delay in seconds between fetch retries; grows via exponential backoff (minimum `1`). |
-| `KASA_COLLECTOR_MAX_RETRY_DELAY`        | `60`    | Ceiling in seconds on the exponential backoff delay (minimum `1`).                           |
+| Variable                                | Default | Description                                                                                                                                                           |
+| --------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KASA_COLLECTOR_DATA_FETCH_INTERVAL`    | `15`    | Seconds between energy-meter (power/voltage/current) reads (minimum `1`).                                                                                             |
+| `KASA_COLLECTOR_SYSINFO_FETCH_INTERVAL` | `60`    | Seconds between system-information reads (minimum `1`).                                                                                                               |
+| `KASA_COLLECTOR_FETCH_MAX_RETRIES`      | `5`     | Retry attempts for a failed data fetch before giving up for the cycle (minimum `1`).                                                                                  |
+| `KASA_COLLECTOR_FETCH_RETRY_DELAY`      | `1`     | Initial delay in seconds between fetch retries; grows via exponential backoff (minimum `1`).                                                                          |
+| `KASA_COLLECTOR_MAX_RETRY_DELAY`        | `60`    | Ceiling in seconds on the exponential backoff delay (minimum `1`), including the delay between InfluxDB connection attempts at startup, which wait up to 60 s in all. |
 
 ## Authentication (TP-Link)
 
@@ -85,6 +85,8 @@ Credentials are masked in the startup configuration log, and never sent in the d
 | `LOG_MODULE_LEVELS`                         | —       | JSON object of per-logger levels applied on top, e.g. `{"KasaAPI": "DEBUG"}`, to turn one logger up without a redeploy. |
 
 Each JSON line carries `timestamp`, `level`, `logger`, `message`, `service` (`kasa-collector`), `version`, the code location, and any `extra=` fields under `attributes`. `KASA_COLLECTOR_STRUCTURED_LOGS` is gone: JSON is always on once the collector starts. A warning about an invalid setting is raised while settings load, before logging is configured, so it prints as a plain line.
+
+The compose stacks cap each container's own log on the node: Docker's `json-file` driver, at most 5 files of 10 MB. Set `LOG_DRIVER` in the env file to keep a host's own logging driver (for example `loki`), and `LOG_MAX_SIZE` / `LOG_MAX_FILE` to change the caps.
 
 ## Output
 

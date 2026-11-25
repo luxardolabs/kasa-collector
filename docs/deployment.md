@@ -186,7 +186,7 @@ The collector is lightweight — a single async process polling energy meters (e
 - **Memory:** 256M limit / 128M reservation.
 - **CPU:** 0.5 limit / 0.1 reservation.
 
-Large fleets or very short poll intervals can raise these; low-power boards can lower them. Cap log growth with the `json-file` driver (`max-size` / `max-file`).
+Large fleets or very short poll intervals can raise these; low-power boards can lower them. The compose stacks already cap each container's log at 5 × 10 MB (`LOG_MAX_SIZE` / `LOG_MAX_FILE`, see [configuration.md](configuration.md#logging)); a `docker run` of the image sets its own `--log-opt max-size=10m --log-opt max-file=5`.
 
 ## Kubernetes
 

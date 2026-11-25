@@ -8,7 +8,7 @@ For configuration and deployment specifics, see [configuration.md](configuration
 
 The application is a small set of cooperating components, each with a single job. They live under the `app/` package and are wired together by the orchestrator.
 
-- **Main orchestrator** (`app/main.py`) — the entry point (`python -m app.main`). It validates configuration and prints an effective-config dump (secrets masked) on startup, opens the storage connection, acquires device clients, launches the long-running tasks, and owns graceful shutdown.
+- **Main orchestrator** (`app/main.py`) — the entry point (`python -m app.main`). It validates configuration and prints an effective-config dump (secrets masked) on startup, opens the storage connection (waiting up to 60 s for an InfluxDB that is still starting), acquires device clients, launches the long-running tasks, and owns graceful shutdown.
 - **Device manager** (`app/collector/device_manager.py`) — the device registry. It initializes manual devices, runs discovery, authenticates devices, and tracks which ones have an energy meter and therefore need polling. It maintains separate registries for all devices, emeter-capable devices, and polling devices.
 - **Kasa API** (`app/collector/kasa_api.py`) — a thin wrapper over the `python-kasa` library. It handles broadcast discovery, direct/cross-subnet connections, protocol differences between IOT and SMART device families, fetching emeter and sysinfo data, and clean disconnection.
 - **Poller** (`app/collector/poller.py`) — the data-collection engine. It runs two independent loops (energy and system info) at different cadences, collecting from all devices concurrently and handing points to storage.

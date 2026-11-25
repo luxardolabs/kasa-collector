@@ -81,6 +81,10 @@ KASA_COLLECTOR_TPLINK_PASSWORD=your-password
 
 The credentials are used both in discovery packets and on direct connects. If a device still won't authenticate after credentials are set, the collector logs a warning and, as a last resort, tries connecting without auth — so an occasional warning for a device that genuinely needs no credentials is harmless.
 
+### "InfluxDB Connection Failed" at startup
+
+At startup the collector waits up to 60 seconds for InfluxDB to answer, logging `InfluxDB at <url> is not answering yet (…); retrying in Ns` between attempts. The delay doubles from 1 s, capped by `KASA_COLLECTOR_MAX_RETRY_DELAY`. That covers an InfluxDB started at the same moment, as the bundled stacks do. If it is still unreachable after that, the collector logs `InfluxDB Connection Failed` with the URL and exits, so the container restarts and tries again. Check that `KASA_COLLECTOR_INFLUXDB_URL` names a host and port this container can reach: the real-device collector runs on the host's network, so a compose service name does not resolve, and the dev stack's InfluxDB is at its fixed address.
+
 ### InfluxDB authentication failed
 
 The collector prints an actionable error and keeps retrying each cycle:
@@ -161,6 +165,24 @@ KASA_COLLECTOR_DNS_CACHE_TTL=0     # disable caching (test only)
 If hostnames appear wrong or stale, drop the TTL or disable caching temporarily to confirm DNS itself is healthy.
 
 ## Docker and health
+
+### Dashboards are empty after upgrading a bundled stack
+
+The bundled Grafana signs in to InfluxDB as a read-only user `grafana`, never with the InfluxDB operator token. InfluxDB creates that user on its first start, from `GRAFANA_INFLUX_PASSWORD`, so a stack whose InfluxDB was first started by an earlier release does not have it. Grafana then starts, but every panel is empty. Collection is unaffected. Once per stack:
+
+1. Add `GRAFANA_INFLUX_PASSWORD=` to its env file (`.env.local`, or `.env.dev`), with a password of 8 to 72 characters.
+
+1. Restart the stack (`make local-up`, `make demo-up` or `make dev-up`), so InfluxDB and Grafana both get the password.
+
+1. Create the user on that stack's InfluxDB (`kasa_local_influxdb` for local and demo, `kasa_influxdb` for dev). The password is read from the container's environment, so nothing is typed in:
+
+   ```sh
+   docker exec kasa_local_influxdb sh -c 'influx v1 auth create --org "$DOCKER_INFLUXDB_INIT_ORG" --token "$DOCKER_INFLUXDB_INIT_ADMIN_TOKEN" --username grafana --password="$GRAFANA_INFLUX_PASSWORD" --read-bucket "$(influx bucket list --org "$DOCKER_INFLUXDB_INIT_ORG" --token "$DOCKER_INFLUXDB_INIT_ADMIN_TOKEN" --name "$DOCKER_INFLUXDB_INIT_BUCKET" --hide-headers | cut -f1)"'
+   ```
+
+1. Open a dashboard: it shows data.
+
+A stack started fresh creates the user itself; if InfluxDB's log shows `init-dbrp: ERROR: could not create read-only user 'grafana'`, the password was outside 8 to 72 characters: fix it and run step 3.
 
 ### `influx` CLI inside the bundled InfluxDB asks for an org or token
 

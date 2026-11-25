@@ -164,12 +164,15 @@ All configuration is done through environment variables. Key settings include:
 - **Authentication**: `KASA_COLLECTOR_TPLINK_USERNAME`, `KASA_COLLECTOR_TPLINK_PASSWORD`
 - **Operational Timeouts**: `KASA_COLLECTOR_TRANSPORT_CLEANUP_TIMEOUT`, `KASA_COLLECTOR_SHUTDOWN_TIMEOUT`, `KASA_COLLECTOR_DNS_CACHE_TTL`, `KASA_COLLECTOR_MAX_RETRY_DELAY`
 - **Health Check**: `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE`
+- **Container logs** (compose, not the app): `LOG_DRIVER`, `LOG_MAX_SIZE`, `LOG_MAX_FILE`, from one `x-logging` block on every deployed service (json-file, 10m × 5)
+- **Bundled stack**: `GRAFANA_INFLUX_PASSWORD`, Grafana's read-only InfluxDB sign-in, created by `ops/influxdb/init-dbrp.sh` on InfluxDB's first start (an older volume needs it created once: docs/troubleshooting.md)
 
 ## Important Notes
 
 - The application requires host networking for device discovery
 - Data is stored both in InfluxDB and optionally as `.jsonl` files in `/app/output` (bind-mounted)
 - Docker health check included for container orchestration (no web server required)
+- At startup the collector waits up to 60 s for InfluxDB (`CONNECT_WINDOW_SECONDS` in `app/storage/influxdb.py`, retries capped by `KASA_COLLECTOR_MAX_RETRY_DELAY`), then exits with the connection banner
 - Tests: pytest suite under `tests/`; `make test` (luxarch's test block) runs it in the Dockerfile's `test` stage — the `production` stage plus the dev group, rebuilt from source every run, never `FROM :dev` — with the source mounted read-only, against a real throwaway InfluxDB (`kasa_test_influxdb`, compose profile `test`) started in its own per-run compose project and torn down pass or fail. Branch coverage is ratcheted against `[test].coverage_min` in `.luxlint.toml`
 - Multi-platform builds support amd64 and arm64 architectures (`make release`), on the ONE shared fleet buildx builder (`luxardo-builder`, GC-capped) — never a per-project builder, which holds an un-deduplicated cache plus an idle buildkit daemon
 - Build backend is **hatchling**, versioned dynamically from `VERSION`; Poetry stays the dependency manager in non-package mode (`poetry install --no-root` in both Dockerfiles, so the backend is never exercised at image-build time)
