@@ -70,7 +70,16 @@ PUSHED
     exit 0
   fi
 fi
-make -s gitleaks || exit 1
+# What THIS push publishes (luxarch gitleaks block v28): `gitleaks-push` reads the refs git hands
+# this hook on stdin, passed through, and scans only their commits and tag objects; the URL this
+# push goes to ($2) lets it skip what that URL already holds, read from it with git ls-remote. A
+# makefile without that target runs the full-history `make gitleaks`. `make -n` only parses, and
+# reads no stdin.
+if make -n gitleaks-push >/dev/null 2>&1 </dev/null; then
+  GITLEAKS_PUSH_URL="$2" make -s gitleaks-push || exit 1
+else
+  make -s gitleaks || exit 1
+fi
 # Guard pins: ADVISORY here (a stale pin is reversible; a leaked secret is not).
 if make -n guard-version-check >/dev/null 2>&1; then
   make -s guard-version-check ||

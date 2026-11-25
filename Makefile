@@ -49,7 +49,7 @@ LUXARCH_IMAGE    ?= $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION)
 # Code-style + type guard (luxlint) — pinned; pulled via LUXLINT_REGISTRY (Makefile.local),
 # same out-of-tree pattern as luxarch. Unset host → make lint/format skip gracefully.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  := 0.83.0
+LUXLINT_VERSION  := 0.84.0
 LUXLINT_IMAGE    ?= $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 # The luxlint ref the emitted gitleaks and test blocks read. Without the fleet registry it is the
 # same pinned version from the local image store, never an unversioned build.
