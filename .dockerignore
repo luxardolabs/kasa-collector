@@ -48,11 +48,13 @@ docs/
 grafana/
 *.md
 
-# Compose / Dockerfiles / build tooling
+# Compose / Dockerfiles / build tooling. Makefile.local is untracked and holds this machine's
+# registry hosts, so it never enters a build context either.
 compose*.yaml
 compose*.yml
 Dockerfile*
 Makefile
+Makefile.*
 
 # OS / editor
 **/.DS_Store
