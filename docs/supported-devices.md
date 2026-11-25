@@ -6,10 +6,10 @@ Kasa Collector reads energy and system data from TP-Link Kasa smart plugs and po
 
 TP-Link ships two protocol families, and they differ in what setup they need:
 
-- **IOT protocol** (legacy plugs and strips) — discovered and read with no account. Devices with energy monitoring (an "emeter") report power, voltage, current, and cumulative energy out of the box. These work with zero configuration beyond the InfluxDB settings.
+- **IOT protocol** (legacy plugs and strips) — discovered and read with no account over the legacy transport. An IOT device on KLAP firmware (an HS300 on firmware 1.1.2, for example) needs your TP-Link credentials like a SMART device. Devices with energy monitoring (an "emeter") report power, voltage, current, and cumulative energy out of the box. These work with zero configuration beyond the InfluxDB settings.
 - **SMART / KLAP protocol** (newer devices) — require your TP-Link cloud credentials. Set `KASA_COLLECTOR_TPLINK_USERNAME` and `KASA_COLLECTOR_TPLINK_PASSWORD` (see [Configuration](configuration.md#authentication-tp-link)). Without credentials these devices are discovered but cannot be authenticated or polled.
 
-Devices without an energy meter (for example the HS103 plug) are handled cleanly: they are discovered and their system information is collected, but no energy metrics are recorded, and their absence of an emeter is not treated as an error.
+Devices without an energy meter (for example the HS103 plug) are handled cleanly: they are discovered and registered, but neither energy nor system information is collected from them, and their absence of an emeter is not treated as an error.
 
 ## Per-outlet monitoring
 
@@ -19,13 +19,13 @@ Multi-outlet power strips expose a separate energy meter per outlet: IOT strips 
 
 These have been verified directly:
 
-| Model  | Type        | Energy monitoring | Notes                                                 |
-| ------ | ----------- | ----------------- | ----------------------------------------------------- |
-| HS110  | Smart plug  | Yes               | IOT protocol.                                         |
-| KP115  | Smart plug  | Yes               | IOT protocol.                                         |
-| HS300  | Power strip | Yes (per-outlet)  | IOT protocol; each outlet reported separately.        |
-| KP125M | Smart plug  | Yes               | SMART/KLAP — requires TP-Link credentials.            |
-| HS103  | Smart plug  | No                | IOT protocol; discovered and tracked, no emeter data. |
+| Model  | Type        | Energy monitoring | Notes                                                       |
+| ------ | ----------- | ----------------- | ----------------------------------------------------------- |
+| HS110  | Smart plug  | Yes               | IOT protocol.                                               |
+| KP115  | Smart plug  | Yes               | IOT protocol.                                               |
+| HS300  | Power strip | Yes (per-outlet)  | IOT protocol; each outlet reported separately.              |
+| KP125M | Smart plug  | Yes               | SMART/KLAP — requires TP-Link credentials.                  |
+| HS103  | Smart plug  | No                | IOT protocol; discovered and registered, nothing collected. |
 
 Other Kasa devices are commonly discovered automatically when they advertise the energy capability. If a device is supported by python-kasa but not listed here, it is worth trying.
 
@@ -33,13 +33,13 @@ Other Kasa devices are commonly discovered automatically when they advertise the
 
 Kasa Collector ships a hardware-free end-to-end harness (`make test-e2e`) built on fake device emulators: `harness/fake_kasa.py` speaks the real IOT protocol over UDP/TCP, and `harness/fake_smart.py` a SMART power strip over KLAP v2 (discovery on UDP 20002, login and encrypted requests over HTTP). python-kasa builds genuine device objects from both and reads live emeter data.
 
-The IOT emulator covers every IOT device shape the collector handles, selectable via `KASA_FAKE_KIND`:
+The IOT emulator covers the IOT device shapes on the legacy transport, selectable via `KASA_FAKE_KIND`:
 
 - `plug` — a smart plug **with** energy monitoring (e.g. HS110, KP115).
 - `plug_noemeter` — a smart plug **without** energy monitoring (e.g. HS103), to exercise the no-emeter path.
 - `strip` — an HS300-style multi-outlet strip with **per-outlet emeter** data.
 
-The SMART emulator is a P316M-style strip with six outlets that each measure their own energy. See [Testing](testing.md) for how to run the harness.
+The SMART emulator is a P316M-style strip with six outlets that each measure their own energy; with `KASA_FAKE_PROTOCOL=iot` it is an HS300 behind KLAP instead, the shape discovery builds as a plug and the collector re-classes as a strip. See [Testing](testing.md) for how to run the harness.
 
 ## Compatibility reference
 

@@ -63,19 +63,19 @@ The build/deploy flow follows the Luxardo Labs fleet standard. `VERSION` (repo r
 # .env.dev to it, restart the dev stack, then `make smoke`: the kasa-collector container must run
 # this commit and reach healthy by its own HEALTHCHECK, and app.main / app.health.check must import
 # in the production image (no HTTP surface, so SMOKE_URL stays empty). A FAIL fails the deploy.
-# `make dev-pin TAG=sha-…` rolls back to a published tag. Pin only `sha-*` or a version: dev-pin
-# does not yet refuse `candidate-*`, `dev` or `latest` (KASACOLLEC-84).
+# `make dev-pin TAG=sha-…` rolls back to a published tag; it refuses anything but `sha-<commit>` or a
+# released version (`dev`, `latest` and `candidate-*` move or are unscanned).
 make dev-deploy
 
 # Bring the dev stack up on the dev host (DEV_HOST := devhost, an ssh alias) at whatever .env.dev pins
 make dev-up          # make dev-logs / make dev-ps / make dev-down — all over ssh to DEV_HOST
 
 # Release (luxarch's image block): refuses a dirty tree, an already-released VERSION, a local
-# v<VERSION> tag not at HEAD, and a v<VERSION> missing from origin (it does not yet check WHERE
-# origin's tag points: KASACOLLEC-84 — push the tag you built from); pushes the multi-arch build ONCE as an unpinned
+# v<VERSION> tag not at HEAD, and a v<VERSION> missing from origin or pointing at another commit
+# there; pushes the multi-arch build ONCE as an unpinned
 # :candidate-<commit>, scans each platform BY DIGEST (luxaudit --image-archive refuses on any
-# fixable HIGH/CRITICAL), then `imagetools create`s :VERSION from that digest and publishes the
-# GitHub Release. prod pins TAG=<VERSION> in .env.prod. dev-deploy (publish-sha) scans before it
+# fixable HIGH/CRITICAL), then `imagetools create`s :VERSION from that digest. With
+# PUBLIC_REGISTRY=ghcr.io the GitHub Release follows `make release-public`. prod pins TAG=<VERSION> in .env.prod. dev-deploy (publish-sha) scans before it
 # pushes too, and publishes a commit's :sha-<commit> once, never rebuilt.
 # `make audit`'s image leg is a MONITOR of what the registry already holds — it clears by releasing.
 make release
@@ -86,7 +86,7 @@ make release-public
 make prod-deploy PROD_NODE=<host>
 ```
 
-### The stacks — ONE `compose.yml`, four PROFILES
+### The stacks — ONE `compose.yml`, six PROFILES
 
 ```bash
 # collector-only → YOUR external InfluxDB/Grafana (edit .env.prod). The plug-in.
@@ -131,7 +131,7 @@ make format          # THE canonical fixer (`luxlint --format`) — autofix + fo
                      # all from the image, with the same config the checker reads. Never
                      # hand-roll it: an unpinned host formatter drifts from the pinned checker
                      # and applies its default width to a repo that carries no local config.
-make test            # pytest suite (self-contained; no external services)
+make test            # pytest in the Dockerfile `test` stage, against a throwaway real InfluxDB it starts and tears down
 make poetry-lock     # regenerate poetry.lock (poetry-in-docker)
 make gitleaks-staged # secret scan of staged changes (run before git commit)
 make hooks           # one-time: install the pre-commit secret-scan hook (core.hooksPath)
@@ -175,12 +175,12 @@ All configuration is done through environment variables. Key settings include:
 - At startup the collector waits up to 60 s for InfluxDB (`CONNECT_WINDOW_SECONDS` in `app/storage/influxdb.py`, retries capped by `KASA_COLLECTOR_MAX_RETRY_DELAY`), then exits with the connection banner
 - Tests: pytest suite under `tests/`; `make test` (luxarch's test block) runs it in the Dockerfile's `test` stage — the `production` stage plus the dev group, rebuilt from source every run, never `FROM :dev` — with the source mounted read-only, against a real throwaway InfluxDB (`kasa_test_influxdb`, compose profile `test`) started in its own per-run compose project and torn down pass or fail. Branch coverage is ratcheted against `[test].coverage_min` in `.luxlint.toml`
 - Multi-platform builds support amd64 and arm64 architectures (`make release`), on the ONE shared fleet buildx builder (`luxardo-builder`, GC-capped) — never a per-project builder, which holds an un-deduplicated cache plus an idle buildkit daemon
-- Build backend is **hatchling**, versioned dynamically from `VERSION`; Poetry stays the dependency manager in non-package mode (`poetry install --no-root` in both Dockerfiles, so the backend is never exercised at image-build time)
+- Build backend is **hatchling**, versioned dynamically from `VERSION`; Poetry stays the dependency manager in non-package mode (`poetry install --no-root` in both the builder and test stages of `Dockerfile`, so the backend is never exercised at image-build time; `harness/Dockerfile` installs nothing)
 - Grafana dashboards are pre-configured in the `/grafana` directory
 - Comprehensive resource cleanup and timeout management for long-running deployments
 - The runtime image installs `tzdata` + `tzdata-legacy` — python-kasa resolves each device's timezone via `zoneinfo`, and TP-Link's timezone index uses legacy POSIX names (e.g. `PST8PDT`, `CST6CDT`) that would otherwise crash `update()`
 
-### ONE `compose.yml` + `.env.<env>` — four profiles
+### ONE `compose.yml` + `.env.<env>` — six profiles
 
 The fleet standard is one compose file per repo: the STACK is a compose **profile** and the ENVIRONMENT is the `--env-file`, never an overlay file (`luxarch --doc FLEET-BUILD-DEPLOY-STANDARD`, `--playbook compose-hygiene`, `repo.compose_conventions`). **Compose never builds** — every image is built outside it and referenced by a PINNED tag, so the app image never floats (no `:latest`, no `${TAG:-latest}`).
 
@@ -190,13 +190,14 @@ The fleet standard is one compose file per repo: the STACK is a compose **profil
 | `bundled`   | `kasa_influxdb` + `kasa_grafana` (no host port)     | `.env.dev`              |
 | `local`     | `kasa_local_influxdb` + `kasa_local_grafana`        | `make local-up`         |
 | `demo`      | the local pair + 4 fakes + `kasa-collector-demo`    | `.env.demo`             |
-| `e2e`       | throwaway InfluxDB + 7 fakes + `kasa-collector-e2e` | `make test-e2e`         |
+| `e2e`       | throwaway InfluxDB + 9 fakes + `kasa-collector-e2e` | `make test-e2e`         |
+| `test`      | `kasa_test_influxdb` (tmpfs, no ports)              | `make test`             |
 
-Each env file names its stack in `COMPOSE_PROFILES`: `.env.prod` → `collector`, `.env.dev` → `collector,bundled`, `.env.demo` → `demo`; `make local-up` names `collector` + `local` itself. Only the local pair publishes ports (`GRAFANA_PORT`/`INFLUX_PORT`).
+Each env file names its stack in `COMPOSE_PROFILES`: `.env.dev` → `collector,bundled`, `.env.demo` → `demo`. `make up` / `prod-*` name `--profile collector` themselves and `make local-up` names `collector` + `local`, because a `.env.prod` or `.env.local` copied from `.env.example` carries the dev stack's `collector,bundled`. Only the local pair publishes ports (`GRAFANA_PORT`/`INFLUX_PORT`).
 
 **The dev stack runs on the dev host** (`DEV_HOST := devhost`; `[dev_host] front = "none"` in `.luxarch.toml`, since the collector serves no HTTP and its deploy is proven by the container's health; FLEET-BUILD-DEPLOY-STANDARD, "The dev host"), which mounts this checkout at the same path and sits on the plugs' LAN. It publishes no host port: `kasa_grafana`, an ops UI rather than the stack's front, joins `dev-edge` at its pinned address 172.30.0.15 (the edge routes by address, never alias) and the edge serves it by its dev name, dev-kasa-collector on the fleet domain; it refuses an empty, `admin` or placeholder `GRAFANA_PASSWORD` and sets the env file's password on every start (`ops/grafana/dev-entrypoint.sh`). The host-networked collector cannot resolve service names, so `kasa_influxdb` has a fixed address (`KASA_DEV_INFLUX_ADDR`, default 10.210.250.10) on the `kasa_dev` network, pinned to `KASA_DEV_SUBNET` (default 10.210.250.0/24, the top of the dev host's Docker pool).
 
-**Why three collector SERVICES rather than one.** `network_mode` is a property of a service and cannot vary by profile. The real collector needs HOST networking because Kasa discovery is a UDP broadcast that cannot cross a bridge; the fake-device stacks need BRIDGE networking so the collector resolves the emulators by service name, which host networking cannot do. Those are three different services, not one service in three moods. (This supersedes the previous note claiming demo/e2e had to be separate FILES — they had to be separate services, which profiles express fine.)
+**Why three collector SERVICES rather than one.** `network_mode` is a property of a service and cannot vary by profile. The real collector needs HOST networking because its discovery broadcast must reach the physical LAN the plugs are on, which a container bridge does not; the fake-device stacks need BRIDGE networking so the collector resolves the emulators by service name, which host networking cannot do. Those are three different services, not one service in three moods. (This supersedes the previous note claiming demo/e2e had to be separate FILES — they had to be separate services, which profiles express fine.)
 
 **Variables interpolate file-wide, regardless of profile.** `${ENV_FILE:?}` on the `collector` service is resolved even for an `--profile e2e` run, which is why `scripts/e2e-test.sh` exports `ENV_FILE` although nothing in the e2e profile reads it.
 
@@ -250,7 +251,7 @@ Images: the NAME declares provenance (`repo.image_name_declares_provenance`) and
 - 🚀 Modern Python 3.14 patterns (TaskGroup, exception groups)
 - 🚀 Comprehensive retry logic with exponential backoff
 - 🚀 Parallel device initialization for faster startup
-- 🚀 asyncio-native InfluxDB writes (aiohttp `InfluxDBClientAsync`; one awaited batch per poll cycle)
+- 🚀 asyncio-native InfluxDB writes (aiohttp `InfluxDBClientAsync`; one awaited write per device, a strip's points together, plus one collector_stats point per cycle)
 
 ## Code Quality Standards
 
@@ -294,7 +295,10 @@ Secret scanning is fleet-owned too: there is no local `.gitleaks.toml` (luxlint'
 - `app/collector/kasa_api.py` - Device communication with transport cleanup
 - `app/collector/utils.py` - Shared utilities (retry decorator, device helpers)
 - `app/collector/dns_cache.py` - DNS caching implementation
+- `app/collector/kasa_compat.py` - the remaining python-kasa workaround: re-classes a KLAP HS300 that discovery builds as a plug (`verify_still_needed()` warns at startup once upstream fixes it)
 - `app/storage/influxdb.py` - InfluxDB time-series persistence
 - `app/core/logging_config.py` - the fleet's one logging setup (`luxarch --emit logging`, never hand-edited): JSON lines on stdout, `LOG_FORMAT=text` for local runs; `app/main.py`'s `configure_app_logging()` installs it with the per-component `KASA_COLLECTOR_LOG_LEVEL_*` levels
+- `app/storage/sysinfo_fields.py` - one InfluxDB field type per sysinfo key, and the keys never written (coordinates, ssid, bssid, lnk_on)
 - `app/health/check.py` - Docker health check script
+- `app/health/heartbeat.py` - the heartbeat each storing cycle writes, which the health check reads
 - `Makefile` / `VERSION` / `pyproject.toml` - Fleet build, versioning, deps + tooling

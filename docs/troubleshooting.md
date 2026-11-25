@@ -12,7 +12,7 @@ Kasa Collector finds devices two ways: **broadcast auto-discovery** and an expli
 
 If auto-discovery finds zero devices, check in order:
 
-1. **Host networking.** Broadcast discovery only works with host networking, because the collector sends a UDP broadcast to `255.255.255.255:9999` and listens for replies. In Compose:
+1. **Host networking.** Broadcast discovery only works with host networking, because the collector sends UDP broadcasts to `255.255.255.255` on ports 9999 (IOT), 20002 and 20004 (SMART/KLAP) and listens for replies. In Compose:
 
    ```yaml
    network_mode: host   # required for broadcast discovery
@@ -42,11 +42,11 @@ Auto-discovery relies on bidirectional UDP: the collector broadcasts, and each d
 
 This is TP-Link's proprietary protocol, **not mDNS**, so mDNS reflectors won't help. Options, best first:
 
-1. **Manual hosts (recommended for segmented networks).** Set `KASA_COLLECTOR_DEVICE_HOSTS` to the device IPs and turn auto-discovery off. Manual hosts use `discover_single()`, which connects directly over TCP and detects the device's protocol (IOT vs SMART) even across subnets — no broadcast required, so only Server → IoT reachability is needed.
-1. **A narrow firewall exception** allowing return UDP 9999 traffic from the IoT VLAN back to the collector's IP.
+1. **Manual hosts (recommended for segmented networks).** Set `KASA_COLLECTOR_DEVICE_HOSTS` to the device IPs and turn auto-discovery off. Manual hosts use `discover_single()`, a unicast UDP query to that host that detects the device's protocol (IOT vs SMART), falling back to a direct connection. No broadcast is required, so it works across subnets as long as the device's unicast reply is routed back to the collector.
+1. **A narrow firewall exception** allowing return UDP 9999, 20002 and 20004 traffic from the IoT VLAN back to the collector's IP.
 1. **Run the collector on the IoT VLAN** with the devices.
 
-Manual hosts are also never pruned when a discovery sweep doesn't see them, so a cross-subnet device won't be dropped just because it's invisible to broadcast.
+Manual hosts are also never pruned when a discovery sweep doesn't see them, so a cross-subnet device won't be dropped just because it's invisible to broadcast. Each discovery round retries a manual host that has not connected yet and re-resolves a hostname.
 
 ### Discovered but not connectable
 
@@ -64,22 +64,27 @@ Try:
 
 ### Ports used
 
-- **UDP 9999** — broadcast discovery.
+- **UDP 9999** — broadcast discovery of IOT devices.
+- **UDP 20002, 20004** — broadcast discovery of SMART/KLAP devices.
 - **TCP 9999** — IOT device communication (legacy plugs/strips).
 - **TCP 80/443** — SMART device communication (newer protocol devices).
 
 ## Authentication
 
-### "Server response doesn't match our challenge"
+### "Device response did not match our challenge"
 
-The device requires TP-Link cloud credentials (SMART/KLAP protocol). Newer hardware — roughly 2021 firmware onward, e.g. KP125M, EP25, some HS103 units — needs them; older IOT devices don't. Set:
+The device requires TP-Link cloud credentials (SMART/KLAP protocol), and the collector logs `Device <ip> requires TP-Link cloud credentials. Please set KASA_COLLECTOR_TPLINK_USERNAME and KASA_COLLECTOR_TPLINK_PASSWORD.` Newer hardware — roughly 2021 firmware onward, e.g. KP125M, EP25, some HS103 units, and an HS300 on firmware 1.1.2 — needs them; older IOT devices don't. Set:
 
 ```bash
 KASA_COLLECTOR_TPLINK_USERNAME=your-email@example.com
 KASA_COLLECTOR_TPLINK_PASSWORD=your-password
 ```
 
-The credentials are used both in discovery packets and on direct connects. If a device still won't authenticate after credentials are set, the collector logs a warning and, as a last resort, tries connecting without auth — so an occasional warning for a device that genuinely needs no credentials is harmless.
+The credentials are never sent in the discovery broadcast; they are used only on the direct connect to each device. If a device still won't authenticate after credentials are set, the collector logs a warning and, as a last resort, tries connecting without auth — so an occasional warning for a device that genuinely needs no credentials is harmless.
+
+### "Discovered device … needs TP-Link credentials but is not trusted"
+
+With `KASA_COLLECTOR_TRUST_DISCOVERED_DEVICES=False`, a SMART/KLAP device found by broadcast gets no credentials unless it is listed in `KASA_COLLECTOR_DEVICE_HOSTS`, and the collector logs this once per device. Add the device's address or hostname to `KASA_COLLECTOR_DEVICE_HOSTS` to collect from it. Under either setting, an unlisted device that asks for an AES login is never given credentials; list it if it is yours (see [configuration.md](configuration.md#authentication-tp-link)).
 
 ### "InfluxDB Connection Failed" at startup
 
@@ -90,7 +95,8 @@ At startup the collector waits up to 60 seconds for InfluxDB to answer, logging 
 The collector prints an actionable error and keeps retrying each cycle:
 
 ```
-InfluxDB rejected the write (401 Unauthorized)
+InfluxDB rejected the write (401 Unauthorized) — check that KASA_COLLECTOR_INFLUXDB_TOKEN has write access to bucket '<bucket>' in org '<org>'.
+InfluxDB write failed (404 Not Found) — bucket '<bucket>' or org '<org>' does not exist.
 ```
 
 Verify these and that the token has **write** access to the bucket:
@@ -106,14 +112,14 @@ Work from the collector outward.
 
 1. **Is the collector writing?** `docker logs kasa-collector` should show discovery/authentication and periodic fetch cycles. Auth or connection errors here mean no data is being produced — fix those first (see above).
 
-1. **Datasource shape (your own InfluxDB 2.x).** The bundled dashboards are written in **InfluxQL**, so an InfluxDB 2.x server needs a **v1 DBRP mapping** plus a Grafana datasource configured in **InfluxQL mode**, signing in with a read-only v1 user. The bundled dev/demo stacks do this for you automatically (`ops/influxdb/init-dbrp.sh`, Grafana datasource uid `uDxwFcOGz`). If you point the collector at **your own** InfluxDB 2.x, you must create the DBRP mapping and configure the datasource yourself, or the dashboards will render empty even though data is landing. See [grafana-dashboards.md](grafana-dashboards.md).
+1. **Datasource shape (your own InfluxDB 2.x).** The bundled dashboards are written in **InfluxQL**, so an InfluxDB 2.x server needs a **v1 DBRP mapping** plus a Grafana datasource configured in **InfluxQL mode**, signing in with a read-only v1 user. The bundled dev, local and demo stacks do this for you automatically (`ops/influxdb/init-dbrp.sh`, Grafana datasource uid `uDxwFcOGz`). If you point the collector at **your own** InfluxDB 2.x, you must create the DBRP mapping and configure the datasource yourself, or the dashboards will render empty even though data is landing. See [grafana-dashboards.md](grafana-dashboards.md).
 
 1. **Query the right measurements.** Data is split across:
 
    - `emeter` — energy metrics (power, current, voltage, totals).
    - `sysinfo` — per-device system information.
    - `sysinfo_child` — per-plug system information for power strips.
-   - `collector_stats` — the collector's own per-cycle health (devices attempted/succeeded/failed, duration), tagged by `cycle` (`emeter`/`sysinfo`).
+   - `collector_stats` — the collector's own per-cycle health (`devices`, `succeeded`, `failed`, `write_failed`, `duration_seconds`), tagged by `cycle` (`emeter`/`sysinfo`).
 
 ### Per-outlet power strip data is missing
 
@@ -122,13 +128,13 @@ For strips like the HS300 (IOT) and the P316M (SMART), each outlet is written to
 - The **parent strip** aggregate is tagged `equipment_type=device`.
 - Each **child outlet** is tagged `equipment_type=plug`, plus `plug_alias` and a numeric `plug_id`.
 
-Each outlet's `plug_id` is its position on the strip, read off the strip as it is polled. If outlet points are missing, check the collector log for the strip's emeter fetch: an outlet that does not answer leaves the whole strip unwritten for that cycle, so a strip is never written in part.
+Each outlet's `plug_id` is its position on the strip, read off the strip as it is polled. If outlet points are missing, check the collector log for the strip's emeter fetch. On an IOT strip (HS300), an outlet that does not answer leaves the whole strip unwritten for that cycle, so it is never written in part. On a SMART strip (P316M), only that outlet is left out and the other outlets are written.
 
 ## Performance and tuning
 
 ### InfluxDB growing fast
 
-At defaults, each emeter device produces roughly 4 points every 15s (~240/min) plus ~1 sysinfo point/min — about 241 points/min/device, so ~3.5M points/day for 10 devices. To slow growth:
+At defaults an IOT emeter plug writes 4 points every 15 s (16/min) plus 1 sysinfo point a minute, about 17 points/min/device, or roughly 245,000 points a day for 10 devices. SMART devices add their today/month counters, and each strip outlet is its own set of points. To slow growth:
 
 - Raise the intervals: `KASA_COLLECTOR_DATA_FETCH_INTERVAL`, `KASA_COLLECTOR_SYSINFO_FETCH_INTERVAL`.
 - Add an InfluxDB retention policy and/or downsampling task.
@@ -215,8 +221,6 @@ The copied data keeps the credentials it was created with: InfluxDB and Grafana 
 
 The health check (`python -m app.health.check`) reports healthy only while **this run** of the collector is storing data. After every energy-poll cycle that stores at least one device's reading, the collector writes a heartbeat inside the container (`/tmp/kasa-collector.heartbeat`). The check needs that heartbeat to be younger than `KASA_COLLECTOR_HEALTH_CHECK_MAX_AGE` (default 120s, and never less than two fetch intervals) and written by the container's current process (judged by the kernel's process start times and boot id, so a wall-clock step does not affect it), so a restarted container can't inherit its predecessor's verdict. File output on or off makes no difference.
 
-Through 2026.10.1 the check trusted the newest `.jsonl` in the output directory (a persistent mount, so a file left by the previous build counted), and with file output off it was always healthy.
-
 Inspect and tune:
 
 ```bash
@@ -232,16 +236,16 @@ python-kasa resolves each device's timezone via `zoneinfo`, and TP-Link's timezo
 
 ### Connection cleanup / transport leaks
 
-Long-running deployments seeing transport churn can extend the cleanup windows:
+Each device's disconnect, at shutdown and when a device is replaced, gets `KASA_COLLECTOR_TRANSPORT_CLEANUP_TIMEOUT` seconds before it is abandoned; the whole shutdown gets `KASA_COLLECTOR_SHUTDOWN_TIMEOUT`. A slow network can extend both:
 
 ```bash
 KASA_COLLECTOR_TRANSPORT_CLEANUP_TIMEOUT=10   # default 5 seconds
 KASA_COLLECTOR_SHUTDOWN_TIMEOUT=15            # default 10 seconds
 ```
 
-### "malformed JSON, retrying"
+### A device returns readings that cannot be stored
 
-The device returned invalid data; the collector retries automatically. If it persists, power-cycle the device or update its firmware.
+A malformed reply is not retried within the cycle: the device counts as `failed` in `collector_stats` and is read again on the next cycle. Only network errors are retried. If it persists, power-cycle the device or update its firmware.
 
 ## Testing
 
@@ -251,7 +255,7 @@ The device returned invalid data; the collector retries automatically. If it per
 make test-e2e
 ```
 
-This builds the image and brings up fake Kasa emulators (`harness/fake_kasa.py`, speaking the real IOT protocol) plus an ephemeral InfluxDB on a bridge network, then asserts emeter data lands in the `emeter` measurement before tearing everything down. No hardware and no published ports, so it's CI-safe. The harness covers emeter plugs (HS110/KP115), a non-emeter plug (HS103), and a 6-outlet strip (HS300). See [Testing](testing.md).
+This builds the image and brings up fake Kasa emulators (`harness/fake_kasa.py` for IOT, `harness/fake_smart.py` for SMART/KLAP) plus an ephemeral InfluxDB on a bridge network, then asserts emeter data lands in the `emeter` measurement before tearing everything down. No hardware and no published ports, so it's CI-safe. The harness covers HS110/KP115 emeter plugs, a non-emeter HS103, a 6-outlet HS300, a plug that goes deaf to discovery, a 2-outlet strip whose outlets share a name, a legacy-units plug, a SMART P316M strip and an HS300 behind KLAP. See [Testing](testing.md).
 
 ### See it work interactively
 
@@ -265,18 +269,18 @@ For unit tests and linting: `make test`, `make lint`, `make check`.
 ## Debugging tips
 
 - **Follow logs:** `docker logs -f kasa-collector`
-- **Turn on debug:** `KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR=DEBUG`
+- **Turn on debug:** `KASA_COLLECTOR_LOG_LEVEL_KASA_COLLECTOR=DEBUG`, with `LOG_FORMAT=text` for readable lines instead of JSON
 - **Write raw data to disk:** `KASA_COLLECTOR_WRITE_TO_FILE=true` and `KASA_COLLECTOR_OUTPUT_DIR=/app/output` — inspect device detail in the `.jsonl` files.
 - **Isolate one device:** `KASA_COLLECTOR_DEVICE_HOSTS=192.168.1.100` with `KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY=false`.
-- **Shell into the container:** `make dev-shell`
+- **Shell into the container:** `make shell` (the collector-only stack) or `docker exec -it kasa-collector /bin/bash`
 
 ______________________________________________________________________
 
 ## FAQ
 
-**Does the collector need to be on the same network/VLAN as my devices?** For **auto-discovery**, yes — it depends on UDP broadcast reaching devices and their replies coming back. For **manual hosts** (`KASA_COLLECTOR_DEVICE_HOSTS`), no: those connect directly over TCP via `discover_single()` and work across subnets with routing, no broadcast needed.
+**Does the collector need to be on the same network/VLAN as my devices?** For **auto-discovery**, yes — it depends on UDP broadcast reaching devices and their replies coming back. For **manual hosts** (`KASA_COLLECTOR_DEVICE_HOSTS`), no: those are queried directly by `discover_single()` and work across subnets with routing, no broadcast needed.
 
-**Can I run without auto-discovery?** Yes, and it's often preferable on segmented networks. Set `KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY=false` and list IPs in `KASA_COLLECTOR_DEVICE_HOSTS`. Since 2025.7.0, manual hosts use `discover_single()` for correct cross-subnet protocol detection.
+**Can I run without auto-discovery?** Yes, and it's often preferable on segmented networks. Set `KASA_COLLECTOR_ENABLE_AUTO_DISCOVERY=false` and list IPs in `KASA_COLLECTOR_DEVICE_HOSTS`. Manual hosts use `discover_single()`, which detects each device's protocol across subnets.
 
 **Why does the container need `network_mode: host`?** Only for UDP broadcast discovery. If you use manual hosts exclusively, bridge networking with the right routing can work.
 
@@ -284,7 +288,7 @@ ______________________________________________________________________
 
 **How often does it poll?** Energy data every 15s (`KASA_COLLECTOR_DATA_FETCH_INTERVAL`), system info every 60s (`KASA_COLLECTOR_SYSINFO_FETCH_INTERVAL`).
 
-**Are all Kasa devices supported?** Most smart plugs and power strips, especially those with energy monitoring. Devices without an energy meter still report system info but naturally have no `emeter` data.
+**Are all Kasa devices supported?** Most smart plugs and power strips, especially those with energy monitoring. Devices without an energy meter are discovered and registered, but nothing is collected from them.
 
 **How do I check the collector is healthy?**
 

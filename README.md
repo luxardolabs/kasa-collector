@@ -24,7 +24,7 @@ Ready to plug into your own InfluxDB and Grafana? Point a single container at yo
 services:
   kasa-collector:
     # Pin a release (see the Releases page) so you know which bits you run.
-    image: ghcr.io/luxardolabs/kasa-collector:2026.10.2
+    image: ghcr.io/luxardolabs/kasa-collector:2026.11.1
     container_name: kasa-collector
     network_mode: host
     restart: unless-stopped
@@ -38,13 +38,19 @@ services:
       # Optional — required only for newer SMART/KLAP devices
       # KASA_COLLECTOR_TPLINK_USERNAME: your-email@example.com
       # KASA_COLLECTOR_TPLINK_PASSWORD: your-password
+    volumes:
+      # The roster of devices found (known_devices.json), kept across container recreates
+      - kasa_collector_output:/app/output
+
+volumes:
+  kasa_collector_output:
 ```
 
 See [Getting Started](docs/getting-started.md) for the full walkthrough and [Configuration](docs/configuration.md) for every setting.
 
 ## The four stacks
 
-Everything is driven by `make`. There is one `compose.yml`; the stack is a compose **profile** and the environment is the `.env.<env>` file. **Compose never builds** — `make` builds each image and compose runs it by a pinned tag, so no registry is needed for any local stack.
+Everything is driven by `make`. There is one `compose.yml`; the stack is a compose **profile** and the environment is the `.env.<env>` file. **Compose never builds**: the stacks run the published collector image by a pinned tag. The demo builds only its fake-device emulator locally, and `make test-e2e` builds the collector from source, so none of them needs a registry of your own.
 
 | Stack              | Command         | What it does                                                                    |
 | ------------------ | --------------- | ------------------------------------------------------------------------------- |
@@ -58,11 +64,11 @@ The demo and local stacks serve Grafana at http://localhost:3000 (`admin`, with 
 ## Features
 
 - **Automatic discovery** — finds Kasa devices via network broadcast; manual/cross-subnet hosts supported too
-- **Per-outlet monitoring** — individual emeter data for each outlet on HS300-style power strips
+- **Per-outlet monitoring** — individual emeter data for each outlet on HS300-style IOT strips and SMART strips such as the P316M
 - **Energy + system metrics** — power, current, voltage, and cumulative consumption every 15s; system info every 60s
-- **Async InfluxDB writes** — one awaited batch per poll cycle over aiohttp
+- **Async InfluxDB writes** — one awaited write per device (a strip's points together) each poll cycle, over aiohttp
 - **Authentication** — works with newer SMART/KLAP devices requiring TP-Link account credentials
-- **Grafana dashboards** — pre-built and auto-provisioned in the demo and dev stacks
+- **Grafana dashboards** — pre-built and auto-provisioned in the demo, local and dev stacks
 - **Docker healthcheck** — `python -m app.health.check`, no web server required
 - **Graceful shutdown** — comprehensive resource and transport cleanup for long-running deployments
 - **Multi-arch** — published for amd64 and arm64
@@ -83,9 +89,11 @@ The demo and local stacks serve Grafana at http://localhost:3000 (`admin`, with 
 Issues and pull requests are welcome. The full local check runs in Docker (no host Python required):
 
 ```bash
-make check    # lint + arch + audit + test + gitleaks secret scan
+make check    # guard pin check, then lint + mypy + test + arch + audit + gitleaks secret scan
 make hooks    # install the git hooks that run the secret scan on commit/push
 ```
+
+`make check`'s guard legs (the pin check, lint, mypy, arch and audit) pull the maintainers' private guard images, which a `Makefile.local` points at (see `Makefile.local.example`). Without one, lint and mypy are skipped and the pin check fails, so an outside contributor's check is `make test` and `make test-e2e`.
 
 See [Testing](docs/testing.md) for the individual targets.
 
