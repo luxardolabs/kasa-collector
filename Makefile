@@ -132,6 +132,9 @@ PROD_NODE ?=
 PROD_USER ?= root
 PROD_DIR  ?= /opt/kasa-collector
 PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
+# Compose on the node is handed its project directory, file and env file on the command
+# itself, so what it interpolates does not depend on the directory the ssh shell starts in.
+PROD_REMOTE_DC = docker compose --project-directory $(PROD_DIR) -f $(PROD_DIR)/compose.yml --env-file $(PROD_DIR)/.env.prod --profile collector
 
 .PHONY: help version \
         publish-sha dev-deploy dev-pin harness-build release release-public gh-release buildx-setup smoke \
@@ -2254,17 +2257,17 @@ prod-sync: check-prod-node ## Push compose.yml + .env.prod to the node (repo is 
 	@printf "✓ synced config to $(PROD_NODE):$(PROD_DIR)\n"
 
 prod-deploy: check-prod-node ## Pull the pinned release + recreate the collector on the node (run release first)
-	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) pull && $(PROD_DC) up -d'
+	$(PROD_SSH) '$(PROD_REMOTE_DC) pull && $(PROD_REMOTE_DC) up -d'
 	@printf "✓ deployed to $(PROD_NODE)\n"
 
 prod-status: check-prod-node ## Container status on the node
-	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) ps'
+	$(PROD_SSH) '$(PROD_REMOTE_DC) ps'
 
 prod-logs-remote: check-prod-node ## Follow collector logs on the node
-	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) logs --tail=100 -f'
+	$(PROD_SSH) '$(PROD_REMOTE_DC) logs --tail=100 -f'
 
 prod-health: check-prod-node ## Run the in-container health check on the node
-	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) exec -T kasa-collector python3 -m app.health.check'
+	$(PROD_SSH) '$(PROD_REMOTE_DC) exec -T kasa-collector python3 -m app.health.check'
 
 prod-rollback: check-prod-node ## List image tags cached on the node for rollback
 	$(PROD_SSH) 'docker images $(REGISTRY)/$(IMAGE_NAME) --format "table {{.Tag}}\t{{.CreatedAt}}"'
