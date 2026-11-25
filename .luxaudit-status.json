@@ -7,7 +7,8 @@
   "summary": {
     "PASS": 32,
     "FAIL": 0,
-    "XFAIL": 0
+    "XFAIL": 0,
+    "INERT": 1
   },
   "vulnerable": [],
   "deferred": [],
@@ -18,11 +19,13 @@
   "by_public_version": [],
   "warnings": [],
   "image": {
-    "ref": "luxardolabs/kasa-collector:2026.11.0",
-    "inert": false,
-    "inert_reason": "",
-    "error": "the registry has luxardolabs/kasa-collector:2026.11.0, but the scanner could not read it as an image: nt: no podman socket found: stat podman/podman.sock: no such file or directory\n\t* remote error: GET https://<registry>/v2/luxardolabs/kasa-collector/manifests/sha256:5a3b20d5f505fdcf8a209e3d8552a2de592490be8ca21ff684505821d8b89380: MANIFEST_UNKNOWN: manifest unknown; map[Name:luxardolabs/kasa-collector Revision:sha256:5a3b20d5f505fdcf8a209e3d8552a2de592490be8ca21ff684505821d8b89380]",
-    "not_released": [],
+    "ref": "luxardolabs/kasa-collector:2026.11.1",
+    "inert": true,
+    "inert_reason": "luxardolabs/kasa-collector:2026.11.1: not in the registry, so nothing was released at this VERSION. A deploy that pins `:sha-\u2026` is not visible from the mount; name it in `[image] refs`",
+    "error": "",
+    "not_released": [
+      "luxardolabs/kasa-collector:2026.11.1"
+    ],
     "vulnerable": [],
     "deferred": []
   },
@@ -31,6 +34,6 @@
     "expired": [],
     "unjudged": []
   },
-  "commit": "d186de20c6dbd0a355982b617e9d1b09988382f3",
-  "generated_at": "2026-11-25T04:12:11Z"
+  "commit": "86b703d12dd6977a65cacfa974237fb599169c2e",
+  "generated_at": "2026-11-25T05:09:35Z"
 }
