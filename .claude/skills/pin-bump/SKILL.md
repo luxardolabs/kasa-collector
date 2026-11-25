@@ -3,7 +3,7 @@ name: pin-bump
 description: Move this repo to the latest fleet guards (luxarch, luxlint, luxaudit) the fleet way — bump the pins, read what changed, re-emit every asset whose version moved, fix every new red in the bump's own change (escalating a guard that is wrong), review every open guard escalation this repo filed against the new version, and regenerate and commit the status files. Use whenever guard-version-check says a pin is behind.
 ---
 
-<!-- luxarch:pin-bump-skill asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit pin-bump-skill`. -->
+<!-- luxarch:pin-bump-skill asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit pin-bump-skill`. -->
 
 # Pin bump
 
@@ -13,7 +13,7 @@ The runnable guard upgrade for this repo. Emitted from luxarch (`luxarch --emit 
 
 ## 0. The bump's issue
 
-A bump runs in its issue's worktree. When no open issue in this repo's project covers this bump, file it yourself: search first (`luxpm_list_issues(project=<this repo's project>, search="guard bump")`), then `luxpm_create_issue` with `project` set to this repo's project, `state: in_progress`, titled with the versions (`Guard bump to luxarch <version>`), and no `waiting_on`. The emitted `no-new-follow-ups` hook allows a create of work started now; never ask the owner to file it, and never reopen the last bump's closed issue. Then enter its worktree.
+A bump runs in its issue's worktree. When no open issue in this repo's project covers this bump, file it yourself: search first (`luxpm_list_issues(project=<this repo's project>, search="guard bump")`), then `luxpm_create_issue` with `project` set to this repo's project, `state: in_progress`, titled with the versions (`Guard bump to luxarch <version>`), and no `waiting_on`. In a repo whose `.luxarch.toml` declares `[agents] roles`, it also carries your own route, `agent:<your role>`, written exactly as `/fleet-start` prints your queue, and no other. The emitted `no-new-follow-ups` hook allows a create of work started now; never ask the owner to file it, and never reopen the last bump's closed issue. Then enter its worktree.
 
 **Evidence:** the issue key and the worktree entered.
 

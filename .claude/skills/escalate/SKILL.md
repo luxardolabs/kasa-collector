@@ -3,7 +3,7 @@ name: escalate
 description: Escalate a fleet guard (luxarch, luxlint, luxaudit, luxios) the fleet way when a red is genuinely wrong or a guard conflicts with a standard — search LuxPM first, file a self-contained fleet-escalation in this repo's project with a repro and numbers, and leave the red lit while it is open.
 ---
 
-<!-- luxarch:escalate-skill asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit escalate-skill`. -->
+<!-- luxarch:escalate-skill asset v10 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit escalate-skill`. -->
 
 # Escalate a guard
 
@@ -48,6 +48,7 @@ The emitted `escalation-remedy-tried` hook (`luxarch --emit hooks`) denies filin
 
 - Title `[<guard> ESCALATION] <the defect in one line>`; one defect shared by two guards is one escalation, `[<guard>/<guard> ESCALATION] …` (`[luxarch/luxlint ESCALATION]`).
 - Label **`fleet-escalation`**. An unlabelled escalation is missed by the maintainer's sweep.
+- In a repo whose `.luxarch.toml` declares `[agents] roles`, also label it with your own role, `agent:<your role>`, spelled exactly as `/fleet-start` prints your queue: the maintainer's answer comes back to you, and no other agent of this repo works it (`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, "Every open issue is routed").
 - `state: todo` and `waiting_on: <guard> maintainer`. It stays open, never `on_hold` or `backlog`: an agent parks only on a question to the owner. The maintainer replaces `waiting_on` with your next step when they answer, and `/fleet-start` shows you every escalation whose `waiting_on` names you.
 - `project` absent or this repo's own project code: the emitted `no-new-follow-ups` hook passes an escalation only filed here, titled and labelled as above, against a guard that is not this repo's own (its other routes, work started now and a handoff, carry no escalation title or label).
 - Self-contained: the maintainer reads it cold, so include the repro, numbers, evidence and **Verify** block above, a suggested fix if you have one, and what this repo did meanwhile.

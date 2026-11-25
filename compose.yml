@@ -53,11 +53,21 @@ name: kasa-collector
 # Real `.env.dev` / `.env.prod` are gitignored (TAG/REGISTRY/ports/secrets);
 # `.env.example` is the committed template and `.env.demo` ships public defaults.
 
+# Every deployed service logs through this one block: the daemon's json-file driver keeps at
+# most 5 files of 10 MB per container, so a service logging a traceback per poll cannot fill
+# the node's disk. A host whose daemon logs elsewhere sets LOG_DRIVER in its env file.
+x-logging: &logging
+  driver: ${LOG_DRIVER:-json-file}
+  options:
+    max-size: "${LOG_MAX_SIZE:-10m}"
+    max-file: "${LOG_MAX_FILE:-5}"
+
 # What the dev and demo InfluxDB + Grafana pairs share; each service adds its profile,
 # names, volumes and network. oom_score_adj -500: the stacks rank last for the OOM killer.
 x-influx: &influx
   image: influxdb:2.7
   oom_score_adj: -500
+  logging: *logging
   environment:
     DOCKER_INFLUXDB_INIT_MODE: setup
     DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
@@ -75,6 +85,7 @@ x-influx: &influx
 x-grafana: &grafana
   image: grafana/grafana:11.3.0
   oom_score_adj: -500
+  logging: *logging
   environment: &grafana-env
     GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
     GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
@@ -90,6 +101,7 @@ services:
     profiles: [collector]
     oom_score_adj: -500
     container_name: kasa-collector
+    logging: *logging
     image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
     env_file:
       # The --env-file passed on the command line supplies compose interpolation, not
@@ -205,6 +217,7 @@ services:
   kasa_fake_hs110:
     profiles: [demo, e2e]
     oom_score_adj: -500
+    logging: *logging
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug
@@ -217,6 +230,7 @@ services:
   kasa_fake_kp115:
     profiles: [demo, e2e]
     oom_score_adj: -500
+    logging: *logging
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug
@@ -231,6 +245,7 @@ services:
   kasa_fake_hs103:
     profiles: [demo, e2e]
     oom_score_adj: -500
+    logging: *logging
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: plug_noemeter
@@ -242,6 +257,7 @@ services:
   kasa_fake_hs300:
     profiles: [demo, e2e]
     oom_score_adj: -500
+    logging: *logging
     image: kasa-collector-fake:test
     environment:
       KASA_FAKE_KIND: strip
@@ -343,6 +359,7 @@ services:
     profiles: [demo]
     oom_score_adj: -500
     container_name: kasa-collector-demo
+    logging: *logging
     image: ${REGISTRY:?set REGISTRY in .env.<env>}/luxardolabs/kasa-collector:${TAG:?set TAG in .env.<env>}
     env_file:
       - ${ENV_FILE:-.env.demo}
