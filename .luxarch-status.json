@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.373.1",
+  "guard_version": "0.375.0",
   "repo": "/repo",
   "targets": [
     {
@@ -824,6 +824,18 @@
         "example": ""
       },
       {
+        "rule": "repo.compose_logs_bounded",
+        "status": "INERT",
+        "since": "0.374.0",
+        "violations": 0,
+        "crashed": false,
+        "deferred": false,
+        "inert": true,
+        "inert_reason": "the values compose interpolates into `logging:` cannot all be read, so no verdict: `docker compose ?` in `Makefile` after `cd` moves the directory compose resolves `--env-file` from. Hand compose its env files as `--env-file <committed file>` on the starting command itself, from the repo's directory",
+        "fix": "",
+        "example": ""
+      },
+      {
         "rule": "repo.compose_pg_healthcheck_tcp",
         "status": "INERT",
         "since": "0.358.0",
@@ -1057,7 +1069,7 @@
       "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
-      "INERT": 7
+      "INERT": 8
     }
   },
   "summary": {
@@ -1065,8 +1077,8 @@
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 10
+    "INERT": 11
   },
-  "commit": "99906c3cd8c609589fca2e9befb64b2924cbf963",
-  "generated_at": "2026-11-20T23:46:48Z"
+  "commit": "66033eef9cdd447308f4ee7257b59d19acb28c0a",
+  "generated_at": "2026-11-25T00:11:00Z"
 }
