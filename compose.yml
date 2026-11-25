@@ -75,6 +75,9 @@ x-influx: &influx
     DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
     DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
     DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    # Read by ops/influxdb/init-dbrp.sh on first start: the password of Grafana's
+    # read-only v1 user `grafana`.
+    GRAFANA_INFLUX_PASSWORD: ${GRAFANA_INFLUX_PASSWORD:-}
   healthcheck:
     test: ["CMD", "influx", "ping"]
     interval: 5s
@@ -91,7 +94,9 @@ x-grafana: &grafana
     GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
     GF_USERS_ALLOW_SIGN_UP: "false"
     INFLUX_BUCKET: ${INFLUX_BUCKET}
-    INFLUX_TOKEN: ${INFLUX_TOKEN}
+    # Grafana signs in to InfluxDB as the read-only v1 user `grafana`, never with the
+    # operator token: its datasource proxy lends the credentials to every Grafana user.
+    GRAFANA_INFLUX_PASSWORD: ${GRAFANA_INFLUX_PASSWORD:-}
   restart: unless-stopped
 
 services:

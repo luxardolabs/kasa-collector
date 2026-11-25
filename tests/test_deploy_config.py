@@ -124,6 +124,35 @@ def test_each_grafana_reaches_its_own_stacks_influxdb() -> None:
     )
 
 
+def test_grafana_never_holds_the_influxdb_admin_token() -> None:
+    """Grafana's datasource proxy forwards any path with the datasource's credentials, so
+    every Grafana user (Viewers too) can use them. They must be read-only: the v1 user
+    `grafana` with READ on the one bucket, never the InfluxDB operator token."""
+    datasource = (
+        REPO / "grafana" / "provisioning" / "datasources" / "influxdb.yml"
+    ).read_text()
+    assert "INFLUX_TOKEN" not in datasource
+    assert "user: grafana" in datasource
+    assert "password: ${GRAFANA_INFLUX_PASSWORD}" in datasource
+
+    grafana_env = COMPOSE.split("x-grafana: &grafana")[1].split("\nservices:")[0]
+    assert "INFLUX_TOKEN" not in grafana_env
+    assert "GRAFANA_INFLUX_PASSWORD" in grafana_env
+    for grafana in ("kasa_grafana", "kasa_local_grafana"):
+        assert "INFLUX_TOKEN" not in _service(grafana), grafana
+
+    influx_env = COMPOSE.split("x-influx: &influx")[1].split("\nx-")[0]
+    assert "GRAFANA_INFLUX_PASSWORD" in influx_env
+
+    init = (REPO / "ops" / "influxdb" / "init-dbrp.sh").read_text()
+    assert "influx v1 auth create" in init
+    assert "--read-bucket" in init
+    assert "--write-bucket" not in init
+
+    for env_file in (".env.example", ".env.demo"):
+        assert "GRAFANA_INFLUX_PASSWORD=" in (REPO / env_file).read_text(), env_file
+
+
 def test_the_env_template_sets_up_influxdb_with_the_credentials_the_collector_writes_with() -> (
     None
 ):
@@ -270,3 +299,58 @@ def test_the_dev_grafana_does_not_start_when_its_password_cannot_be_set(
     assert run.returncode == 1
     assert "REFUSING" in run.stderr
     assert len(calls) == 1
+
+
+INIT_DBRP = REPO / "ops" / "influxdb" / "init-dbrp.sh"
+
+
+def _init(tmp_path: Path, password: str, auth_create_exit: int):
+    """Run the InfluxDB init script with a stand-in `influx`: one call per line in
+    `<tmp>/calls`; `bucket list` prints an id; `v1 auth create` exits as told."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    cli = bin_dir / "influx"
+    cli.write_text(
+        "#!/bin/sh\n"
+        f'for a in "$@"; do printf "[%s]" "$a"; done >> {calls}; echo >> {calls}\n'
+        'case "$1 $2" in\n'
+        '  "bucket list") printf "0123456789abcdef\\tkasa\\n" ;;\n'
+        f'  "v1 auth") exit {auth_create_exit} ;;\n'
+        "esac\n"
+    )
+    cli.chmod(0o755)
+    run = subprocess.run(
+        ["/bin/sh", str(INIT_DBRP)],
+        env={
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "DOCKER_INFLUXDB_INIT_ORG": "kasa",
+            "DOCKER_INFLUXDB_INIT_BUCKET": "kasa",
+            "GRAFANA_INFLUX_PASSWORD": password,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return run, calls.read_text().splitlines()
+
+
+def test_a_failed_grafana_user_never_ends_the_influxdb_init(tmp_path: Path) -> None:
+    """InfluxDB refuses a password outside 8-72 characters. The image keeps /etc/influxdb2
+    from a failed setup, so an init that exits non-zero leaves a fresh volume that never
+    starts again: the failure is logged, and the init still succeeds."""
+    run, calls = _init(tmp_path, "kasa123", auth_create_exit=1)
+    assert run.returncode == 0, run.stderr
+    assert "init-dbrp: ERROR: could not create read-only user 'grafana'" in run.stderr
+    assert any(c.startswith("[v1][dbrp][create]") for c in calls)
+
+
+def test_the_grafana_password_is_one_argument_even_with_a_leading_dash(
+    tmp_path: Path,
+) -> None:
+    """`--password <value>` reads a value starting with `-` as a flag."""
+    run, calls = _init(tmp_path, "-leading-dash-pw", auth_create_exit=0)
+    assert run.returncode == 0, run.stderr
+    create = [c for c in calls if c.startswith("[v1][auth][create]")]
+    assert create and "[--password=-leading-dash-pw]" in create[0]
+    assert "[--read-bucket][0123456789abcdef]" in create[0]

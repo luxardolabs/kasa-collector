@@ -272,7 +272,7 @@ Then in Grafana, add an **InfluxDB** datasource in **InfluxQL** mode:
 
 - **URL:** your InfluxDB 2.x address (e.g. `http://influxdb:8086`).
 - **Database:** the bucket name (the v1 database you just mapped).
-- **Auth:** add a custom HTTP header `Authorization: Token <your-token>` (InfluxDB 2.x's v1-compat API authenticates via a token header, not v1 user/password).
+- **Auth:** a read-only sign-in, never your write or operator token. Grafana's datasource proxy lends the datasource's credentials to every Grafana user, so a token that can write lets any of them write to or delete the bucket. Create a v1 user with read access to the one bucket (`influx v1 auth create --org <org> --username grafana --password <password> --read-bucket <bucket-id>`) and set it as the datasource's **User** and **Password**. This is what the bundled stacks do (`ops/influxdb/init-dbrp.sh`).
 
 Point the collector at the same server with the `KASA_COLLECTOR_INFLUXDB_*` variables, then import the dashboards — see [grafana-dashboards.md](grafana-dashboards.md).
 

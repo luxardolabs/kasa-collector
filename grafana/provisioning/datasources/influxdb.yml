@@ -1,8 +1,9 @@
 # Grafana datasource for the bundled InfluxDB. The dashboards use InfluxQL and
-# reference datasource uid "uDxwFcOGz", so this pins that uid. Auth to InfluxDB
-# 2.x's v1-compat API is via an Authorization: Token header. Values come from the
-# env compose passes into the Grafana container: INFLUX_HOST names that stack's
-# InfluxDB service (kasa_influxdb for dev, kasa_local_influxdb for local and demo).
+# reference datasource uid "uDxwFcOGz", so this pins that uid. InfluxQL on InfluxDB 2.x is
+# the v1-compatibility API; Grafana signs in as the v1 user `grafana`, which the InfluxDB
+# init script (ops/influxdb/init-dbrp.sh) creates with READ access to the one bucket.
+# Never the admin token: Grafana's datasource proxy forwards any path with these
+# credentials, so every Grafana user, Viewers included, can use them.
 apiVersion: 1
 
 datasources:
@@ -10,13 +11,16 @@ datasources:
     uid: uDxwFcOGz
     type: influxdb
     access: proxy
+    # Each stack's Grafana service sets INFLUX_HOST to its own InfluxDB: kasa_influxdb's
+    # pinned address for dev, kasa_local_influxdb for local and demo.
     url: http://${INFLUX_HOST}:8086
     isDefault: true
+    user: grafana
     jsonData:
       version: InfluxQL
       dbName: ${INFLUX_BUCKET}
       httpMode: GET
-      httpHeaderName1: Authorization
     secureJsonData:
-      httpHeaderValue1: Token ${INFLUX_TOKEN}
-    editable: true
+      password: ${GRAFANA_INFLUX_PASSWORD}
+    # Provisioned, not editable: the URL and credentials come from this file only.
+    editable: false

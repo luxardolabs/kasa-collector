@@ -102,7 +102,7 @@ Work from the collector outward.
 
 1. **Is the collector writing?** `docker logs kasa-collector` should show discovery/authentication and periodic fetch cycles. Auth or connection errors here mean no data is being produced — fix those first (see above).
 
-1. **Datasource shape (your own InfluxDB 2.x).** The bundled dashboards are written in **InfluxQL**, so an InfluxDB 2.x server needs a **v1 DBRP mapping** plus a Grafana datasource configured in **InfluxQL mode** (token-header auth). The bundled dev/demo stacks do this for you automatically (`ops/influxdb/init-dbrp.sh`, Grafana datasource uid `uDxwFcOGz`). If you point the collector at **your own** InfluxDB 2.x, you must create the DBRP mapping and configure the datasource yourself, or the dashboards will render empty even though data is landing. See [grafana-dashboards.md](grafana-dashboards.md).
+1. **Datasource shape (your own InfluxDB 2.x).** The bundled dashboards are written in **InfluxQL**, so an InfluxDB 2.x server needs a **v1 DBRP mapping** plus a Grafana datasource configured in **InfluxQL mode**, signing in with a read-only v1 user. The bundled dev/demo stacks do this for you automatically (`ops/influxdb/init-dbrp.sh`, Grafana datasource uid `uDxwFcOGz`). If you point the collector at **your own** InfluxDB 2.x, you must create the DBRP mapping and configure the datasource yourself, or the dashboards will render empty even though data is landing. See [grafana-dashboards.md](grafana-dashboards.md).
 
 1. **Query the right measurements.** Data is split across:
 
@@ -187,7 +187,7 @@ done
 
 The volume names assume the default compose project, `kasa-collector`. If your env file sets `COMPOSE_PROJECT_NAME`, use that prefix instead (`docker volume ls | grep kasa` lists them).
 
-The copied data keeps the credentials it was created with: InfluxDB and Grafana read `INFLUX_*` and `GRAFANA_PASSWORD` only when they create their database. So build `.env.local` from your old `.env.dev`, not from a fresh template: keep its `INFLUX_USER`, `INFLUX_PASSWORD`, `INFLUX_ORG`, `INFLUX_BUCKET`, `INFLUX_TOKEN`, `GRAFANA_PASSWORD` and `KASA_COLLECTOR_INFLUXDB_ORG` / `_BUCKET` / `_TOKEN`, set `ENV_FILE=.env.local` and `KASA_COLLECTOR_INFLUXDB_URL=http://localhost:8086`, and leave `COMPOSE_PROFILES` as it is (`make local-up` names its own).
+The copied data keeps the credentials it was created with: InfluxDB and Grafana read `INFLUX_*` and `GRAFANA_PASSWORD` only when they create their database. So build `.env.local` from your old `.env.dev`, not from a fresh template: keep its `INFLUX_USER`, `INFLUX_PASSWORD`, `INFLUX_ORG`, `INFLUX_BUCKET`, `INFLUX_TOKEN`, `GRAFANA_PASSWORD`, `GRAFANA_INFLUX_PASSWORD` and `KASA_COLLECTOR_INFLUXDB_ORG` / `_BUCKET` / `_TOKEN`, set `ENV_FILE=.env.local` and `KASA_COLLECTOR_INFLUXDB_URL=http://localhost:8086`, and leave `COMPOSE_PROFILES` as it is (`make local-up` names its own).
 
 ### Container shows unhealthy
 

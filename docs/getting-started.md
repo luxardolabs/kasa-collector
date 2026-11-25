@@ -40,8 +40,9 @@ Same self-contained InfluxDB and Grafana as the demo, but the collector uses hos
 cp .env.example .env.local
 # in .env.local: REGISTRY=ghcr.io, TAG=<a released version> (e.g. 2026.10.2), ENV_FILE=.env.local,
 # KASA_COLLECTOR_INFLUXDB_URL=http://localhost:8086, and secrets of your own for
-# INFLUX_PASSWORD, GRAFANA_PASSWORD and INFLUX_TOKEN (the InfluxDB operator token; put the
-# same value in KASA_COLLECTOR_INFLUXDB_TOKEN). ORG and BUCKET must match the same way.
+# INFLUX_PASSWORD, GRAFANA_PASSWORD, GRAFANA_INFLUX_PASSWORD (Grafana's read-only InfluxDB
+# sign-in) and INFLUX_TOKEN (the InfluxDB operator token; put the same value in
+# KASA_COLLECTOR_INFLUXDB_TOKEN). ORG and BUCKET must match the same way.
 make local-up
 ```
 
