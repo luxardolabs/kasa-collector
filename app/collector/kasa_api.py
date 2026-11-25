@@ -79,10 +79,13 @@ async def _close_quietly(device: Device) -> None:
     A discovered device whose probe failed still holds an open aiohttp session; left
     to garbage collection the event loop logs ``Unclosed client session`` / ``Unclosed
     connector``. Closing it here is cleanup on an object we are about
-    to drop, so a failure to close is itself nothing to act on.
+    to drop, so a failure to close is itself nothing to act on. The close is bounded by
+    ``KASA_COLLECTOR_TRANSPORT_CLEANUP_TIMEOUT``: a device that stops answering mid-close
+    is abandoned rather than holding its caller.
     """
     try:
-        await device.disconnect()
+        async with asyncio.timeout(Config.KASA_COLLECTOR_TRANSPORT_CLEANUP_TIMEOUT):
+            await device.disconnect()
     # swallowed-exceptions: HANDLED -- this is best-effort cleanup of an object being
     # discarded; the only consequence of a failure is the very log line we are avoiding.
     except Exception as close_error:
@@ -582,14 +585,16 @@ class KasaAPI:
         and clean up resources. Errors during disconnection are logged
         but not raised to avoid masking original errors during shutdown.
 
-        Safe to call with None or already disconnected devices.
+        Safe to call with None or already disconnected devices. The disconnect is bounded
+        by ``KASA_COLLECTOR_TRANSPORT_CLEANUP_TIMEOUT``, so a device that stops answering
+        mid-close cannot hold shutdown or a replaced device's cleanup.
         """
         if not device:
             return
 
         try:
-            # Use the official disconnect method
-            await device.disconnect()
+            async with asyncio.timeout(Config.KASA_COLLECTOR_TRANSPORT_CLEANUP_TIMEOUT):
+                await device.disconnect()
             logger.debug(
                 "Disconnected from device %s", getattr(device, "host", "unknown")
             )

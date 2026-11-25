@@ -538,7 +538,8 @@ async def main() -> None:
 
     # Install signal handlers so `docker stop` / k8s termination (SIGTERM) and
     # Ctrl-C (SIGINT) both trigger a graceful shutdown. Without this, SIGTERM sent
-    # to PID 1 is dropped and buffered InfluxDB writes never flush.
+    # to PID 1 is dropped and the container is killed without closing its InfluxDB
+    # and device connections. Writes are awaited every cycle, so nothing is buffered.
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):

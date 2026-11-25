@@ -5,7 +5,7 @@ loading values from environment variables with validation and type conversion.
 It provides a centralized configuration class with all settings as class attributes.
 
 The configuration includes settings for:
-    - InfluxDB connection and batching
+    - InfluxDB connection
     - Device discovery and management
     - Data collection intervals
     - Authentication and timeouts
@@ -149,7 +149,7 @@ class Config:
         - Retry/Timeout: Connection and operation timeouts
         - Discovery: Device discovery intervals and settings
         - Data Collection: Polling intervals for different data types
-        - InfluxDB: Database connection and batching settings
+        - InfluxDB: Database connection settings
         - Logging: Component-specific log levels
         - Authentication: TP-Link account credentials
         - Health Check: Container health monitoring settings
@@ -268,9 +268,9 @@ class Config:
     )
     """Bucket name for storing time-series data in InfluxDB (required)."""
 
-    # InfluxDB writes are batched per poll cycle by the asyncio-native client — each
-    # cycle's points go out in a single awaited request — so there is no batch-size
-    # or flush-interval setting to configure.
+    # InfluxDB writes are awaited inline by the asyncio-native client — one request per
+    # device (a strip's points together) per cycle — so there is no batch-size or
+    # flush-interval setting to configure.
 
     # Logging configuration
     KASA_COLLECTOR_LOG_LEVEL_KASA_API: str = _get_log_level(
@@ -345,7 +345,7 @@ class Config:
     KASA_COLLECTOR_TRANSPORT_CLEANUP_TIMEOUT: int = _get_int_config(
         "KASA_COLLECTOR_TRANSPORT_CLEANUP_TIMEOUT", default=5, min_value=1
     )
-    """Timeout in seconds for cleaning up device transport connections."""
+    """Seconds allowed for each device's disconnect (KasaAPI.disconnect_device, _close_quietly)."""
 
     KASA_COLLECTOR_SHUTDOWN_TIMEOUT: int = _get_int_config(
         "KASA_COLLECTOR_SHUTDOWN_TIMEOUT", default=10, min_value=1

@@ -1,5 +1,6 @@
-# Grafana datasource for the bundled InfluxDB. The dashboards use InfluxQL and
-# reference datasource uid "uDxwFcOGz", so this pins that uid. InfluxQL on InfluxDB 2.x is
+# Grafana datasource for the bundled InfluxDB. The dashboards use InfluxQL and pick their
+# datasource through a `data_source` variable; uid "uDxwFcOGz" is pinned so the datasource
+# keeps one identity across restarts and re-provisioning. InfluxQL on InfluxDB 2.x is
 # the v1-compatibility API; Grafana signs in as the v1 user `grafana`, which the InfluxDB
 # init script (ops/influxdb/init-dbrp.sh) creates with READ access to the one bucket.
 # Never the admin token: Grafana's datasource proxy forwards any path with these

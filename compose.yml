@@ -125,7 +125,10 @@ services:
       start_period: 30s
       retries: 3
     volumes:
-      - ${OUTPUT_DIR:-/mnt/docker/kasa-collector/output}:/app/output
+      # A named volume by default: it starts out owned by the image's collector user. A host
+      # path in OUTPUT_DIR must already exist, writable by uid 1000 (Docker creates a
+      # missing one owned by root, where the collector cannot write).
+      - ${OUTPUT_DIR:-kasa_collector_output}:/app/output
 
   # ── profile: bundled ───────────────────────────────────────────────────────
   # The dev stack's own InfluxDB + Grafana, on the dev host, with no host port. The
@@ -507,6 +510,7 @@ networks:
     external: true
 
 volumes:
+  kasa_collector_output:
   kasa_influxdb_data:
   kasa_influxdb_config:
   kasa_grafana_data:

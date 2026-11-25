@@ -354,3 +354,14 @@ def test_the_grafana_password_is_one_argument_even_with_a_leading_dash(
     create = [c for c in calls if c.startswith("[v1][auth][create]")]
     assert create and "[--password=-leading-dash-pw]" in create[0]
     assert "[--read-bucket][0123456789abcdef]" in create[0]
+
+
+def test_the_collectors_default_output_is_a_volume_its_user_can_write() -> None:
+    """The image runs as uid 1000 and owns /app/output. A host path Docker creates for a
+    bind mount is owned by root, so the collector could not write its device roster or its
+    exports there; a named volume is initialised from the image, owned by the collector."""
+    assert "- ${OUTPUT_DIR:-kasa_collector_output}:/app/output" in _service(
+        "kasa-collector"
+    )
+    volumes = COMPOSE.split("\nvolumes:\n")[1]
+    assert re.search(r"^  kasa_collector_output:", volumes, re.M)

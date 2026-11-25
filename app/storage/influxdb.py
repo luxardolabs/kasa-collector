@@ -69,7 +69,8 @@ class InfluxDBStorage:
     Attributes:
         logger: Logger instance for this class.
         client: asyncio-native InfluxDB client (opened in ``connect()``).
-        write_api: Async write API; points are awaited inline, one batch per cycle.
+        write_api: Async write API; points are awaited inline, one write per device
+            (a strip's points together) per cycle, plus one collector_stats point.
         bucket: Target InfluxDB bucket name.
         org: Target InfluxDB organization.
         sysinfo_data: Cache of device system information for cross-referencing.
