@@ -19,6 +19,7 @@ Data is stored in two main measurements:
     - sysinfo_child: Information for individual plugs on power strips
 """
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -38,6 +39,12 @@ from app.core.config import Config
 from app.storage.sysinfo_fields import sysinfo_field, without_dropped
 
 logger = logging.getLogger("InfluxDBStorage")
+
+# How long the startup connect waits for an InfluxDB that does not answer yet. A deploy that
+# recreates InfluxDB beside the collector starts both at once, and InfluxDB takes seconds to
+# serve. The wait stays inside the container HEALTHCHECK's start period plus its retries, so a
+# collector that never reaches InfluxDB still ends as a failed start, not a silent wait.
+CONNECT_WINDOW_SECONDS = 60
 
 
 def device_id_of(sysinfo: Mapping[str, Any]) -> str | None:
@@ -107,10 +114,12 @@ class InfluxDBStorage:
         path is awaited on the event loop — no background threads, no Rx batching
         pipeline, nothing to flush on shutdown. Auth/bucket problems surface as
         actionable errors on the first write (see ``send_to_influxdb``); this
-        preflight fails fast only on an unreachable or unhealthy server.
+        preflight waits out a server that is still starting: the ping is retried with a
+        doubling delay (capped by ``KASA_COLLECTOR_MAX_RETRY_DELAY``) for up to
+        ``CONNECT_WINDOW_SECONDS``.
 
         Raises:
-            SystemExit: If InfluxDB is unreachable or unhealthy.
+            SystemExit: If InfluxDB is still unreachable or unhealthy when the window ends.
         """
         self.client = InfluxDBClientAsync(
             url=self.url,
@@ -119,29 +128,38 @@ class InfluxDBStorage:
             enable_gzip=True,
         )
 
-        try:
-            healthy = await self.client.ping()
-        except Exception:
-            await self._close_client()
-            sep = "=" * 60
-            # One log event (with the traceback) rather than a 9-line error banner.
-            self.logger.exception(
-                "\n%s\nInfluxDB Connection Failed\n%s\n"
-                "Could not reach InfluxDB at: %s\n"
-                "Please verify:\n"
-                "  - InfluxDB is running and the URL/port are correct\n"
-                "  - No firewall is blocking the connection\n%s",
-                sep,
-                sep,
-                self.url,
-                sep,
+        delay = 1
+        waited = 0
+        while True:
+            failure: Exception | None = None
+            # swallowed-exceptions: HANDLED -- an unreachable server is the expected state of
+            # an InfluxDB that is still starting; it is retried below and, when the window
+            # ends, reported with its traceback before the collector stops. Broad because
+            # the client raises transport, DNS and HTTP errors through different types.
+            try:
+                healthy = await self.client.ping()
+            except Exception as e:
+                healthy, failure = False, e
+            if healthy:
+                break
+            if waited >= CONNECT_WINDOW_SECONDS:
+                await self._close_client()
+                self._log_connect_failure(failure)
+                raise SystemExit(1) from None
+            pause = min(
+                delay,
+                Config.KASA_COLLECTOR_MAX_RETRY_DELAY,
+                CONNECT_WINDOW_SECONDS - waited,
             )
-            raise SystemExit(1) from None
-
-        if not healthy:
-            await self._close_client()
-            self.logger.error("InfluxDB health check failed at %s", self.url)
-            raise SystemExit(1)
+            self.logger.warning(
+                "InfluxDB at %s is not answering yet (%s); retrying in %ss",
+                self.url,
+                failure or "health check failed",
+                pause,
+            )
+            await asyncio.sleep(pause)
+            waited += pause
+            delay *= 2
 
         self.write_api = self.client.write_api()
         try:
@@ -161,6 +179,27 @@ class InfluxDBStorage:
                 "InfluxDB connection established successfully (server version unknown)"
             )
             self.logger.debug("Could not read InfluxDB server version: %s", e)
+
+    def _log_connect_failure(self, failure: Exception | None) -> None:
+        """Report an InfluxDB that never answered within the startup window."""
+        if failure is None:
+            self.logger.error("InfluxDB health check failed at %s", self.url)
+            return
+        sep = "=" * 60
+        # One log event (with the traceback) rather than a 9-line error banner.
+        self.logger.error(
+            "\n%s\nInfluxDB Connection Failed\n%s\n"
+            "Could not reach InfluxDB at: %s (waited %ss)\n"
+            "Please verify:\n"
+            "  - InfluxDB is running and the URL/port are correct\n"
+            "  - No firewall is blocking the connection\n%s",
+            sep,
+            sep,
+            self.url,
+            CONNECT_WINDOW_SECONDS,
+            sep,
+            exc_info=failure,
+        )
 
     async def _close_client(self) -> None:
         """Close the async client if it was opened, ignoring teardown errors."""
